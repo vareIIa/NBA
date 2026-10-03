@@ -68,4 +68,5 @@
 | `13-roadmap.md` | Fases, critérios, orçamento, riscos |
 | `14-perguntas-abertas.md` | Decisões pendentes |
 | `15-brief-e-decisoes.md` | Brief do produto, papéis e registro de decisões |
+| `16-pipeline-aberto-visual-e-mocap.md` | Ferramentas/assets abertos para o visual realista e a captura de movimento, armadilhas de licença |
 | `../referencias/2k23/` | Clipes de gameplay do diretor no 2K23 + análise |

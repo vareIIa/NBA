@@ -122,6 +122,8 @@ A bola tem **3 estados de autoridade**:
 
 ## 5. Pipeline de mocap para equipe indie (solo/pequena)
 
+> **Atualização (D9):** o diretor fornece atletas e quadra. O pipeline principal passa a ser **multicâmera open-source (Pose2Sim + RTMPose)**, com câmeras a 120 fps. Equipamento, licenças e passo a passo em **`16-pipeline-aberto-visual-e-mocap.md`**. As opções abaixo ficam como alternativas.
+
 ### 5.1 Equipamento (opções, do mais barato ao mais caro)
 
 | Opção | Custo aprox. | Prós | Contras |

@@ -9,6 +9,8 @@
 - Cada quadra tem uma **paleta e horário** marcantes (pôr do sol na praia, sódio/laranja sob o viaduto, azul neon da noite na comunidade).
 - Referências: fotografia de streetball (quadras de rua no pôr do sol), transmissões de 3x3 FIBA, jogos de esporte com forte identidade visual.
 
+> **Decisão D7**: realista, com ferramentas e assets gratuitos/open-source. Stack, licenças e receita do piso brilhante em `16-pipeline-aberto-visual-e-mocap.md §1–3`.
+
 ## 2. Tecnologia de render (UE5)
 
 | Elemento | Solução |

@@ -246,7 +246,7 @@ Constantes físicas (ponto de partida para tuning):
 | Diâmetro interno do aro | 0,457 m |
 | Distância aro → tabela | 0,15 m |
 | Tabela | 1,83 × 1,07 m |
-| Restituição bola–piso | ≈ 0,76 (madeira; regra FIBA: solta de 1,80 m, volta 1,035–1,085 m) · 0,68–0,74 (asfalto/street) |
+| Restituição bola–piso | ≈ 0,76 (madeira). Regra FIBA: solta de 1,80 m (medida da base da bola), deve voltar a 1,20–1,40 m (medida do topo da bola), o que dá e ≈ 0,73–0,80 · 0,68–0,74 (asfalto/street) |
 | Restituição bola–aro | 0,50–0,65 (tuning define "aro macio" vs "aro duro") |
 | Backspin típico | ~3 rotações/s (backspin "amortece" o aro e a tabela → mais cestas no rolinho) |
 
