@@ -105,7 +105,7 @@ A janela "Bom" é proporcional (≈ 2.3× a Perfeito) e a "Leve" ≈ 4×. Todos 
 
 ### 3.3 Contestação (`contest`)
 
-Calculada no frame da soltura, **não** no início do arremesso (isso premia defensores que chegam a tempo):
+Calculada numa **janela em torno da soltura** (de ~100 ms antes até ~50 ms depois), usando o maior valor. Não vale só um frame (como no 2K23, onde a mão do defensor conta ao longo de um trecho do movimento) e não vale o início do arremesso (isso premia defensores que chegam a tempo):
 
 ```
 contest = clamp( max_over_defensores( proximidade_mão_bola × cobertura_angular × fator_altura × fator_timing_pulo × fator_rating_defesa ), 0, 1 )
@@ -131,6 +131,9 @@ Peso inicial: `K_c ≈ 1.8`. A contestação **não** mexe na janela (travada no
 - **Sem "hot/cold" escondido.** Se existir modo "Em chamas", ele é visível (ícone) e ganho por desempenho.
 
 ## 4. Modos de input
+
+Configurações iguais às do 2K23 (`02-controles.md §9`): timing de arremesso (arremessos / bandejas / ambos / Real Player %), **momento de soltura** (muito cedo / cedo / tarde / muito tarde: escolhe onde o ponto ideal fica na animação), medidor ligado ou desligado e feedback ligado ou desligado.
+
 
 | Modo | Como funciona | Público |
 |---|---|---|
@@ -163,6 +166,8 @@ Chance final: 31%
 - No replay instantâneo, o feedback reaparece.
 
 ## 6. Criador de arremesso (Jump Shot Creator) com trade-offs
+
+> No 2K23, todo jumper tinha 4 atributos gerados pelo criador: **Velocidade**, **Altura de soltura**, **Imunidade defensiva** e **Impacto do timing** (janela maior para quem acerta o tempo, penalidade maior para quem erra). Os nossos 4 stats abaixo seguem a mesma ideia, mas com **orçamento fixo** e trade-offs visíveis.
 
 O jogador combina **Base** (parte de baixo do corpo/preparação) + **Soltura** (braços/release) + **Mistura** (blend %) + **Velocidade**. Cada componente tem stats visíveis:
 
@@ -226,8 +231,9 @@ Orçamento fixo de pontos entre os 4 stats ⇒ não existe "jumper perfeito", ex
 A decisão **cesta/erro** é tomada na soltura; a física **realiza** essa decisão de forma crível.
 
 1. Decide resultado + **tipo de erro** coerente com o feedback:
-   - Cedo → tende a sair **curto** (aro da frente).
-   - Tarde → tende a sair **longo** (aro de trás/tabela).
+   - Cedo → **arco mais alto** e tende a sair **curto** (aro da frente).
+   - Tarde → **arco mais achatado** e tende a sair **longo** (aro de trás/tabela).
+   - A altura do arco como leitura do timing vem do 2K23 (arco alto = cedo, achatado = tarde, ideal = no tempo). O jogador aprende a ler o próprio arremesso no ar.
    - Mira lateral (shot stick) → esquerda/direita.
    - Contestação pesada → trajetória mais achatada (o arremessador "puxou" a bola).
    - Erro "Muito" + contestação alta → **airball** possível.
