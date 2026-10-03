@@ -1,8 +1,46 @@
 # 10 — Modos de Jogo
 
-Escolhidos para o plano: **Carreira** e **Streetball / 3x3 / Quadra (Park)**. Jogo rápido 5x5, Franquia/GM e online 5x5 ficam para fases posteriores (ver `13-roadmap.md`).
+**Ordem de produção (decisão D4, out/2026): Freestyle → 1x1 → 3x3.** Carreira e Streetball/Park vêm depois, sobre essa base. Jogo rápido 5x5, Franquia/GM e online 5x5 ficam para fases posteriores (ver `13-roadmap.md`).
 
-Ideia central: **a Carreira começa no streetball.** O jogador cria o personagem numa quadra de rua e sobe até o profissional. Assim o primeiro modo que construímos (3x3 de rua, barato) já é a base da Carreira.
+Ideia central (para depois): **a Carreira começa no streetball.** O jogador cria o personagem numa quadra de rua e sobe até o profissional.
+
+---
+
+## 0. Freestyle (modo nº 1: o laboratório do jogo)
+
+Um jogador **sozinho** numa **quadra realista**, com bola infinita, treinando tudo: drible, arremesso (green), bandejas, enterradas, fadeaways, dribble pull-ups de meia distância, step-backs, floaters. É o modo que construímos **primeiro** e onde fazemos a maior parte dos testes de gameplay. Precisa ser divertido sozinho (como o treino livre do 2K) e ser uma ferramenta de laboratório (como o modo treino de jogos de luta).
+
+### 0.1 Funções de jogo
+
+| Função | Detalhe |
+|---|---|
+| Bola volta sozinha | Depois do arremesso, a bola volta para o jogador (passe automático do "rebotedor") ou fica livre para pegar o rebote, à escolha |
+| Spots e desafios | Marcadores no chão (cantos, alas, topo, cotovelos, garrafão): "acerte 5 greens seguidos de cada spot", "10 dribble pull-ups de meia distância", "mikan drill" de bandejas |
+| Defensor manequim | Manequim posicionável com **contestação ajustável** (nenhuma / leve / forte, mão alta, altura do defensor). Pode "seguir" o jogador em modo simples |
+| Cones | Cones posicionáveis para treinar trajetos de drible (rotas, zigue-zague, spin em volta do cone) |
+| Placar de sessão | % de green, % de acerto por zona, combos de drible, maior sequência de greens |
+| Troca rápida de jogador | Trocar de corpo/atributos/pacote de animação sem sair do modo (testar armador × pivô) |
+
+### 0.2 Funções de laboratório (overlay ligável)
+
+| Função | Para quê |
+|---|---|
+| **Histórico de inputs** (estilo jogo de luta) | Ver cada flick do RS, botão e gatilho, com timestamp; reproduzir combos exatos |
+| **Janela de timing desenhada** | Barra com Perfeito/Green, Bom e Leve, e onde o input caiu (ms) |
+| **Breakdown do arremesso** | `L`, contestação, fadiga, equilíbrio, P final (`03-arremessos.md`) |
+| **Estado da animação** | Nome do clipe/banco de Motion Matching, fase (startup/commit/active/recovery), janela de cancelamento, buffer |
+| **Câmera lenta** (25/50%) e **pausa quadro a quadro** | Avaliar transições de drible e o ponto de soltura |
+| **Gravar e repetir** (replay determinístico) | Reproduzir uma sequência de inputs para comparar versões do jogo |
+| **Medidores de qualidade** | Foot sliding, latência input→pose, desalinhamento mão–bola |
+
+### 0.3 Critério de pronto do Freestyle
+
+- [ ] Driblar parado e em velocidade encadeando ≥ 4 movimentos sem perder o controle
+- [ ] Dribble pull-up de meia distância saindo de uma corrida, com gather em movimento
+- [ ] Green consistente e legível para quem tem timing, com feedback claro
+- [ ] Bandejas (5 tipos) e enterradas (3 tipos) a partir de infiltração
+- [ ] Fadeaway e step-back funcionando
+- [ ] O diretor joga 30 min e reconhece a "sensação de 2K23" no drible
 
 ---
 

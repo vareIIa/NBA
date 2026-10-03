@@ -9,7 +9,10 @@
 - **Engine**: Unreal Engine 5.8 (partindo do Game Animation Sample Project da Epic).
 - **Plataforma inicial**: PC (Steam), Early Access. Consoles depois.
 - **Equipe**: solo / indie pequena → escopo em fases (`13-roadmap.md`).
-- **Modos prioritários**: Streetball / 3x3 / Quadra e Carreira (que começa no streetball).
+- **Ordem de produção**: **Freestyle** (sozinho na quadra: laboratório de drible e arremesso) → **1x1** → **3x3**. Depois: Carreira e Streetball/Park.
+- **Referência de feeling**: NBA 2K23 (drible profundo, green, pull-ups). Clipes do diretor em `referencias/2k23/`.
+- **Controles**: idênticos ao 2K (Xbox). Ver `02-controles.md`.
+- **Decisões e papéis**: `15-brief-e-decisoes.md`.
 
 ## 2. Pilares
 
@@ -64,3 +67,5 @@
 | `12-arquitetura-tecnica.md` | Módulos UE5, loop de simulação, rede, ferramentas, CI |
 | `13-roadmap.md` | Fases, critérios, orçamento, riscos |
 | `14-perguntas-abertas.md` | Decisões pendentes |
+| `15-brief-e-decisoes.md` | Brief do produto, papéis e registro de decisões |
+| `../referencias/2k23/` | Clipes de gameplay do diretor no 2K23 + análise |

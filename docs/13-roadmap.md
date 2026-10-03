@@ -1,21 +1,25 @@
 # 13 — Roadmap (equipe solo / indie pequena)
 
 > Honestidade primeiro: um jogo de basquete no nível visual do 2K levou décadas e centenas de pessoas.
-> Nosso caminho é **começar pequeno e perfeito** (1x1 → 3x3 de rua) e só crescer quando a base for divertida.
+> Nosso caminho é **começar pequeno e perfeito** (**Freestyle → 1x1 → 3x3**) e só crescer quando a base for divertida.
 > Prazos abaixo assumem **1–3 pessoas em tempo integral**. Em meio período, multiplique por ~2.
 
-## Fase 0 — Pré-produção e protótipo cinza (1–2 meses)
+## Fase 0 — Freestyle (2–3 meses)
 
-**Pergunta a responder: "arremessar e driblar já é gostoso com cubos e animações emprestadas?"**
+**Pergunta a responder: "sozinho na quadra, driblar e arremessar já tem a sensação de 2K23?"**
 
-- [ ] Projeto UE5, Git LFS, estrutura de módulos (`12-arquitetura-tecnica.md`)
+- [ ] Projeto UE 5.8, Git LFS, estrutura de módulos (`12-arquitetura-tecnica.md`)
+- [ ] **Controles idênticos ao 2K** via Enhanced Input (`02-controles.md`)
 - [ ] Movement component de basquete (aceleração, plant-and-cut, energia)
-- [ ] Solver da bola (aro, tabela, chão) + arremesso com timing + feedback
-- [ ] Drible básico (crossover, hesitação, step-back) com animações de biblioteca
-- [ ] Meia-quadra cinza, 1x1 contra um defensor que só segue
-- [ ] Overlay de debug e teste de 10.000 arremessos
+- [ ] Solver da bola (aro, tabela, chão) + arremesso com timing/green + feedback
+- [ ] Drible: size-ups, crossover, entre as pernas, por trás, spin, hesitação, step-back, **parado e em movimento**
+- [ ] Gather em movimento → dribble pull-up, fadeaway, bandejas e enterradas básicas
+- [ ] **Quadra realista** (ginásio indoor) com assets gratuitos/open-source
+- [ ] **Modo Freestyle** com overlay de laboratório (`10-modos.md §0`)
+- [ ] Teste de 10.000 arremessos e medidor de latência input→pose
+- [ ] Primeira sessão de captura com os atletas do diretor
 
-**Critério para avançar**: 5 pessoas jogam 15 min e pedem para jogar de novo.
+**Critério para avançar**: o diretor joga 30 min de Freestyle e reconhece a sensação de drible/arremesso do 2K23.
 
 ## Fase 1 — Núcleo 1x1 (3–4 meses)
 
@@ -24,7 +28,7 @@
 - [ ] Bandejas e enterradas (P0) com Motion Warping
 - [ ] Motion Matching na locomoção (bibliotecas + primeira sessão de mocap markerless)
 - [ ] IA de 1x1 (utility + StateTree) com 3 níveis de dificuldade
-- [ ] Modo 1x1 até 11 + HORSE + treino
+- [ ] Modo 1x1 até 11/21 (regras de rua: 1 e 2 pontos ou 2 e 3) + HORSE
 - [ ] Primeiro playtest externo (10–20 pessoas)
 
 **Critério**: ankle-breaker, pôster e toco acontecem de forma "merecida" e as pessoas comemoram.
