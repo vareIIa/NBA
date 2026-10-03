@@ -4,14 +4,15 @@
 
 | Tema | Decisão | Motivo |
 |---|---|---|
-| Engine | **Unreal Engine 5** (versão estável mais recente no início da produção; travar versão por marco) | Motion Matching, Control Rig, MetaHuman, Lumen, rede pronta |
+| Engine | **Unreal Engine 5.8** (jun/2026; provavelmente a última 5.x — prévia da UE6 esperada por volta do fim de 2027). Travar a versão por marco | Motion Matching de produção, GASP 5.8, Control Rig, MetaHuman, Lumen/MegaLights, Iris |
+| Evitar por ora | **UAF** (AnimNext) em desenvolvimento; **Mover/Chaos Mover** experimental (beta prevista para 2026) | Não construir o núcleo sobre sistemas instáveis |
 | Linguagem | **C++ para sistemas** (bola, contato, arremesso, rede, IA) + **Blueprint para conteúdo/tuning** | Performance e determinismo onde importa; iteração rápida no resto |
 | Dados | `DataAsset`/`DataTable`/`CurveFloat` para atributos, curvas de arremesso, estilos, jogadores | Tuning sem recompilar |
 | Ações | **Gameplay Ability System (GAS)** para ações do jogador (arremesso, drible, passe, roubo, toco) | Tags, cooldowns, custos de energia, predição em rede já resolvidos |
 | IA | **StateTree** (execução) + utility scoring próprio (decisão) | Ferramenta moderna do UE5, depurável |
 | Input | **Enhanced Input** + buffer próprio | Remapeamento, contexts (ataque/defesa/menu) |
 | UI | UMG + CommonUI | Controle/teclado |
-| Online | Servidor autoritativo + predição do cliente; **EOS** (Epic Online Services) para contas, lobbies e matchmaking | Gratuito, multiplataforma |
+| Online | Simulação **determinística e separada da animação** desde o dia 1 (mantém aberta a opção de rollback); replicação com **Iris** (pronto para produção na 5.8); **EOS** para contas, lobbies e matchmaking | Gratuito, multiplataforma |
 | Versionamento | Git + **Git LFS** (ou Perforce se o time crescer) | Assets binários grandes |
 
 ## 2. Módulos (plugins de jogo)
@@ -60,7 +61,9 @@ Source/
 - **Arremesso**: timing julgado no cliente e validado no servidor (`03-arremessos.md §9`).
 - **Rewind de lag** (até ~150 ms) para contestação, roubo e toco.
 - Bola: o servidor simula; clientes simulam em paralelo (determinismo) e corrigem suavemente.
-- Rollback completo (estilo jogo de luta) para 1x1 é **pesquisa futura** — interessante para competitivo, mas caro com animação + física.
+- **Rollback para 1x1/3x3**: o NBA The Run (UE5, jun/2026) lançou 3x3 com rollback de verdade (cada cliente prevê 2 jogadores remotos) e foi elogiado pela rede. Para 10 jogadores, o padrão continua sendo servidor autoritativo com predição.
+  - **Decisão**: o gameplay é uma simulação em C++ com tick fixo, determinística e **independente da animação** (a UE é "só" render e animação). Isso permite servidor autoritativo agora e rollback depois, sem reescrever.
+  - Cuidado: a NetherRealm gastou ~7–8 pessoas-ano para adicionar rollback a um jogo pronto, e o *Rematch* (futebol, 2025–26) teve gols "fantasmas" por predição de bola e precisou reescrever a rede. **Rede é decisão de arquitetura, não de polimento.**
 
 ## 5. Ferramentas internas (desde o dia 1)
 

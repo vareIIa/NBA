@@ -44,6 +44,20 @@ Princípios online: servidores/host com timing de arremesso julgado no cliente (
 
 ---
 
+### 1.4 Hype da quadra (proposta, opcional)
+
+Duas ideias clássicas juntas: o medidor de torcida do *College Hoops 2K8* (atmosfera como sistema) e o *Gamebreaker* do *NBA Street* (estilo vira placar).
+
+- Jogadas de estilo enchem o **Hype** do time: ankle-breaker, pôster, toco, passe flashy que vira cesta, sequência de cestas.
+- O público da quadra reage em tempo real (som, câmera, MC).
+- Hype cheio = **"A quadra é sua"** por 2 posses: a cesta seguinte vale +1 ponto **ou** o time ganha um efeito pequeno e visível (ex.: janela Perfeito +10%).
+- Regra de partida: **Liga/Desliga** (desligado por padrão no ranqueado competitivo).
+- Diferença para o Takeover do 2K27 (5 medidores, 6 níveis, ativação automática): **um medidor só**, visível, do time, e por estilo, não por volume.
+
+### 1.5 Jogadoras e jogadores
+
+O 2K27 fez a Cidade **co-ed**, com o mesmo sistema de atributos para todos. Proposta: no streetball, **partidas mistas** com o mesmo sistema; corpo (altura, peso, envergadura) define as diferenças físicas, como para qualquer jogador. Ligas profissionais da Carreira: a definir (ver `14-perguntas-abertas.md`).
+
 ## 2. Carreira
 
 ### 2.1 Arco de história (proposta)
@@ -55,7 +69,7 @@ Princípios online: servidores/host com timing de arremesso julgado no cliente (
 | **3. Semi-pro / Seleção 3x3** | Ginásios, liga regional | 5x5 em quadra menor, adaptar-se a sistema de jogo | 5x5 (P3), técnico, jogadas |
 | **4. Profissional** | Liga fictícia profissional | Draft, temporadas, playoffs, legado | Arenas, apresentação de TV (P3+) |
 
-- **Narrativa leve e pulável**: cenas curtas, o foco é jogar. O 2K é criticado por histórias longas e forçadas.
+- **Narrativa leve e pulável**: cenas curtas, o foco é jogar. O 2K é criticado por histórias longas e forçadas; no 2K27, o companheiro de carreira obrigatório ("Running Mate") foi um dos pontos mais criticados. Aqui não há personagem obrigatório grudado no jogador.
 - **Escolhas com consequência pequena e clara** (com quem treinar, qual torneio disputar, rivalidade).
 - **Rivais recorrentes** com estilo próprio (o "rei" da quadra do viaduto, o arremessador da praia).
 

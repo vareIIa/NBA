@@ -55,10 +55,17 @@ vantagem = (Força_A − Força_B)·0.03 + (equilíbrio_A − equilíbrio_B) + b
 
 Para contato forte de alto impacto visual (pôster, toco em contato, queda após carga), usamos **animações pareadas** (2 atores gravados juntos na sessão S6):
 1. O resolvedor decide o resultado.
-2. Motion Warping alinha os dois jogadores ao par de animação.
+2. Motion Warping alinha os dois jogadores ao par de animação. Na UE 5.8, os **Pose Search Interaction Assets** (Motion Matching com vários personagens, demonstrado no GASP) fazem essa escolha e esse alinhamento. Começar por eles antes de escrever um sistema próprio.
 3. Se o alinhamento exigiria mais que o limite (0,6 m / 45°), cai para animações individuais + Physical Animation.
 
-## 5. Performance
+## 5. Lições de outros jogos
+
+- **Madden (FieldSENSE)**: a física **escolhe** a animação; os corpos não são simulados. É o mesmo princípio do nosso resolvedor.
+- **FIFA 12 (Player Impact Engine)**: física em todos os contatos virou meme de bugs. A indústria migrou para "seleção de animação informada por física".
+- **NBA The Run (2026)**: criticado por "não ter colisões reais". Contato **é** parte do basquete, e é onde podemos nos diferenciar.
+- **NBA 2K27**: reclamações de corpos embolados no garrafão e de bola "atravessando o corpo" no post. A bola tem colisores nos jogadores (§2), e o resolvedor tem um caso especial para 3 ou mais jogadores em contato simultâneo.
+
+## 6. Performance
 
 - Até 10 jogadores + bola + árbitros: barato. O custo está em animação (Motion Matching é o mais caro → usar intervalo de busca de 2–4 frames e LOD de busca por distância da câmera).
 - Alvo: **60 fps travados** em PC médio (RTX 3060 / PS5-equivalente) em 1440p com upscaling.

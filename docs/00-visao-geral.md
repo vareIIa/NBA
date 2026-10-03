@@ -6,7 +6,7 @@
 
 - **Codinome provisório**: *Projeto Garrafão* (nome final a definir).
 - **Gênero**: basquete **sim-arcade** — visual e física realistas; ritmo, controle e recompensas pensados para diversão.
-- **Engine**: Unreal Engine 5.
+- **Engine**: Unreal Engine 5.8 (partindo do Game Animation Sample Project da Epic).
 - **Plataforma inicial**: PC (Steam), Early Access. Consoles depois.
 - **Equipe**: solo / indie pequena → escopo em fases (`13-roadmap.md`).
 - **Modos prioritários**: Streetball / 3x3 / Quadra e Carreira (que começa no streetball).
@@ -30,7 +30,8 @@
 | Variedade de dribles e arremessos personalizados | Arremesso que parece aleatório / sem feedback claro |
 | Criação de jogador + jogo de rua online | Pay-to-win (VC para atributos) |
 | Contestação e timing como habilidade | Latência online roubando arremessos |
-| Sistema de estilos/badges dando identidade | Dezenas de badges confusos e grind excessivo |
+| Sistema de estilos/badges dando identidade | 53 badges com tokens e sinergias; grind excessivo |
+| Ankle-breakers lendo o momento do defensor | Janela de arremesso que "muda no ar"; contestação visual ≠ número |
 | Apresentação, trilha e "cultura" do basquete | Companheiros de IA ruins, histórias longas e forçadas |
 
 > Detalhes da engenharia reversa (análise de design) em `01-engenharia-reversa-2k27.md`.

@@ -73,15 +73,27 @@
 
 | Item | Custo aprox. |
 |---|---|
-| Unreal Engine | Grátis até US$ 1 mi de receita bruta, depois 5% de royalty (conferir termos vigentes) |
+| Unreal Engine | Grátis até US$ 1 mi de receita bruta por produto, depois 5% (3,5% no programa "Launch Everywhere with Epic"; vendas na Epic Games Store sem royalty). Conferir termos vigentes |
 | MetaHuman, Quixel/Fab gratuitos | Grátis (conferir licença para uso fora do UE se necessário) |
 | Bibliotecas de animação para protótipo | US$ 100–1.000 |
-| Mocap markerless (assinatura, alguns meses) | US$ 50–300/mês |
-| Traje inercial + luvas (opcional, Fase 2–3) | US$ 3–15 mil |
+| Mocap markerless (Move One/Move Pro) | US$ 15–490/mês (Move One); Move Pro sob consulta |
+| Cascadeur (cleanup) | ~US$ 99/ano (licença indie) |
+| Diárias de estúdio óptico (drible/arremesso, opcional) | US$ 1,5–3 mil/dia × 2–4 dias |
+| Traje inercial + luvas (opcional, Fase 2–3) | ~US$ 3,5 mil (Rokoko com luvas) a ~6,7 mil (com Coil Pro) |
 | Atores de mocap (jogadores locais) | diárias |
 | Música licenciada (artistas independentes) | US$ 1–5 mil |
 | Steam Direct | US$ 100 por jogo |
 | Servidores online (Fase 4) | variável — começar com host + relay |
+
+## Concorrência direta
+
+| Jogo | Posição | Nosso espaço |
+|---|---|---|
+| NBA 2K27 | AAA, licenciado, US$ 70 + VC. Usuários: 3,8/10 | Justo, sem VC, responsivo |
+| NBA The Run (2026) | UE5, 3x3 arcade cel-shaded, rollback, US$ 29,99, sem microtransações | Visual realista estilizado, colisão física, feedback claro, Carreira |
+| Hoop Land | Indie 2D retrô com liga profunda | 3D, quadra, sensação física |
+
+Preço sugerido para o Early Access: na faixa de US$ 20–30 (a definir).
 
 ## Riscos principais
 
@@ -89,6 +101,7 @@
 |---|---|
 | Escopo explode (querer ser 2K) | Fases com critério de avanço; 5x5 só depois do Early Access |
 | Animação parece amadora | Investir em poucos momentos-chave (arremesso, enterrada, drible) + Motion Matching + cleanup no Cascadeur |
+| Apostar em tecnologia não provada (lição do NBA Elite 11, cancelado por animação com física) | Usar ferramentas de produção (GASP, Pose Search); física só em reações e quedas |
 | Arremesso não é gostoso | Fase 0 inteira dedicada a isso, com testes |
 | Rede ruim estraga o timing | Timing no cliente desde o design |
 | Problema legal (marcas/atletas) | Liga, times e jogadores fictícios; ver `00-visao-geral.md` |

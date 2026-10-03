@@ -17,6 +17,18 @@ O Animation Blueprint é organizado em **camadas**, de baixo para cima:
 | 4. Física | Physical Animation Component + ragdoll parcial | Reações de contato, quedas, empurrões |
 | 5. Facial | MetaHuman Face (Live Link Face / curvas) | Esforço, respiração, comemorações, piscadas |
 
+### 1.0 Ponto de partida: Game Animation Sample Project (UE 5.8)
+
+O **GASP** (Game Animation Sample Project), atualizado para a UE 5.8 em agosto de 2026, já traz quase tudo de que a camada 0 precisa:
+- Motion Matching de produção (Pose Search) + Choosers com coluna de Pose Match (vários bancos ao mesmo tempo).
+- **Pose Search Interaction Assets**: Motion Matching com **vários personagens** e warping. Encaixa direto em contato pareado (body-up, post-up, corta-luz).
+- Ragdoll guiado pelo **Physics Control Component** (ragdoll "com força") e levantar do chão por Motion Matching.
+- Orientation warping, leg IK, Offset Root Bone (experimental), steering.
+
+Estratégia: **começar do GASP**, trocar o personagem e os bancos por animações de basquete e adicionar nossas camadas 1–4.
+
+> Evitar por enquanto: o **Unreal Animation Framework (UAF, ex-AnimNext)** ainda está em desenvolvimento, e o **Mover** é experimental. Ficamos com Animation Blueprint + movement component próprio.
+
 ### 1.1 Por que Motion Matching na locomoção
 
 - Locomoção de basquete é **contínua e caótica** (cortes, desacelerações, pivôs). Uma state machine tradicional vira um monstro de transições.
@@ -114,16 +126,21 @@ A bola tem **3 estados de autoridade**:
 
 | Opção | Custo aprox. | Prós | Contras |
 |---|---|---|---|
-| **Markerless por vídeo** (Move.ai, Rokoko Vision, Radical etc.) | assinatura mensal | Barato, grava numa quadra real, com bola real | Pés deslizam, mãos fracas, oclusão; muito cleanup |
-| **Traje inercial** (Rokoko Smartsuit + luvas, Xsens/Movella, Perception Neuron) | US$ 2–15 mil | Funciona em qualquer quadra, dedos com luvas | Drift de posição, pulos/contato precisam de correção |
-| **Estúdio óptico por diária** | por sessão | Melhor qualidade, várias pessoas ao mesmo tempo | Caro, espaço limitado (quadra inteira é difícil) |
-| **Bibliotecas prontas** (Fab/Marketplace, pacotes de basquete) | por pacote | Imediato para protótipo | Genérico, licença varia, estilo inconsistente |
+| **Markerless por vídeo** (Move.ai: Move One com 1 câmera, Move Pro multicâmera a 120 fps; Rokoko Vision) | US$ 15–490/mês (Move One) | Barato, grava numa quadra real, com bola real | Pés deslizam, mãos fracas, oclusão; muito cleanup |
+| **Traje inercial** (Rokoko Smartsuit Pro II ≈ US$ 2 mil; kit com luvas ≈ US$ 3,5 mil; com Coil Pro, sem drift, ≈ US$ 6,7 mil · Xsens/Movella US$ 15–35 mil) | US$ 2–35 mil | Funciona em qualquer quadra, dedos com luvas | Drift de posição, pulos/contato precisam de correção |
+| **Estúdio óptico por diária** | US$ 1,5–3 mil/dia (faixa média); cleanup leva 2–8× o tempo gravado | Melhor qualidade, várias pessoas ao mesmo tempo | Caro, espaço limitado (quadra inteira é difícil) |
+| **Bibliotecas prontas** (Fab/Marketplace, pacotes de esportes) | por pacote | Imediato para protótipo | Há **poucos** pacotes específicos de basquete; drible e arremesso quase sempre precisam ser gravados por nós |
 
-**Recomendação para começar**: protótipo com bibliotecas prontas → primeira sessão própria com **markerless multicâmera** numa quadra real (barato e com bola de verdade) → investir em traje inercial quando a vertical slice estiver aprovada.
+**Recomendação para começar**:
+1. Protótipo com bibliotecas prontas + o **Game Animation Sample Project (GASP)** da Epic, atualizado para a UE 5.8.
+2. Primeira sessão própria com **markerless multicâmera** numa quadra real (barato e com bola de verdade) para a locomoção.
+3. Quando a vertical slice for aprovada: traje inercial para volume (locomoção, defesa, sem bola) **+ 2 a 4 diárias de estúdio óptico** só para drible e arremesso. Traje inercial e markerless perdem os dedos e a bola, e o sincronismo mão–bola é o que vende o drible.
+
+> Ferramenta descartada: o **Radical** encerrou os serviços web em 2026 (a tecnologia foi comprada pela Autodesk). Ainda sem avaliação: a captura de corpo com uma câmera do MetaHuman Animator (UE 5.8), cuja qualidade para movimento atlético é desconhecida.
 
 ### 5.2 Cleanup e ferramentas
 
-- **Cascadeur** (indie-friendly): limpeza com física (corrige pulos/aterrissagens), posing assistido, keyframe rápido.
+- **Cascadeur** (licença indie ≈ US$ 99/ano abaixo de US$ 100 mil de receita): *animation unbaking* (transforma mocap em keys editáveis), AutoPhysics para corrigir pulos e aterrissagens, posing assistido.
 - **Blender** ou **MotionBuilder**: edição, corte, loops.
 - **UE5 IK Retargeter**: retarget para o esqueleto padrão (UE5 Manny/MetaHuman).
 - **Ferramenta própria (Editor Utility)**: marcar contatos da bola, ponto de soltura, fases de cancelamento em lote.
