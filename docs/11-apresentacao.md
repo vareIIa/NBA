@@ -4,8 +4,8 @@
 
 ## 1. Direção de arte
 
-- **Realismo estilizado**: proporções e materiais realistas, mas com grading de cor forte, luz dramática e composição de "fotografia de streetball".
-- Risco conhecido: perseguir o fotorrealismo do 2K com equipe pequena foi parte do que derrubou o NBA Live. O NBA The Run (2026) foi para o outro extremo (cel-shading e animação à mão). A nossa aposta no meio-termo é uma **decisão em aberto** (ver `14-perguntas-abertas.md`). Validar na vertical slice antes de produzir em escala.
+- **Realista** (decisão D7): proporções, materiais e luz realistas (MetaHuman, piso de madeira brilhante, iluminação de ginásio), com grading de cor cuidadoso. Nada de cel-shading ou estilo arcade.
+- Risco conhecido: perseguir o fotorrealismo do 2K com equipe pequena foi parte do que derrubou o NBA Live. Mitigação: **poucos ambientes** (começando por um ginásio indoor no Freestyle), personagens MetaHuman e foco em luz e piso, onde o realismo rende mais por hora de trabalho.
 - Cada quadra tem uma **paleta e horário** marcantes (pôr do sol na praia, sódio/laranja sob o viaduto, azul neon da noite na comunidade).
 - Referências: fotografia de streetball (quadras de rua no pôr do sol), transmissões de 3x3 FIBA, jogos de esporte com forte identidade visual.
 
