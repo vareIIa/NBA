@@ -13,6 +13,8 @@ add_library(hoops_core STATIC
 	${CORE_DIR}/Private/HoopsBallSim.cpp
 	${CORE_DIR}/Private/HoopsShotModel.cpp
 	${CORE_DIR}/Private/HoopsShotSolver.cpp
+	${CORE_DIR}/Private/HoopsProStick.cpp
+	${CORE_DIR}/Private/HoopsDribbleMoves.cpp
 )
 target_include_directories(hoops_core PUBLIC ${CORE_DIR}/Public)
 target_compile_definitions(hoops_core PUBLIC HOOPSSIMCORE_API=)

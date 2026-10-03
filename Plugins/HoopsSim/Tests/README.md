@@ -26,3 +26,9 @@ O build usa as mesmas restrições da Unreal (sem exceções/RTTI, `-Wshadow -Wc
 | MakeEntryAngleIsRealistic | Ângulo de entrada de um 3PT entre 42° e 50° |
 | RealizationIsDeterministic | Mesma semente → mesma trajetória |
 | DribbleArcHitsHandAndFloorExactly | Drible chega na mão exata no tempo exato, sem atravessar o chão |
+| StickDirectionsAndMirror | 8 direções do Pro Stick e espelhamento para a mão esquerda |
+| StickFlickHoldRotationRecognized | Toque, segurar/soltar, giro e quarto de círculo |
+| StickDoubleThrowAndSwitchback | Gestos de combo do 2K23 (e que flicks lentos não viram combo) |
+| GesturesMapToTwoKMoves | Gesto → movimento igual ao manual do 2K23 (com troca de mão) |
+| DribbleControllerCommitBufferAndRhythm | Commit, buffer de 150 ms, combo no ritmo (+15% de velocidade) |
+| ExplosionsAndEnergy | 3 Explosões por posse, energia gasta no sprint e recuperada parado |

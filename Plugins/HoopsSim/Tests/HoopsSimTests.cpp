@@ -4,6 +4,8 @@
 #include "HoopsSimCore/HoopsBallSim.h"
 #include "HoopsSimCore/HoopsCourt.h"
 #include "HoopsSimCore/HoopsDribble.h"
+#include "HoopsSimCore/HoopsDribbleMoves.h"
+#include "HoopsSimCore/HoopsProStick.h"
 #include "HoopsSimCore/HoopsShotModel.h"
 #include "HoopsSimCore/HoopsShotSolver.h"
 
@@ -403,6 +405,213 @@ HOOPS_TEST(DribbleArcHitsHandAndFloorExactly)
 	EXPECT_TRUE(MaxStep < 0.05);
 	// Quique plausível: sai do chão com velocidade menor ou parecida com a de chegada.
 	EXPECT_RANGE(Arc.FloorExitSpeed() / Arc.FloorEntrySpeed(), 0.6, 1.0);
+}
+
+
+// ---------------------------------------------------------------- Pro Stick e dribles (2K23)
+
+namespace
+{
+	// Alimenta o reconhecedor com uma sequência (x, y) a 60 Hz e devolve todos os gestos.
+	struct StickFeed
+	{
+		ProStickRecognizer Recognizer;
+		double Time = 0.0;
+		StickGesture All[64];
+		int Count = 0;
+
+		void Sample(double X, double Y, int Frames = 1)
+		{
+			for (int Frame = 0; Frame < Frames; ++Frame)
+			{
+				StickGesture Out[ProStickRecognizer::MaxGesturesPerUpdate];
+				const int N = Recognizer.Update(Time, X, Y, Out);
+				for (int Index = 0; Index < N && Count < 64; ++Index)
+				{
+					All[Count++] = Out[Index];
+				}
+				Time += 1.0 / 60.0;
+			}
+		}
+
+		void Flick(double X, double Y)
+		{
+			Sample(X, Y, 4);   // ~67 ms fora do centro
+			Sample(0.0, 0.0, 1);
+		}
+
+		void Rotate(double StartDeg, double SweepDeg, int Frames)
+		{
+			for (int Frame = 0; Frame <= Frames; ++Frame)
+			{
+				const double Deg = StartDeg + SweepDeg * Frame / Frames;
+				Sample(std::cos(DegToRad(Deg)), std::sin(DegToRad(Deg)), 1);
+			}
+			Sample(0.0, 0.0, 1);
+		}
+
+		bool Has(StickGestureKind Kind, StickDir Dir) const
+		{
+			for (int Index = 0; Index < Count; ++Index)
+			{
+				if (All[Index].Kind == Kind && All[Index].Dir == Dir) { return true; }
+			}
+			return false;
+		}
+
+		bool HasKind(StickGestureKind Kind) const
+		{
+			for (int Index = 0; Index < Count; ++Index)
+			{
+				if (All[Index].Kind == Kind) { return true; }
+			}
+			return false;
+		}
+	};
+}
+
+HOOPS_TEST(StickDirectionsAndMirror)
+{
+	EXPECT_TRUE(DirFromVector(0.0, 1.0) == StickDir::Up);
+	EXPECT_TRUE(DirFromVector(1.0, 0.0) == StickDir::Right);
+	EXPECT_TRUE(DirFromVector(-0.7, -0.7) == StickDir::DownLeft);
+	EXPECT_TRUE(DirFromVector(-1.0, 0.0) == StickDir::Left);
+	EXPECT_TRUE(MirrorDir(StickDir::UpRight) == StickDir::UpLeft);
+	EXPECT_TRUE(MirrorDir(StickDir::Down) == StickDir::Down);
+	EXPECT_TRUE(AreOpposite(StickDir::Left, StickDir::Right));
+	EXPECT_TRUE(!AreOpposite(StickDir::Up, StickDir::UpRight));
+}
+
+HOOPS_TEST(StickFlickHoldRotationRecognized)
+{
+	StickFeed Feed;
+	Feed.Flick(0.0, 1.0);
+	EXPECT_TRUE(Feed.Has(StickGestureKind::Flick, StickDir::Up));
+
+	StickFeed HoldFeed;
+	HoldFeed.Sample(0.0, -1.0, 20); // ~330 ms segurando para baixo
+	EXPECT_TRUE(HoldFeed.Has(StickGestureKind::Hold, StickDir::Down));
+	EXPECT_TRUE(HoldFeed.Recognizer.IsHolding());
+	HoldFeed.Sample(0.0, 0.0, 1);
+	EXPECT_TRUE(HoldFeed.Has(StickGestureKind::HoldRelease, StickDir::Down));
+	EXPECT_TRUE(!HoldFeed.HasKind(StickGestureKind::Flick)); // soltar um hold não vira flick
+
+	StickFeed SpinFeed;
+	SpinFeed.Rotate(0.0, -300.0, 18); // giro horário
+	EXPECT_TRUE(SpinFeed.HasKind(StickGestureKind::Rotation));
+
+	StickFeed HalfFeed;
+	HalfFeed.Rotate(0.0, 100.0, 8);
+	EXPECT_TRUE(HalfFeed.HasKind(StickGestureKind::QuarterCircle));
+}
+
+HOOPS_TEST(StickDoubleThrowAndSwitchback)
+{
+	StickFeed Double;
+	Double.Flick(1.0, 0.0);
+	Double.Sample(0.0, 0.0, 3);
+	Double.Flick(1.0, 0.0);
+	EXPECT_TRUE(Double.Has(StickGestureKind::DoubleThrow, StickDir::Right));
+
+	StickFeed Switch;
+	Switch.Flick(1.0, 0.0);
+	Switch.Sample(0.0, 0.0, 3);
+	Switch.Flick(-1.0, 0.0);
+	EXPECT_TRUE(Switch.Has(StickGestureKind::Switchback, StickDir::Left));
+
+	StickFeed Slow;
+	Slow.Flick(1.0, 0.0);
+	Slow.Sample(0.0, 0.0, 30); // 500 ms depois: não é combo
+	Slow.Flick(1.0, 0.0);
+	EXPECT_TRUE(!Slow.HasKind(StickGestureKind::DoubleThrow));
+}
+
+HOOPS_TEST(GesturesMapToTwoKMoves)
+{
+	DribbleContext Right;
+	Right.Hand = BallHand::Right;
+	DribbleContext Left;
+	Left.Hand = BallHand::Left;
+	DribbleContext Sprint = Right;
+	Sprint.bSprint = true;
+
+	StickGesture Flick;
+	Flick.Kind = StickGestureKind::Flick;
+
+	Flick.Dir = StickDir::Up;
+	EXPECT_TRUE(ResolveDribbleMove(Flick, Right) == DribbleMove::Crossover);
+	EXPECT_TRUE(ResolveDribbleMove(Flick, Sprint) == DribbleMove::AttackingCrossover);
+	Flick.Dir = StickDir::Left; // mão livre (bola na direita)
+	EXPECT_TRUE(ResolveDribbleMove(Flick, Right) == DribbleMove::BetweenLegs);
+	Flick.Dir = StickDir::Right; // mão da bola (bola na direita)
+	EXPECT_TRUE(ResolveDribbleMove(Flick, Right) == DribbleMove::Hesitation);
+	EXPECT_TRUE(ResolveDribbleMove(Flick, Left) == DribbleMove::BetweenLegs); // com a esquerda, direita = mão livre
+	Flick.Dir = StickDir::DownLeft;
+	EXPECT_TRUE(ResolveDribbleMove(Flick, Right) == DribbleMove::BehindBack);
+	Flick.Dir = StickDir::Down;
+	EXPECT_TRUE(ResolveDribbleMove(Flick, Right) == DribbleMove::StepBack);
+
+	StickGesture Spin;
+	Spin.Kind = StickGestureKind::Rotation;
+	EXPECT_TRUE(ResolveDribbleMove(Spin, Right) == DribbleMove::Spin);
+
+	StickGesture Hold;
+	Hold.Kind = StickGestureKind::Hold;
+	Hold.Dir = StickDir::Down;
+	EXPECT_TRUE(ResolveDribbleMove(Hold, Right) == DribbleMove::None); // hold baixo = arremesso
+}
+
+HOOPS_TEST(DribbleControllerCommitBufferAndRhythm)
+{
+	DribbleController Controller;
+	EXPECT_TRUE(Controller.Request(DribbleMove::Crossover, 0.0));
+	EXPECT_TRUE(Controller.GetHand() == BallHand::Left); // crossover troca a mão
+	EXPECT_TRUE(!Controller.CanCancel(0.05));             // dentro do commit (0,12 s)
+
+	// Pedido durante o commit vai para o buffer e sai assim que o commit acaba.
+	EXPECT_TRUE(!Controller.Request(DribbleMove::BehindBack, 0.05));
+	Controller.Update(0.10, 0.05, false);
+	EXPECT_TRUE(Controller.GetActive().Move == DribbleMove::Crossover);
+	Controller.Update(0.13, 0.03, false);
+	EXPECT_TRUE(Controller.GetActive().Move == DribbleMove::BehindBack);
+	EXPECT_TRUE(Controller.GetHand() == BallHand::Right);
+
+	// Input na janela de combo do fim = ritmo (mais rápido, conta combo).
+	const double End = Controller.GetActive().EndTime();
+	EXPECT_TRUE(Controller.Request(DribbleMove::Crossover, End - 0.05));
+	EXPECT_TRUE(Controller.GetActive().bInRhythm);
+	EXPECT_NEAR(Controller.GetActive().PlayRate, 1.15, 1e-9);
+	EXPECT_TRUE(Controller.GetComboCount() >= 2);
+
+	// Buffer expira depois de 150 ms.
+	DribbleController Late;
+	Late.Request(DribbleMove::Spin, 0.0);
+	Late.Request(DribbleMove::Crossover, 0.01);
+	Late.Update(0.2, 0.2, false); // 190 ms depois do pedido; commit do spin acabou em 0,25
+	Late.Update(0.26, 0.06, false);
+	EXPECT_TRUE(Late.GetActive().Move == DribbleMove::Spin);
+}
+
+HOOPS_TEST(ExplosionsAndEnergy)
+{
+	DribbleController Controller;
+	EXPECT_TRUE(Controller.GetExplosions() == 3);
+	EXPECT_TRUE(Controller.Request(DribbleMove::EscapeHesitation, 0.0));
+	EXPECT_TRUE(Controller.GetExplosions() == 2);
+	EXPECT_TRUE(Controller.TryUseExplosion());
+	EXPECT_TRUE(Controller.TryUseExplosion());
+	EXPECT_TRUE(!Controller.TryUseExplosion());
+	EXPECT_TRUE(Controller.SpeedScale() < 0.9); // sem Explosões = bem mais lento
+	Controller.ResetPossession();
+	EXPECT_TRUE(Controller.GetExplosions() == 3);
+
+	// Sprint gasta, parado recupera.
+	const double Before = Controller.GetEnergy();
+	Controller.Update(5.0, 2.0, true);
+	EXPECT_TRUE(Controller.GetEnergy() < Before);
+	const double Tired = Controller.GetEnergy();
+	Controller.Update(9.0, 2.0, false);
+	EXPECT_TRUE(Controller.GetEnergy() > Tired);
 }
 
 int main()
