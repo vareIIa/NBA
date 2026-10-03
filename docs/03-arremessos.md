@@ -67,8 +67,8 @@ O ponto ideal de soltura é marcado na animação por um `AnimNotify_ReleasePoin
 
 | Faixa | Largura (exemplo, rating 85, livre, velocidade normal) | Efeito em L | Feedback |
 |---|---|---|---|
-| **Perfeito** | ±30 ms | +2.5 (e **cesta garantida** se `contest < 0.30` e não for heave) | "PERFEITO" + som/rede especial |
-| **Bom** | ±31–70 ms | +0.8 | "Bom" |
+| **Perfeito (green)** | ±30 ms | +2.5 (e **cesta garantida** se `contest < 0.30` e não for heave) | "GREEN" + som/rede especial |
+| **Bom** | ±31–70 ms | 0 (referência: a tabela `L_base` é calibrada no "Bom") | "Bom" |
 | **Leve cedo / leve tarde** | ±71–120 ms | −0.3 | "Cedo" / "Tarde" |
 | **Muito cedo / muito tarde** | > 120 ms | −1.5 | "Muito cedo" / "Muito tarde" |
 

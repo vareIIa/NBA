@@ -1,0 +1,18 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "HoopsSim",
+	"Description": "Núcleo de simulação determinística de basquete (bola, aro, arremesso, drible) em C++ puro, sem dependências da Unreal.",
+	"Category": "Gameplay",
+	"CreatedBy": "Projeto Garrafão",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Modules": [
+		{
+			"Name": "HoopsSimCore",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
