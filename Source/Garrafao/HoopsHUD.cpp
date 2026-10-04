@@ -76,6 +76,20 @@ void AHoopsHUD::DrawHUD()
 	const FString TimeLabel = Data.TimeScale < 0.99f ? FString::Printf(TEXT("   |   CAMERA LENTA %.0f%%"), Data.TimeScale * 100.0f) : FString();
 	DrawText(FString::Printf(TEXT("Defensor: %s%s"), *Data.DummyLabel, *TimeLabel), DimText, 32.0f, 70.0f, Small, 1.0f);
 
+	// ---------------- Versão e corpo (topo, centro): mostra na hora se o boneco animado carregou.
+	{
+		const FString Status = FString::Printf(TEXT("%s  |  %s"), *Data.BuildLabel, *Data.BodyStatus);
+		float StatusW = 0.0f;
+		float StatusH = 0.0f;
+		GetTextSize(Status, StatusW, StatusH, Small, 1.0f);
+		const FLinearColor StatusColor = Data.bBodyAnimated ? DimText : FLinearColor(1.0f, 0.75f, 0.2f, 1.0f);
+		if (!Data.bBodyAnimated)
+		{
+			DrawRect(PanelColor, (W - StatusW) * 0.5f - 10.0f, 6.0f, StatusW + 20.0f, StatusH + 8.0f);
+		}
+		DrawText(Status, StatusColor, (W - StatusW) * 0.5f, 10.0f, Small, 1.0f);
+	}
+
 	// ---------------- Energia (stamina) e drible (embaixo à esquerda)
 	// Sem Explosões (D13): a barra de energia é o único limitador. Verde > 60%, amarelo > 40%, vermelho abaixo.
 	const FLinearColor EnergyColor = Data.Energy > 0.6f ? FLinearColor(0.25f, 0.9f, 0.35f, 1.0f)

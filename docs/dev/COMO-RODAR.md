@@ -40,11 +40,11 @@ Para trocar para quadra ao ar livre (sol + céu): selecione o ator **HoopsCourt*
 
 ### Jogador animado (recomendado)
 
-Sem asset nenhum, o jogador aparece como um cilindro preto. Para ele **driblar de verdade** (mocap):
-1. Confira que o FBX veio inteiro: `git lfs pull` (o `Art/Characters/HoopsDummy/SK_HoopsDummy.fbx` tem ~5 MB).
-2. **Tools → Execute Python Script…** → escolha `Tools/Editor/importar_personagem.py`. Ele importa a malha, o esqueleto e as **15 animações** em `/Game/Hoops/Characters/Dummy` e salva.
-   (Sem o script: arraste o FBX para essa pasta no Content Browser com *Import Animations* ligado.)
-3. Aperte **Play**. O Output Log mostra `Boneco animado ativo: escala ..., yaw ...`.
+O jogador **dribla de verdade** (mocap) assim que o boneco é importado — e isso agora é **automático**:
+1. Depois do `git pull`, rode `git lfs pull` (o `Art/Characters/HoopsDummy/SK_HoopsDummy.fbx` tem ~5 MB; sem isso vem só um "ponteiro" de 130 bytes).
+2. Abra o editor. Ao terminar de carregar, ele importa sozinho a malha, o esqueleto e as **15 animações** em `/Game/Hoops/Characters/Dummy` (Output Log: `[Garrafao] Pronto!`). Só reimporta quando o FBX muda.
+3. Aperte **Play**. No topo da tela aparece `Garrafao Freestyle v0.5 | Boneco animado: ATIVO (15/15 clipes)`. Se aparecer em amarelo "NAO IMPORTADO", rode **Tools → Execute Python Script…** → `Tools/Editor/importar_personagem.py` e me mande o Output Log.
+   (Último recurso: arraste o FBX para `/Game/Hoops/Characters/Dummy` no Content Browser com *Import Animations* ligado.)
 
 O boneco é um "manequim de teste" (partes rígidas, cores de pele/uniforme/tênis) com mocap da CMU: drible parado, andando, correndo, de costas e de lado (as duas mãos), andar e correr sem bola e o arremesso saindo do drible. A **bola segue a mão animada** (sai no fim do empurrão e volta para a mão no topo) e no arremesso a **mão chega ao topo exatamente no centro da janela green**.
 

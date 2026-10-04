@@ -64,6 +64,11 @@ struct FHoopsHudData
 	FString DummyLabel;
 	float TimeScale = 1.0f;
 
+	// Versão e corpo em uso (para saber na hora se o boneco animado carregou).
+	FString BuildLabel;
+	FString BodyStatus;
+	bool bBodyAnimated = false;
+
 	// Laboratório.
 	bool bLabOverlay = false;
 	TArray<FString> InputHistory;

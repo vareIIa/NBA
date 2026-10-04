@@ -138,10 +138,12 @@ void AHoopsPlayerCharacter::BeginPlay()
 
 	HoopsMeshUtil::SetColor(this, PlaceholderBody, FLinearColor(0.08f, 0.08f, 0.09f));
 	Hud.DummyLabel = TEXT("Sem defensor");
+	Hud.BuildLabel = TEXT("Garrafao Freestyle v0.5");
 	if (!TryLoadDummyRig())
 	{
 		TryLoadMannequin();
 	}
+	Hud.bBodyAnimated = bRigActive;
 	EnsureWorldRefs();
 	ResetToSpot(0);
 }
@@ -1309,13 +1311,17 @@ bool AHoopsPlayerCharacter::TryLoadDummyRig()
 	TArray<UAnimSequence*> Clips;
 	if (!HoopsDummyRig::FindAssets(DummyAssetFolder, MeshAsset, Clips))
 	{
-		UE_LOG(LogHoops, Log, TEXT("Boneco animado nao encontrado em %s (rode Tools/Editor/importar_personagem.py)."), *DummyAssetFolder);
+		Hud.BodyStatus = MeshAsset
+			? TEXT("Boneco animado: faltam animacoes (feche e abra o editor ou rode Tools/Editor/importar_personagem.py)")
+			: TEXT("Boneco animado: NAO IMPORTADO - feche e abra o editor (importa sozinho) ou rode Tools/Editor/importar_personagem.py");
+		UE_LOG(LogHoops, Warning, TEXT("%s"), *Hud.BodyStatus);
 		return false;
 	}
 	HoopsDummyRig::FMeshMeasure Measure;
 	if (!HoopsDummyRig::MeasureMesh(MeshAsset, Measure))
 	{
-		UE_LOG(LogHoops, Warning, TEXT("Boneco: esqueleto sem os ossos esperados (foot_l, ball_l, hand_r...). Usando o corpo antigo."));
+		Hud.BodyStatus = TEXT("Boneco animado: esqueleto sem os ossos esperados (foot_l, ball_l, hand_r...). Reimporte o FBX.");
+		UE_LOG(LogHoops, Warning, TEXT("%s"), *Hud.BodyStatus);
 		return false;
 	}
 	if (!Measure.bRightHandOnRight)
@@ -1371,7 +1377,13 @@ bool AHoopsPlayerCharacter::TryLoadDummyRig()
 		Anim->SetBase(GetClip(BaseClip), DribbleIdlePlayRate, 0.0f, false);
 	}
 	ResetBallCarry(Hoops::BallHand::Right, 0.0);
-	UE_LOG(LogHoops, Log, TEXT("Boneco animado ativo: escala %.2f, yaw %.0f."), MeshScale, MeshYawOffset);
+	int32 ClipCount = 0;
+	for (const TObjectPtr<UAnimSequence>& Clip : DummyClips)
+	{
+		ClipCount += Clip ? 1 : 0;
+	}
+	Hud.BodyStatus = FString::Printf(TEXT("Boneco animado: ATIVO (%d/%d clipes)"), ClipCount, HoopsDummyRig::NumClips);
+	UE_LOG(LogHoops, Log, TEXT("Boneco animado ativo: escala %.2f, yaw %.0f, %d clipes."), MeshScale, MeshYawOffset, ClipCount);
 	return true;
 }
 
