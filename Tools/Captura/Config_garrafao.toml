@@ -1,0 +1,104 @@
+# Configuração do Projeto Garrafão para o Pose2Sim 0.10 (só o que muda em relação ao padrão do Pose2Sim).
+# O rodar_pose2sim.py mescla: padrão do Pose2Sim ← ESTE arquivo ← Config.toml da pasta do take ← opções.
+# Para ajustar UM take, crie um Config.toml na pasta dele só com as chaves que mudam (mesmo formato).
+
+[project]
+multi_person = false          # só o atleta no volume (operador e ajudante fora do quadro)
+participant_height = 'auto'   # ou a altura do atleta em metros (ex.: 1.88): melhora a escala do OpenSim
+participant_mass = 80.0       # kg; só afeta forças (não usamos)
+frame_rate = 'auto'           # lê do vídeo (gravar a 120 fps)
+frame_range = 'auto'          # corta o começo/fim em que o atleta não está bem visto
+
+[pose]
+pose_model = 'Whole_body'     # RTMW, 133 pontos com 21 por mão (o conversor usa a mão no drible).
+                              # 'Body_with_feet' = RTMPose HALPE 26 pontos: ~1,6× mais rápido, sem mãos.
+mode = 'balanced'             # 'performance' = modelos maiores (mãos melhores), bem mais lento na CPU
+det_frequency = 4             # detecta a pessoa a cada 4 quadros e rastreia no meio
+device = 'auto'               # GPU NVIDIA se o onnxruntime-gpu estiver instalado; senão CPU (OpenVINO)
+backend = 'auto'
+display_detection = false     # true: mostra os pontos ao vivo (mais lento)
+overwrite_pose = false        # não refaz a pose 2D se já existe (apague pose/ para refazer)
+save_video = 'to_video'       # vídeo com os pontos desenhados em pose/, para conferir
+predict_displacement = false  # basquete tem mudanças bruscas de direção
+average_likelihood_threshold = 0.5
+
+[synchronization]
+synchronization_gui = false   # o rodar_pose2sim.py --sync gui liga a janela
+display_sync_plots = false
+save_sync_plots = true        # gráficos em pose-sync/ para conferir
+keypoints_to_consider = 'all'
+approx_time_maxspeed = 'auto' # o --sync audio preenche com o instante do pulo de sincronia em cada câmera
+time_range_around_maxspeed = 2.0
+
+[calibration]
+calibration_type = 'calculate'   # 'convert' + convert_from = 'caliscope' se calibrar com o caliscope (ChArUco)
+
+   [calibration.calculate]
+   save_debug_images = true
+
+      [calibration.calculate.intrinsics]
+      # Lente de cada celular: 1 vez por celular/resolução/zoom (guarde o resultado e reutilize).
+      overwrite_intrinsics = false
+      intrinsics_extension = 'png'   # o rodar_pose2sim.py tira os PNGs do vídeo de ~40 s do tabuleiro que
+                                     # você põe em calibration/intrinsics/camNN/ (mp4 ou mov)
+      extract_every_N_sec = 1        # um quadro por segundo do vídeo do tabuleiro
+      intrinsics_corners_nb = [4, 7] # cantos INTERNOS do tabuleiro de 5×8 casas (gerar_tabuleiro.py)
+      intrinsics_square_size = 47    # mm (o gerar_tabuleiro.py imprime o valor; A3 = 47): MEÇA a casa impressa
+      show_detection_intrinsics = false  # automático: quadros sem o tabuleiro inteiro são ignorados
+
+      [calibration.calculate.extrinsics]
+      # Posição das câmeras: em TODA sessão (e se alguém esbarrar num tripé). Um vídeo curto (5 s) de cada câmera
+      # mostrando a quadra vazia em calibration/extrinsics/camNN/; o Pose2Sim abre o 1º quadro e você clica nos
+      # pontos abaixo, NA ORDEM ('C' começa, clique esquerdo marca, direito desfaz, 'H' = ponto escondido;
+      # mínimo 6, ideal 10+; fecha a janela para ir à próxima câmera).
+      calculate_extrinsics = true
+      extrinsics_method = 'scene'
+      extrinsics_extension = 'png'   # idem: PNG do quadro de 1 s do vídeo em calibration/extrinsics/camNN/
+      show_reprojection_error = true
+
+         [calibration.calculate.extrinsics.scene]
+         # Pontos da quadra em METROS. Origem: no chão, embaixo do centro do aro. X: para a direita de quem está
+         # embaixo da cesta olhando para a quadra; Y: para dentro da quadra; Z: para cima.
+         # Valores das medidas FIBA (canto EXTERNO das linhas). CONFIRA COM TRENA e corrija se a quadra for outra.
+         object_coords_3d = [
+            [-2.45, -1.575, 0.0],   #  1 garrafão: canto na linha de fundo, esquerda
+            [ 2.45, -1.575, 0.0],   #  2 garrafão: canto na linha de fundo, direita
+            [-2.45,  4.225, 0.0],   #  3 linha do lance livre: ponta esquerda
+            [ 2.45,  4.225, 0.0],   #  4 linha do lance livre: ponta direita
+            [ 0.0,   6.025, 0.0],   #  5 círculo do lance livre: ponto mais longe da cesta
+            [-6.60, -1.575, 0.0],   #  6 linha de 3 encontra a linha de fundo, esquerda
+            [ 6.60, -1.575, 0.0],   #  7 linha de 3 encontra a linha de fundo, direita
+            [ 0.0,   6.75,  0.0],   #  8 linha de 3: topo do arco
+            [-0.90, -0.375, 2.90],  #  9 tabela: canto de baixo, esquerda (face da frente)
+            [ 0.90, -0.375, 2.90],  # 10 tabela: canto de baixo, direita
+            [-0.90, -0.375, 3.95],  # 11 tabela: canto de cima, esquerda
+            [ 0.90, -0.375, 3.95]]  # 12 tabela: canto de cima, direita
+
+[triangulation]
+reproj_error_threshold_triangulation = 15
+likelihood_threshold_triangulation = 0.3
+min_cameras_for_triangulation = 2
+interp_if_gap_smaller_than = 24   # a 120 fps = 0,2 s (mão escondida atrás do corpo no drible)
+fill_large_gaps_with = 'last_value'
+make_c3d = false
+
+[filtering]
+reject_outliers = true
+filter = true
+type = 'butterworth'
+display_figures = false
+save_filt_plots = false
+make_c3d = false
+   [filtering.butterworth]
+   cut_off_frequency = 10   # Hz. Drible rápido (2–2,5 quiques/s): 12. Arremesso, bandeja, celebração: 8.
+   order = 4                # (o rodar_pose2sim.py --corte-hz troca por take)
+
+[markerAugmentation]
+feet_on_floor = false
+make_c3d = false
+
+[kinematics]
+use_augmentation = false   # IK direto nos pontos do RTMW (o modelo escalado fica com marcadores de mesmo nome)
+use_simple_model = false
+right_left_symmetry = true
+default_height = 1.85

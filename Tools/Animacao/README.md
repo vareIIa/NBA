@@ -65,6 +65,9 @@ blender --background --python montar_personagem_blender.py -- bvh_jogo SK_HoopsD
 # ou, sem Blender instalado:  pip install bpy  e  python montar_personagem_blender.py -- ...
 ```
 
+`--clipes Nome1,Nome2,...` troca a lista padrão de clipes (p.ex. para incluir um take da captura própria convertido por
+`Tools/Captura/pose2sim_para_bvh.py`, que grava no mesmo esqueleto e com a mesma hierarquia destes BVH).
+
 Ossos renomeados para o padrão da Unreal (`pelvis`, `spine_01..03`, `neck_01/02`, `head`, `clavicle_l`,
 `upperarm_l`, `lowerarm_l`, `hand_l`, `palm_l`, `fingers_l`, `thumb_l`, `thigh_l`, `calf_l`, `foot_l`, `ball_l`, ...).
 Malha "boneco de teste" com 3 materiais (`Pele`, `Uniforme`, `Tenis`) que o jogo colore em runtime.
