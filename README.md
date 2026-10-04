@@ -29,7 +29,7 @@ Jogo de basquete **sim-arcade** em **Unreal Engine 5**: bonito como os grandes, 
 
 ## Rodar o jogo
 
-👉 **[Como rodar o Freestyle no seu PC (UE 5.8)](docs/dev/COMO-RODAR.md)**
+👉 **[Como rodar o Freestyle no seu PC (UE 5.8)](docs/dev/COMO-RODAR.md)** · 🎥 **[Pauta da 1ª sessão de captura](docs/dev/SESSAO-CAPTURA-01.md)**
 
 | Pasta | O que é |
 |---|---|
