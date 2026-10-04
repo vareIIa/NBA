@@ -172,7 +172,8 @@ O 2K usa o mesmo mapa no treino. Comandos **extras nossos** só no Freestyle (n�
 | D-pad baixo | Resetar a posição (jogador + bola no spot atual) |
 | D-pad esquerda/direita | Trocar de spot / desafio |
 | View | Ligar/desligar overlay de laboratório (`10-modos.md §0.2`) |
-| Menu | Menu do Freestyle (manequim, cones, jogador, câmera lenta) |
+| Menu | Defensor manequim: sem → parado → mãos para cima → contesta → marca |
+| L3 | Câmera lenta (100% → 50% → 25%) |
 
 ## 9. Configurações (iguais às do 2K23)
 

@@ -52,9 +52,11 @@ Sem asset nenhum, o jogador aparece como um cilindro preto. Para ver o **Manny**
 | **D-pad cima** | Pedir a bola de volta |
 | **D-pad baixo** | Resetar no spot atual |
 | **D-pad esquerda/direita** | Trocar de spot (topo, alas, cantos, cotovelos, lance livre, logo) |
-| **View** | Liga/desliga o **laboratório** (histórico de inputs, janelas, chance, física) |
+| **View** | Liga/desliga o **laboratório** (histórico de inputs, janelas, chance, física, linha de contestação) |
+| **Menu** | **Defensor manequim**: sem defensor → parado (mãos baixas) → mãos para cima → contesta (pula) → marca e contesta |
+| **L3** (clicar o analógico esquerdo) | **Câmera lenta** 100% → 50% → 25% (o timing estica junto: é para analisar, não para treinar green) |
 
-Teclado (provisório): WASD mover · setas = Pro Stick · Espaço = X · Shift = RT · Ctrl = LT · G = pedir bola · Backspace = reset · 1/2 = spots · Tab = laboratório.
+Teclado (provisório): WASD mover · setas = Pro Stick · Espaço = X · Shift = RT · Ctrl = LT · G = pedir bola · Backspace = reset · 1/2 = spots · Tab = laboratório · M = defensor · T = câmera lenta.
 
 ## 5. O que testar e me contar
 
@@ -62,6 +64,7 @@ Teclado (provisório): WASD mover · setas = Pro Stick · Espaço = X · Shift =
 2. **Drible**: encadeie crossover → por trás → step-back → arremesso. Inputs no **fim** de cada drible contam como **ritmo** (mais rápido, combo sobe).
 3. **Pull-up**: corra lateralmente com a bola e aperte X. O arremesso vira *Pull-up* (janela um pouco menor) e mantém parte do embalo.
 4. **Laboratório** (View): veja quanto você segurou, o offset em ms, a janela e a chance.
+5. **Contestação** (Menu): com o defensor pulando a ~1,2 m, um green contestado deixa de ser garantido. No laboratório aparece a linha da mão do defensor até a trajetória (verde = livre, amarelo = leve, vermelho = contestado).
 
 Me diga **o que parece diferente do 2K23**: tempo do arremesso, velocidade do drible, resposta do analógico. Os números ficam em `Plugins/HoopsSim/Source/HoopsSimCore` (`ShotTuning` e a tabela de dribles) e são fáceis de ajustar.
 

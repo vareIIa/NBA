@@ -15,7 +15,9 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Garrafao.h"
+#include "DrawDebugHelpers.h"
 #include "HoopsBall.h"
+#include "HoopsDummyDefender.h"
 #include "HoopsFreestyleGameMode.h"
 #include "HoopsHoop.h"
 #include "HoopsMeshUtil.h"
@@ -25,6 +27,7 @@
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
+#include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
@@ -132,6 +135,7 @@ void AHoopsPlayerCharacter::BeginPlay()
 	Dribble = Hoops::DribbleController(EnergyConfig);
 
 	HoopsMeshUtil::SetColor(this, PlaceholderBody, FLinearColor(0.08f, 0.08f, 0.09f));
+	Hud.DummyLabel = TEXT("Sem defensor");
 	TryLoadMannequin();
 	EnsureWorldRefs();
 	ResetToSpot(0);
@@ -249,6 +253,8 @@ void AHoopsPlayerCharacter::EnsureInputConfig()
 		{TEXT("IA_PrevSpot"), EKeys::Gamepad_DPad_Left, EKeys::One},
 		{TEXT("IA_NextSpot"), EKeys::Gamepad_DPad_Right, EKeys::Two},
 		{TEXT("IA_ToggleLab"), EKeys::Gamepad_Special_Left, EKeys::Tab},           // View
+		{TEXT("IA_DummyMode"), EKeys::Gamepad_Special_Right, EKeys::M},            // Menu: defensor manequim
+		{TEXT("IA_SlowMotion"), EKeys::Gamepad_LeftThumbstick, EKeys::T},          // L3: câmera lenta (laboratório)
 	};
 	for (const FButton& Button : Buttons)
 	{
@@ -292,6 +298,8 @@ void AHoopsPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	Input->BindAction(Get(TEXT("IA_PrevSpot")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnPrevSpot);
 	Input->BindAction(Get(TEXT("IA_NextSpot")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnNextSpot);
 	Input->BindAction(Get(TEXT("IA_ToggleLab")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnToggleLab);
+	Input->BindAction(Get(TEXT("IA_DummyMode")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnCycleDummy);
+	Input->BindAction(Get(TEXT("IA_SlowMotion")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnSlowMotion);
 }
 
 void AHoopsPlayerCharacter::PawnClientRestart()
@@ -477,6 +485,40 @@ void AHoopsPlayerCharacter::OnToggleLab(const FInputActionValue& Value)
 	Hud.bLabOverlay = !Hud.bLabOverlay;
 }
 
+void AHoopsPlayerCharacter::OnCycleDummy(const FInputActionValue& Value)
+{
+	EnsureWorldRefs();
+	if (!Hoop)
+	{
+		return;
+	}
+	if (!Dummy)
+	{
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		Dummy = GetWorld()->SpawnActor<AHoopsDummyDefender>(AHoopsDummyDefender::StaticClass(), FTransform::Identity, Params);
+	}
+	if (!Dummy)
+	{
+		return;
+	}
+	const int32 Count = static_cast<int32>(EHoopsDummyMode::Count);
+	const EHoopsDummyMode Next = static_cast<EHoopsDummyMode>((static_cast<int32>(Dummy->GetMode()) + 1) % Count);
+	const FVector Feet = GetActorLocation() - FVector(0.0, 0.0, CapsuleHalfHeightCm);
+	Dummy->SetMode(Next, Feet, Hoop->GetRimFloorPointWorld());
+	Hud.DummyLabel = AHoopsDummyDefender::ModeLabel(Next);
+	LogInput(FString::Printf(TEXT("Menu: defensor = %s"), *Hud.DummyLabel));
+}
+
+void AHoopsPlayerCharacter::OnSlowMotion(const FInputActionValue& Value)
+{
+	// 100% -> 50% -> 25% -> 100%. O timing do arremesso usa o tempo do jogo, então a janela "estica" junto.
+	const float Next = Hud.TimeScale > 0.75f ? 0.5f : (Hud.TimeScale > 0.375f ? 0.25f : 1.0f);
+	Hud.TimeScale = Next;
+	UGameplayStatics::SetGlobalTimeDilation(this, Next);
+	LogInput(FString::Printf(TEXT("L3: velocidade %.0f%%"), Next * 100.0f));
+}
+
 // ============================================================================ Tick
 
 void AHoopsPlayerCharacter::Tick(float DeltaSeconds)
@@ -508,6 +550,11 @@ void AHoopsPlayerCharacter::Tick(float DeltaSeconds)
 	}
 
 	UpdateBallPossession(DeltaSeconds);
+
+	if (Dummy)
+	{
+		Dummy->UpdateTargets(GetActorLocation() - FVector(0.0, 0.0, CapsuleHalfHeightCm), Hoop->GetRimFloorPointWorld());
+	}
 
 	// Câmera estilo 2K: olhando para a cesta, alta, seguindo o jogador.
 	const float CameraYaw = static_cast<float>(CameraForwardFlat().Rotation().Yaw);
@@ -783,10 +830,46 @@ Hoops::ShotContext AHoopsPlayerCharacter::BuildJumperContext() const
 	return Context;
 }
 
-double AHoopsPlayerCharacter::ComputeContest() const
+Hoops::ContestBreakdown AHoopsPlayerCharacter::SampleContest() const
 {
-	// Freestyle sem defensor: livre. O defensor manequim (docs/10-modos.md §0.1) entra aqui.
-	return 0.0;
+	Hoops::ContestBreakdown Result;
+	if (!Dummy || Dummy->GetMode() == EHoopsDummyMode::Off || !Hoop)
+	{
+		return Result; // Freestyle sem defensor: livre
+	}
+	const FVector Feet = GetActorLocation() - FVector(0.0, 0.0, CapsuleHalfHeightCm);
+	// Antes da bola chegar ao set point, usa o set point como ponto de soltura previsto.
+	const FVector Release = ShotPhase == EShotPhase::Jumper ? SetPointWorldLocation() : Ball->GetActorLocation();
+	return Hoops::ComputeContest(Dummy->GetPose(), HoopsUnits::ToSim(Feet), HoopsUnits::ToSim(Release), HoopsUnits::ToSim(Hoop->GetRimCenterWorld()));
+}
+
+double AHoopsPlayerCharacter::ContestAtRelease()
+{
+	// Janela em torno da soltura (docs/03 §3.3): maior contestação nos últimos ~100 ms.
+	const double ReleaseTime = Now();
+	LastContest = SampleContest();
+	for (const TPair<double, double>& Sample : ContestSamples)
+	{
+		if (ReleaseTime - Sample.Key <= 0.10 && Sample.Value > LastContest.Contest)
+		{
+			LastContest.Contest = Sample.Value;
+		}
+	}
+	ContestSamples.Reset();
+	return LastContest.Contest;
+}
+
+void AHoopsPlayerCharacter::DrawContestDebug() const
+{
+	if (!Hud.bLabOverlay || !Dummy || Dummy->GetMode() == EHoopsDummyMode::Off)
+	{
+		return;
+	}
+	const FVector HandPos = HoopsUnits::ToUnreal(LastContest.HandPosition);
+	const FVector PathPoint = HoopsUnits::ToUnreal(LastContest.ClosestPathPoint);
+	const FColor LineColor = LastContest.Contest < 0.15 ? FColor::Green : (LastContest.Contest < 0.4 ? FColor::Yellow : FColor::Red);
+	DrawDebugLine(GetWorld(), HandPos, PathPoint, LineColor, false, 2.5f, 0, 2.0f);
+	DrawDebugSphere(GetWorld(), HandPos, 8.0f, 8, LineColor, false, 2.5f);
 }
 
 void AHoopsPlayerCharacter::BeginShot(bool bFromProStick)
@@ -808,6 +891,11 @@ void AHoopsPlayerCharacter::BeginShot(bool bFromProStick)
 
 	ShotContext = BuildJumperContext();
 	ShotWindows = ShotModel.ComputeWindows(ShotContext); // travada no gather
+	ContestSamples.Reset();
+	if (Dummy)
+	{
+		Dummy->NotifyShotStarted(Now());
+	}
 	GatherTime = Now();
 	bJumpCommitted = false;
 	bShotFromProStick = bFromProStick;
@@ -834,6 +922,8 @@ void AHoopsPlayerCharacter::UpdateShot(float DeltaSeconds)
 {
 	const double HoldMs = (Now() - GatherTime) * 1000.0;
 	const Hoops::ShotTuning& Tuning = ShotModel.GetTuning();
+
+	ContestSamples.Add(TPair<double, double>(Now(), SampleContest().Contest));
 
 	// Bola sobe até o set point.
 	const FVector Target = SetPointWorldLocation();
@@ -869,8 +959,9 @@ void AHoopsPlayerCharacter::ReleaseShot()
 	}
 
 	const double HoldMs = (Now() - GatherTime) * 1000.0;
-	const Hoops::ShotEvaluation Eval = ShotModel.Evaluate(ShotContext, ShotWindows, HoldMs, ComputeContest());
+	const Hoops::ShotEvaluation Eval = ShotModel.Evaluate(ShotContext, ShotWindows, HoldMs, ContestAtRelease());
 	const Hoops::ShotDecision Decision = ShotModel.Decide(Eval, Random);
+	DrawContestDebug();
 
 	Hoops::ShotRealizeParams Params;
 	Params.ReleasePosition = HoopsUnits::ToSim(Ball->GetActorLocation());
@@ -896,6 +987,8 @@ void AHoopsPlayerCharacter::ReleaseShot()
 	Hud.LabLines.Add(FString::Printf(TEXT("Segurou %.0f ms | ideal %.0f ms | offset %+.0f ms"), HoldMs, ShotWindows.IdealReleaseMs, Eval.TimingOffsetMs));
 	Hud.LabLines.Add(FString::Printf(TEXT("Janelas +-: green %.0f | bom %.0f | leve %.0f ms"), ShotWindows.PerfectHalfMs, ShotWindows.GoodHalfMs, ShotWindows.SlightHalfMs));
 	Hud.LabLines.Add(FString::Printf(TEXT("L=%.2f  P=%.0f%%  garantida=%s  contest=%.2f"), Eval.Logit, Eval.Probability * 100.0, Eval.bGuaranteed ? TEXT("sim") : TEXT("nao"), Eval.Contest));
+	Hud.LabLines.Add(FString::Printf(TEXT("Contest: mao a %.2f m | prox %.2f | angulo %.2f | altura %.2f | rating %.2f"),
+		LastContest.HandToPathMeters, LastContest.Proximity, LastContest.Angular, LastContest.HeightFactor, LastContest.RatingFactor));
 	Hud.LabLines.Add(FString::Printf(TEXT("Fisica: %s em %d tentativa(s)"), Realized.bScored ? TEXT("cesta") : TEXT("erro"), Realized.Attempts));
 }
 
@@ -944,7 +1037,8 @@ void AHoopsPlayerCharacter::ReleaseFinish()
 {
 	// Timing de bandeja desligado por padrão (como "Shot Timing: Shots Only" do 2K23): conta como soltura "Boa".
 	const double HoldMs = bFinishIsDunk ? ShotWindows.IdealReleaseMs : ShotWindows.IdealReleaseMs + ShotWindows.PerfectHalfMs + 1.0;
-	const Hoops::ShotEvaluation Eval = ShotModel.Evaluate(ShotContext, ShotWindows, HoldMs, ComputeContest());
+	ContestSamples.Reset();
+	const Hoops::ShotEvaluation Eval = ShotModel.Evaluate(ShotContext, ShotWindows, HoldMs, ContestAtRelease());
 	const Hoops::ShotDecision Decision = ShotModel.Decide(Eval, Random);
 
 	Hoops::BallState Initial;
@@ -1067,8 +1161,8 @@ void AHoopsPlayerCharacter::ShowFeedback(const Hoops::ShotEvaluation& Eval, cons
 	Hud.FeedbackTime = Now();
 	Hud.FeedbackTiming = FString::Printf(TEXT("TIMING: %s"), *Ansi(Hoops::TimingGradeLabel(Eval.Timing)));
 	Hud.FeedbackCoverage = FString::Printf(TEXT("COBERTURA: %s"), *Ansi(Hoops::CoverageGradeLabel(Eval.Coverage)));
-	Hud.FeedbackDetail = FString::Printf(TEXT("%s | %+.0f ms | chance %.0f%%"),
-		*Ansi(Hoops::ShotTypeLabel(Context.Type)), Eval.TimingOffsetMs, Eval.Probability * 100.0);
+	Hud.FeedbackDetail = FString::Printf(TEXT("%s | %+.0f ms | cobertura %.0f%% | chance %.0f%%"),
+		*Ansi(Hoops::ShotTypeLabel(Context.Type)), Eval.TimingOffsetMs, Eval.Contest * 100.0, Eval.Probability * 100.0);
 
 	switch (Eval.Timing)
 	{

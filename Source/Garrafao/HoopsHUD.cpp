@@ -69,10 +69,12 @@ void AHoopsHUD::DrawHUD()
 
 	// ---------------- Sessão (topo esquerdo)
 	const float Pct = Data.Attempts > 0 ? 100.0f * static_cast<float>(Data.Makes) / static_cast<float>(Data.Attempts) : 0.0f;
-	DrawRect(PanelColor, 20.0f, 20.0f, 520.0f, 54.0f);
+	DrawRect(PanelColor, 20.0f, 20.0f, 560.0f, 74.0f);
 	DrawText(FString::Printf(TEXT("FREESTYLE  |  %s"), *Data.SpotName), FLinearColor::White, 32.0f, 26.0f, Medium, 1.0f);
 	DrawText(FString::Printf(TEXT("Cestas %d/%d (%.0f%%)   Greens %d   Sequencia %d (melhor %d)"),
 		Data.Makes, Data.Attempts, Pct, Data.Greens, Data.Streak, Data.BestStreak), DimText, 32.0f, 50.0f, Small, 1.0f);
+	const FString TimeLabel = Data.TimeScale < 0.99f ? FString::Printf(TEXT("   |   CAMERA LENTA %.0f%%"), Data.TimeScale * 100.0f) : FString();
+	DrawText(FString::Printf(TEXT("Defensor: %s%s"), *Data.DummyLabel, *TimeLabel), DimText, 32.0f, 70.0f, Small, 1.0f);
 
 	// ---------------- Energia, Explosões e drible (embaixo à esquerda)
 	const float BaseY = H - 110.0f;
@@ -91,7 +93,7 @@ void AHoopsHUD::DrawHUD()
 		FLinearColor::White, 32.0f, BaseY + 58.0f, Small, 1.0f);
 
 	// ---------------- Dica de controles (embaixo à direita)
-	const FString Hint = TEXT("X arremesso | RS dribles (segurar baixo = arremesso) | RT sprint/explosao | RT+RS cima = enterrada | D-pad: bola / reset / spots | View: laboratorio");
+	const FString Hint = TEXT("X arremesso | RS dribles (segurar baixo = arremesso) | RT sprint/explosao | RT+RS cima = enterrada | D-pad: bola / reset / spots | Menu: defensor | L3: camera lenta | View: laboratorio");
 	float HintW = 0.0f;
 	float HintH = 0.0f;
 	GetTextSize(Hint, HintW, HintH, Small, 1.0f);

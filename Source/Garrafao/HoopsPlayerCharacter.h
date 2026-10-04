@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "HoopsSimCore/HoopsContest.h"
 #include "HoopsSimCore/HoopsCourt.h"
 #include "HoopsSimCore/HoopsDribble.h"
 #include "HoopsSimCore/HoopsDribbleMoves.h"
@@ -12,6 +13,7 @@
 #include "HoopsPlayerCharacter.generated.h"
 
 class AHoopsBall;
+class AHoopsDummyDefender;
 class AHoopsHoop;
 class UCameraComponent;
 class UInputAction;
@@ -56,6 +58,8 @@ struct FHoopsHudData
 	int32 Streak = 0;
 	int32 BestStreak = 0;
 	FString SpotName;
+	FString DummyLabel;
+	float TimeScale = 1.0f;
 
 	// Laboratório.
 	bool bLabOverlay = false;
@@ -148,6 +152,8 @@ private:
 	void OnPrevSpot(const FInputActionValue& Value);
 	void OnNextSpot(const FInputActionValue& Value);
 	void OnToggleLab(const FInputActionValue& Value);
+	void OnCycleDummy(const FInputActionValue& Value);
+	void OnSlowMotion(const FInputActionValue& Value);
 
 	void LogInput(const FString& Label);
 
@@ -169,7 +175,10 @@ private:
 	void UpdateFinish(float DeltaSeconds);
 	void ReleaseFinish();
 	Hoops::ShotContext BuildJumperContext() const;
-	double ComputeContest() const;
+	// Contestação agora (uma amostra) e na soltura (maior valor na janela de ~100 ms antes da soltura).
+	Hoops::ContestBreakdown SampleContest() const;
+	double ContestAtRelease();
+	void DrawContestDebug() const;
 
 	void UpdateBallPossession(float DeltaSeconds);
 	void PassBallToPlayer();
@@ -205,6 +214,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AHoopsHoop> Hoop;
 
+	UPROPERTY(Transient)
+	TObjectPtr<AHoopsDummyDefender> Dummy;
+
 	// ---------------- Estado (núcleo)
 	Hoops::ShotModel ShotModel;
 	Hoops::Rng Random;
@@ -236,6 +248,8 @@ private:
 	Hoops::ShotContext ShotContext;
 	Hoops::TimingWindows ShotWindows;
 	bool bAwaitingShotResult = false;
+	TArray<TPair<double, double>> ContestSamples; // (tempo, contestação) durante o arremesso
+	Hoops::ContestBreakdown LastContest;
 
 	// Rebotedor do Freestyle.
 	double ReturnBallAt = -1.0;
