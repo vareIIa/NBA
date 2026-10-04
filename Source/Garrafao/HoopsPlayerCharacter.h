@@ -126,11 +126,16 @@ public:
 	// --- Green (estilo 2K Park) ---
 	// Quanto tempo o jogador segura o follow-through depois de um green (s). Soltura normal segura menos.
 	UPROPERTY(EditAnywhere, Category = "Hoops|Green", meta = (ClampMin = "0.2", ClampMax = "3.0"))
-	float GreenHoldSeconds = 1.3f;
+	float GreenHoldSeconds = 1.1f;
 
-	// Celebra sozinho quando um green cai (alterna as celebrações).
+	// Celebra sozinho quando um green cai (alterna as celebrações). Com ou sem isso, o D-pad celebra por ~2,5 s
+	// depois de uma cesta: cima = flex, direita = shrug, esquerda = segura a pose do arremesso.
 	UPROPERTY(EditAnywhere, Category = "Hoops|Green")
 	bool bAutoCelebrate = true;
+
+	// Feedback do green na hora da soltura (padrão) ou só quando a bola chega ao aro (como no 2K23).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Green")
+	bool bGreenFeedbackAtRim = false;
 
 	// Som do green (sintetizado, sem asset).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Green", meta = (ClampMin = "0.0", ClampMax = "2.0"))
@@ -181,7 +186,7 @@ public:
 
 	// Velocidade do drible parado (o mocap é lento: 1 quique a cada 0,85 s).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao", meta = (ClampMin = "0.5", ClampMax = "2.5"))
-	float DribbleIdlePlayRate = 1.3f;
+	float DribbleIdlePlayRate = 0.9f; // o clipe já tem 2 quiques por loop: ~2,1 quiques/s, ritmo do 2K23 (docs/17 §4.1)
 
 	// Centro da bola em relação à palma no drible (cm; X = frente do jogador, Y = para fora, Z = cima).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao")
@@ -272,7 +277,10 @@ private:
 	UAnimSequence* GetActionClip(EHoopsClip Clip) const; // sem cair para a base: nullptr se não houver
 	void PlayGreenChime();
 	void OnShotReleased(const Hoops::ShotEvaluation& Eval, double HoldMs);
+	void FireShotFeedback();          // banner + "GREEN!" + som (na soltura ou no aro)
+	void UpdatePendingFeedback();
 	void Celebrate();
+	bool TryDpadCelebration(int32 Slot); // true = usou o D-pad para celebrar (janela depois da cesta)
 	// Bola segura pelo boneco: roda no Tick da bola, depois da animação deste frame.
 	void LateUpdateHeldBall(float DeltaSeconds);
 	FVector HandBallPoint(Hoops::BallHand Hand) const;
@@ -350,6 +358,8 @@ private:
 	double SwitchFlightSeconds = 0.3;
 	// Green: último arremesso foi green (celebra se cair) e qual celebração vem a seguir.
 	bool bLastShotGreen = false;
+	bool bFeedbackPending = false;   // esperando a bola chegar ao aro (bGreenFeedbackAtRim)
+	double LastMakeTime = -100.0;
 	FVector ShotDrift = FVector::ZeroVector; // embalo horizontal do arremesso com o boneco (fadeaway, step-back)
 	float CurrentBaseRateAbs = 1.0f;         // playrate do loop de base (ajusta o detector do empurrão)
 	int32 CelebrationIndex = 0;

@@ -66,6 +66,12 @@ namespace
 	constexpr int32 NumSpots = static_cast<int32>(UE_ARRAY_COUNT(Spots));
 
 	FString Ansi(const char* Text) { return FString(ANSI_TO_TCHAR(Text)); }
+
+	// Medidor do 2K23: enche até o topo no ponto ideal e, segurando além, volta a descer (lado "tarde").
+	float FoldMeter(double Fraction)
+	{
+		return static_cast<float>(Fraction <= 1.0 ? Fraction : FMath::Max(0.0, 2.0 - Fraction));
+	}
 }
 
 AHoopsPlayerCharacter::AHoopsPlayerCharacter()
@@ -355,6 +361,7 @@ void AHoopsPlayerCharacter::ResetToSpot(int32 SpotIndex)
 
 	ShotPhase = EShotPhase::None;
 	bAwaitingShotResult = false;
+	bFeedbackPending = false;
 	ReturnBallAt = -1.0;
 	bHasBall = true;
 	Dribble.ResetPossession();
@@ -480,6 +487,10 @@ void AHoopsPlayerCharacter::OnPlayCallPressed(const FInputActionValue& Value) { 
 
 void AHoopsPlayerCharacter::OnRequestBall(const FInputActionValue& Value)
 {
+	if (TryDpadCelebration(0))
+	{
+		return;
+	}
 	LogInput(TEXT("D-pad cima: pedir a bola"));
 	if (!bHasBall && Ball && Ball->IsFree())
 	{
@@ -488,8 +499,21 @@ void AHoopsPlayerCharacter::OnRequestBall(const FInputActionValue& Value)
 }
 
 void AHoopsPlayerCharacter::OnResetSpot(const FInputActionValue& Value) { ResetToSpot(CurrentSpot); }
-void AHoopsPlayerCharacter::OnPrevSpot(const FInputActionValue& Value) { ResetToSpot(CurrentSpot - 1); }
-void AHoopsPlayerCharacter::OnNextSpot(const FInputActionValue& Value) { ResetToSpot(CurrentSpot + 1); }
+void AHoopsPlayerCharacter::OnPrevSpot(const FInputActionValue& Value)
+{
+	if (!TryDpadCelebration(2))
+	{
+		ResetToSpot(CurrentSpot - 1);
+	}
+}
+
+void AHoopsPlayerCharacter::OnNextSpot(const FInputActionValue& Value)
+{
+	if (!TryDpadCelebration(1))
+	{
+		ResetToSpot(CurrentSpot + 1);
+	}
+}
 
 void AHoopsPlayerCharacter::OnToggleLab(const FInputActionValue& Value)
 {
@@ -566,6 +590,7 @@ void AHoopsPlayerCharacter::Tick(float DeltaSeconds)
 	}
 
 	UpdateBallPossession(DeltaSeconds);
+	UpdatePendingFeedback();
 
 	if (Dummy)
 	{
@@ -941,6 +966,7 @@ void AHoopsPlayerCharacter::BeginShot(bool bFromProStick)
 	}
 	GatherTime = Now();
 	bJumpCommitted = false;
+	bFeedbackPending = false;
 	ShotDrift = FVector::ZeroVector;
 	bShotFromProStick = bFromProStick;
 	ShotPhase = EShotPhase::Jumper;
@@ -1176,6 +1202,8 @@ void AHoopsPlayerCharacter::UpdateBallPossession(float DeltaSeconds)
 	{
 		if (Ball->ConsumeScoreEvent())
 		{
+			LastMakeTime = Now();
+			UpdatePendingFeedback(); // modo "no aro": a cesta também dispara o feedback
 			if (bLastShotGreen && bAutoCelebrate)
 			{
 				Celebrate();
@@ -1184,7 +1212,7 @@ void AHoopsPlayerCharacter::UpdateBallPossession(float DeltaSeconds)
 			++Hud.Makes;
 			++Hud.Streak;
 			Hud.BestStreak = FMath::Max(Hud.BestStreak, Hud.Streak);
-			ReturnBallAt = Now() + 0.9;
+			ReturnBallAt = Now() + (bLastShotGreen ? 1.8 : 0.9); // green: tempo para segurar a pose e celebrar
 		}
 		else if (Ball->HasTouchedFloorSinceLaunch() || Ball->GetSecondsSinceLaunch() > 4.0)
 		{
@@ -1269,7 +1297,8 @@ void AHoopsPlayerCharacter::ShowFeedback(const Hoops::ShotEvaluation& Eval, cons
 	{
 		return;
 	}
-	Hud.bShowFeedback = true;
+	// No modo "no aro", o banner só aparece quando a bola chega na cesta (FireShotFeedback).
+	Hud.bShowFeedback = !bGreenFeedbackAtRim;
 	Hud.FeedbackTime = Now();
 	Hud.FeedbackTiming = FString::Printf(TEXT("TIMING: %s"), *Ansi(Hoops::TimingGradeLabel(Eval.Timing)));
 	Hud.FeedbackCoverage = FString::Printf(TEXT("COBERTURA: %s"), *Ansi(Hoops::CoverageGradeLabel(Eval.Coverage)));
@@ -1301,7 +1330,7 @@ void AHoopsPlayerCharacter::UpdateHud()
 	{
 		const double Ideal = ShotWindows.IdealReleaseMs;
 		const double HoldMs = (Now() - GatherTime) * 1000.0;
-		Hud.MeterFill = static_cast<float>(HoldMs / Ideal);
+		Hud.MeterFill = FoldMeter(HoldMs / Ideal);
 		Hud.GreenStart = static_cast<float>((Ideal - ShotWindows.PerfectHalfMs) / Ideal);
 		Hud.GreenEnd = static_cast<float>((Ideal + ShotWindows.PerfectHalfMs) / Ideal);
 		Hud.GoodStart = static_cast<float>((Ideal - ShotWindows.GoodHalfMs) / Ideal);
@@ -1741,8 +1770,8 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 					PushPeriod = FMath::Lerp(PushPeriod, Interval, 0.5);
 				}
 				LastPushTime = T;
-				// A mão leva ~meio ciclo para voltar ao topo, onde recebe a bola.
-				BeginBallFlight(Target, CarryHand, FMath::Clamp(PushPeriod * 0.5, 0.26, 0.55));
+				// A mão leva pouco mais de meio ciclo para voltar ao topo, onde recebe a bola.
+				BeginBallFlight(Target, CarryHand, FMath::Clamp(PushPeriod * 0.6, 0.2, 0.55));
 			}
 		}
 	}
@@ -1775,7 +1804,7 @@ void AHoopsPlayerCharacter::OnShotReleased(const Hoops::ShotEvaluation& Eval, do
 	bLastShotGreen = bGreen;
 
 	// Medidor congelado na soltura, com a cor do resultado.
-	Hud.ResultFill = static_cast<float>(HoldMs / FMath::Max(1.0, ShotWindows.IdealReleaseMs));
+	Hud.ResultFill = FoldMeter(HoldMs / FMath::Max(1.0, ShotWindows.IdealReleaseMs));
 	Hud.ResultTime = Now();
 	switch (Eval.Timing)
 	{
@@ -1785,10 +1814,10 @@ void AHoopsPlayerCharacter::OnShotReleased(const Hoops::ShotEvaluation& Eval, do
 	case Hoops::TimingGrade::SlightlyLate: Hud.ResultColor = FLinearColor(1.0f, 0.85f, 0.2f); break;
 	default: Hud.ResultColor = FLinearColor(1.0f, 0.3f, 0.25f); break;
 	}
-	if (bGreen)
+	bFeedbackPending = bGreenFeedbackAtRim;
+	if (!bFeedbackPending)
 	{
-		Hud.GreenTime = Now();
-		PlayGreenChime();
+		FireShotFeedback();
 	}
 
 	// Segura o follow-through (braço do arremesso no alto, "pulso quebrado") enquanto as pernas aterrissam.
@@ -1849,4 +1878,67 @@ void AHoopsPlayerCharacter::PlayGreenChime()
 	GreenChime->bLooping = false;
 	GreenChime->QueueAudio(reinterpret_cast<const uint8*>(Samples.GetData()), Samples.Num() * static_cast<int32>(sizeof(int16)));
 	UGameplayStatics::PlaySound2D(this, GreenChime, GreenSoundVolume);
+}
+
+void AHoopsPlayerCharacter::FireShotFeedback()
+{
+	bFeedbackPending = false;
+	if (bShotFeedbackEnabled)
+	{
+		Hud.bShowFeedback = true;
+		Hud.FeedbackTime = Now();
+	}
+	if (bLastShotGreen)
+	{
+		Hud.GreenTime = Now();
+		PlayGreenChime();
+	}
+}
+
+void AHoopsPlayerCharacter::UpdatePendingFeedback()
+{
+	if (!bFeedbackPending || !Ball || !Hoop)
+	{
+		return;
+	}
+	// Modo 2K23: dispara quando a bola chega ao aro (ou cai, ou demora demais).
+	const bool bAtRim = FVector::Dist(Ball->GetActorLocation(), Hoop->GetRimCenterWorld()) < 60.0;
+	const bool bDone = Now() - LastMakeTime < 0.05 || Ball->HasTouchedFloorSinceLaunch() || Ball->GetSecondsSinceLaunch() > 3.0;
+	if (bAtRim || bDone)
+	{
+		FireShotFeedback();
+	}
+}
+
+bool AHoopsPlayerCharacter::TryDpadCelebration(int32 Slot)
+{
+	// Janela de ~2,5 s depois de uma cesta, sem a bola na mão (docs/17 §2.1). Fora dela o D-pad faz o de sempre.
+	if (!bRigActive || bHasBall || Now() - LastMakeTime > 2.5)
+	{
+		return false;
+	}
+	UHoopsAnimInstance* Anim = GetHoopsAnim();
+	if (!Anim)
+	{
+		return false;
+	}
+	if (Slot == 2)
+	{
+		// Segura a pose do arremesso (pulso quebrado no alto).
+		if (UAnimSequence* Shot = GetActionClip(EHoopsClip::JumpShotR))
+		{
+			Anim->PlayUpperBody(Shot, HoopsDummyRig::JumpShotFollowThroughSeconds, 0.0f, 0.2f, 1.4f, 0.35f);
+			LogInput(TEXT("Celebracao: segura a pose"));
+		}
+		return true;
+	}
+	UAnimSequence* Clip = GetActionClip(Slot == 0 ? EHoopsClip::CelebrateFlex : EHoopsClip::CelebrateShrug);
+	if (!Clip)
+	{
+		return false;
+	}
+	const float Length = static_cast<float>(Clip->GetPlayLength());
+	Anim->PlayUpperBody(Clip, 0.0f, 1.0f, 0.2f, FMath::Max(0.3f, Length - 0.3f), 0.3f);
+	LogInput(FString::Printf(TEXT("Celebracao (D-pad): %s"), *Clip->GetName()));
+	return true;
 }

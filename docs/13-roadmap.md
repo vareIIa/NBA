@@ -19,7 +19,10 @@
 - [x] **Modo Freestyle** com overlay de laboratório (inputs, janelas, contestação, câmera lenta)
 - [ ] Teste de 10.000 arremessos (núcleo: feito) e medidor de latência input→pose (falta)
 - [x] **Boneco animado com mocap aberto** (CMU): drible parado/andando/correndo/de costas/de lado nas duas mãos, andar, correr, arremesso saindo do drible sincronizado com o green; a bola segue a mão animada (Tools/Animacao)
-- [x] Green v1 estilo 2K Park: medidor congelado/piscando, "GREEN!", som, follow-through segurado, celebração automática (flex/shrug)
+- [x] Green v1 estilo 2K Park: medidor do 2K23 (enche e esvazia), "GREEN!", som, follow-through segurado, celebração automática + D-pad, modo "feedback no aro"
+- [x] Ritmo do drible ~2,1–2,5 quiques/s (braço reamostrado; docs/17 §4.1)
+- [ ] P0 restante do `docs/17` §6.1: camadas de som (tênis, rede), mão de apoio descendo antes, virar e voltar depois do green, cancelar drible antes do 1º quique + speedboost/cross launch
+- [ ] Animações melhores: sujeito 102 da CMU (spin, finta, pump fake, drive), Mixamo (celebrações), pacote do Fab (decisão do diretor) ou captura com os atletas (`docs/18`)
 - [ ] Animações dos dribles do Pro Stick (crossover v1 feito), bandeja/enterrada (124_06), pull-up/fadeaway próprios
 - [ ] Animações: Motion Matching (GASP) com o personagem do jogo
 - [ ] Primeira sessão de captura com os atletas do diretor

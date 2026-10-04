@@ -50,7 +50,15 @@ O boneco é um "manequim de teste" (partes rígidas, cores de pele/uniforme/tên
 
 Ajustes no painel Details do jogador durante o Play (categoria *Hoops*): `BodyHeightCm` (altura), `MeshYawAdjust` (se ele aparecer de lado/de costas), `DribbleIdlePlayRate` (velocidade do drible parado), `DribbleBallOffset`/`ShotBallOffset` (onde a bola fica na mão), cores.
 
-**Green (estilo 2K Park)**: soltou no green → o medidor congela onde você soltou e pisca em verde, "GREEN!" sobe ao lado, toca um "ding", o jogador **segura o follow-through** (braço no alto enquanto aterrissa) e, se cair, **celebra** (flex / shrug, alternando). Ajustes em *Hoops|Green*: `GreenHoldSeconds`, `bAutoCelebrate`, `GreenSoundVolume`.
+**Drible no ritmo do 2K23**: o braço do drible parado/andando/correndo agora faz ~2,1–2,5 quiques/s (o mocap original fazia ~1–1,5; ver `docs/17-park-green-e-feel.md` §4.1).
+
+**Green (estilo 2K Park)** — sequência de ~2,5 s, medida nos seus vídeos do 2K23 (`docs/17`):
+- **Medidor do 2K23**: enche até o topo no ponto ideal e, se você segurar além, volta a descer. Depois da soltura fica ~1 s congelado onde você soltou, na cor do resultado; no green pisca em verde.
+- **"GREEN!"** sobe ao lado do jogador + um **"ding"** (sintetizado) + banner de timing/cobertura no canto.
+- O jogador **segura o follow-through** (~1,1 s no green, ~0,45 s nos outros) enquanto as pernas aterrissam.
+- Se cair: **celebração automática** (flex / shrug, alternando) e o rebotedor espera um pouco mais para devolver a bola.
+- **D-pad nos ~2,5 s depois da cesta** (sem a bola na mão): **cima = flex**, **direita = shrug**, **esquerda = segura a pose do arremesso**. Fora dessa janela o D-pad faz o de sempre.
+- Ajustes em *Hoops|Green*: `GreenHoldSeconds`, `bAutoCelebrate`, `GreenSoundVolume`, `bGreenFeedbackAtRim` (ligado = o "GREEN!"/som/banner só aparecem quando a bola chega ao aro, como no 2K23; desligado = na hora, como o "Simple" do 2K25).
 
 Os dribles que trocam de mão (crossover, entre as pernas, por trás) tocam o **crossover do mocap** por enquanto; spin, step-back e hesitação ainda sem animação própria, e bandeja/enterrada usam o arremesso. Vêm na próxima etapa.
 

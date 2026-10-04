@@ -271,6 +271,25 @@ def layer_upper(lower, upper, spine_weight=0.5):
     return out
 
 
+def speed_up_upper(clip, factor, bones=None):
+    """Braços (e o que mais estiver em `bones`) `factor` vezes mais rápidos DENTRO do mesmo loop, pernas intactas.
+    O mocap da CMU dribla a ~1-1,5 quique/s; o 2K23 a ~2,1-2,7 (docs/17 §4.1): com factor 2 o braço faz dois
+    ciclos de drible por ciclo das pernas."""
+    bones = UPPER_BODY if bones is None else bones
+    n = clip.count
+    out = clip.copy()
+    for name in bones:
+        rots = clip.local[name]
+        new = np.zeros_like(rots)
+        for k in range(n):
+            pos = (k * factor) % n
+            a = int(math.floor(pos)) % n
+            b = (a + 1) % n
+            new[k] = quat_to_mat(slerp(mat_to_quat(rots[a]), mat_to_quat(rots[b]), pos - math.floor(pos)))
+        out.local[name] = new
+    return out
+
+
 MIRROR = np.diag([-1.0, 1.0, 1.0])  # depois de alinhar a frente em +Z, o eixo lateral é X
 
 
@@ -402,7 +421,8 @@ def main():
     seg = clip.copy(230, 540)
     d, i, j = best_loop(seg, (20, 60), 50, 110)
     idle_r = in_place(align_heading(make_loop(seg, i, j, 10), unit))
-    emit("Dribble_Idle_R", idle_r, unit, "06_12 loop {}-{} (dist {:.2f})".format(i + 230, j + 230, d))
+    idle_r = speed_up_upper(idle_r, 2, UPPER_BODY | SPINE)  # 2 quiques por loop (pernas quase paradas)
+    emit("Dribble_Idle_R", idle_r, unit, "06_12 loop {}-{} (dist {:.2f}), braço 2x".format(i + 230, j + 230, d))
     emit("Dribble_Idle_L", mirror(idle_r), unit, "espelho")
 
     # Andando e driblando: direita (06_05) e esquerda nativa (06_04). A janela (-4, 0, 4) casa também a direção do
@@ -414,7 +434,7 @@ def main():
         d, i, j = best_loop(seg, (15, 45), 80, 140, window=(-4, 0, 4))
         walk = in_place(align_heading(make_loop(seg, i, j, 12), unit))
         walks[name] = walk
-        emit(name, walk, unit, "06_{} loop {}-{} (dist {:.2f})".format(trial, i + 30, j + 30, d))
+        emit(name, speed_up_upper(walk, 2), unit, "06_{} loop {}-{} (dist {:.2f}), braço 2x".format(trial, i + 30, j + 30, d))
 
     # Driblando de costas (06_06) e de lado (06_08), direita + espelho.
     for trial, name in (("06", "Dribble_Back"), ("08", "Dribble_Side")):
@@ -445,9 +465,9 @@ def main():
     walk_r = walks["Dribble_Walk_R"]
     upper_bones = UPPER_BODY | SPINE
     d, i, j = best_loop(walk_r, (12, walk_r.count - 64), 42, 60, window=(-3, 0, 3), bones=upper_bones)
-    upper = resample(make_loop(walk_r, i, j, 8), run.count)
+    upper = speed_up_upper(resample(make_loop(walk_r, i, j, 8), run.count), 2)  # 2 quiques por passada
     dribble_run = layer_upper(run, upper, spine_weight=0.5)
-    emit("Dribble_Run_R", dribble_run, unit, "Run + 1 drible do Dribble_Walk_R {}-{} (dist {:.2f})".format(i, j, d))
+    emit("Dribble_Run_R", dribble_run, unit, "Run + drible do Dribble_Walk_R {}-{} (dist {:.2f}), 2 por passada".format(i, j, d))
     emit("Dribble_Run_L", mirror(dribble_run), unit, "espelho")
 
     # Crossover direita -> esquerda: 06_14 (crossover e arremesso), do último drible com a direita até o

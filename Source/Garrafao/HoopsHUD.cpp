@@ -12,8 +12,8 @@ namespace
 	const FLinearColor GoodColor(1.0f, 0.85f, 0.2f, 0.85f);
 	const FLinearColor DimText(0.8f, 0.8f, 0.8f, 1.0f);
 
-	// Escala do medidor: a barra cheia vale 1,3 (o ponto ideal fica em 1/1,3 da altura).
-	constexpr float MeterScale = 1.3f;
+	// Medidor do 2K23: a barra cheia é o ponto ideal (segurando além, o preenchimento volta a descer).
+	constexpr float MeterScale = 1.0f;
 }
 
 void AHoopsHUD::DrawHUD()
@@ -63,16 +63,19 @@ void AHoopsHUD::DrawHUD()
 		DrawRect(FillColor, X + 3.0f, FillTop, BarW - 6.0f, Bottom - FillTop);
 		// Marca do ponto ideal.
 		DrawRect(FLinearColor::White, X - 6.0f, YFor(1.0f) - 1.0f, BarW + 12.0f, 2.0f);
+	}
 
-		if (bGreenFlash)
-		{
-			// "GREEN!" subindo e sumindo ao lado do medidor.
-			const float Rise = static_cast<float>(SinceResult) * 40.0f;
-			const float Alpha = FMath::Clamp(1.4f - static_cast<float>(SinceResult) * 1.4f, 0.0f, 1.0f);
-			const float TextScale = 1.6f + 0.25f * Pulse;
-			DrawText(TEXT("GREEN!"), FLinearColor(0.0f, 0.0f, 0.0f, 0.6f * Alpha), X + 24.0f, YFor(1.0f) - 22.0f - Rise, Large, TextScale);
-			DrawText(TEXT("GREEN!"), FLinearColor(0.25f, 1.0f, 0.4f, Alpha), X + 22.0f, YFor(1.0f) - 24.0f - Rise, Large, TextScale);
-		}
+	// "GREEN!" subindo e sumindo ao lado do jogador (na soltura ou, no modo "no aro", quando a bola chega).
+	const double SinceGreen = Data.Now - Data.GreenTime;
+	if (SinceGreen >= 0.0 && SinceGreen < 1.2)
+	{
+		const FVector Screen = Project(Data.MeterWorldAnchor);
+		const float X = static_cast<float>(Screen.X) + 22.0f;
+		const float Y = static_cast<float>(Screen.Y) - 100.0f - static_cast<float>(SinceGreen) * 40.0f;
+		const float Alpha = FMath::Clamp(1.5f - static_cast<float>(SinceGreen) * 1.25f, 0.0f, 1.0f);
+		const float TextScale = 1.6f + 0.25f * (0.5f + 0.5f * FMath::Cos(static_cast<float>(SinceGreen) * 18.0f));
+		DrawText(TEXT("GREEN!"), FLinearColor(0.0f, 0.0f, 0.0f, 0.6f * Alpha), X + 2.0f, Y + 2.0f, Large, TextScale);
+		DrawText(TEXT("GREEN!"), FLinearColor(0.25f, 1.0f, 0.4f, Alpha), X, Y, Large, TextScale);
 	}
 
 	// ---------------- Feedback do arremesso (canto superior direito, como no 2K23)
