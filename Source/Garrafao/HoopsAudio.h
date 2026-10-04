@@ -4,6 +4,7 @@
 #include "HoopsAudioSynth.h"
 #include "HoopsSimCore/HoopsBallSim.h"
 #include "HoopsSimCore/HoopsDribble.h"
+#include "Engine/TimerHandle.h"
 #include "Subsystems/WorldSubsystem.h"
 
 #include "HoopsAudio.generated.h"
@@ -117,6 +118,7 @@ private:
 	TObjectPtr<USoundAttenuation> Attenuation;
 
 	FRandomStream Random;
+	FTimerHandle PruneTimer;
 	TArray<double> LastPlayTime; // por som (tempo de áudio): evita metralhadora
 	TArray<int32> LastVariant;   // por som: não repete a mesma variação duas vezes seguidas
 	double LastRimTime = -100.0; // tempo do mundo do último toque no aro (cesta logo depois = rede abafada)

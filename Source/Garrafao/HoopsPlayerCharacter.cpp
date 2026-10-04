@@ -831,7 +831,8 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedi
 		Impulse = (Wish.IsNearlyZero() ? AttackFwd : Wish) * (Spec.ForwardSpeed * 100.0);
 		SpinVisualStart = Now();
 		SpinVisualDuration = Duration;
-		SpinVisualDegrees = (Move == Hoops::DribbleMove::Spin ? 360.0f : 180.0f) * (HandBefore == Hoops::BallHand::Right ? -1.0f : 1.0f);
+		// Mesmo sentido do clipe do spin (bola na direita = horário visto de cima), com ou sem o boneco.
+		SpinVisualDegrees = (Move == Hoops::DribbleMove::Spin ? 360.0f : 180.0f) * (HandBefore == Hoops::BallHand::Right ? 1.0f : -1.0f);
 		bSpinVisualCurve = false; // giro linear; com o clipe do boneco, a curva medida (abaixo)
 		bSpinVisualReturns = false;
 	}
@@ -1984,7 +1985,7 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 		{
 			bSwitchRequested = false;
 			const Hoops::BallHand To = bDoubleCrossPending ? Hoops::OtherHand(HeldHand) : Dribble.GetHand();
-			const double Seconds = FMath::Clamp(SwitchFlightSeconds, 0.18, 0.6);
+			const double Seconds = FMath::Clamp(SwitchFlightSeconds, 0.12, 0.6); // 0,12: o DelaySwitch já encurtou o voo
 			if (To != HeldHand)
 			{
 				if (Carry == EBallCarry::Flight && T - FlightStart > FlightArc.DownSeconds)
@@ -2030,7 +2031,7 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 					bDoubleCrossPending = false;
 					if (CarryHand != Dribble.GetHand())
 					{
-						BeginBallFlight(Target, Dribble.GetHand(), FMath::Clamp(SwitchFlightSeconds, 0.18, 0.6));
+						BeginBallFlight(Target, Dribble.GetHand(), FMath::Clamp(SwitchFlightSeconds, 0.12, 0.6));
 					}
 				}
 			}

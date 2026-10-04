@@ -78,6 +78,10 @@ void UHoopsAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UHoopsAudioSubsystem::Deinitialize()
 {
+	if (UWorld* ThisWorld = GetWorld())
+	{
+		ThisWorld->GetTimerManager().ClearTimer(PruneTimer);
+	}
 	for (FHoopsAudioVoice& Voice : Voices)
 	{
 		if (IsValid(Voice.Component.Get()))
@@ -272,6 +276,17 @@ void UHoopsAudioSubsystem::Play(EHoopsSound Sound, const FVector* Location, floa
 		return;
 	}
 	BuildBank();
+	if (!PruneTimer.IsValid())
+	{
+		// Ondas procedurais nem sempre param sozinhas: limpa as vozes terminadas mesmo quando nada novo toca.
+		ThisWorld->GetTimerManager().SetTimer(PruneTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			if (const UWorld* World = GetWorld())
+			{
+				PruneVoices(World->GetAudioTimeSeconds(), HoopsAudioTuning::MaxVoices);
+			}
+		}), 0.5f, true);
+	}
 
 	// Cesta logo depois de tocar o aro: rede abafada (a bola perdeu velocidade e cai mexendo a rede).
 	if (Sound == EHoopsSound::RimClank)
@@ -296,7 +311,7 @@ void UHoopsAudioSubsystem::Play(EHoopsSound Sound, const FVector* Location, floa
 	{
 		Gain *= DistanceGain(*Location, Mix.DistanceFalloff);
 	}
-	Gain *= 1.0f + Random.FRandRange(-Tuning.VolumeJitter, Tuning.VolumeJitter);
+	Gain *= 1.0f + static_cast<float>(Random.FRandRange(-Tuning.VolumeJitter, Tuning.VolumeJitter));
 	if (Gain < 0.01f)
 	{
 		return;
@@ -318,7 +333,7 @@ void UHoopsAudioSubsystem::Play(EHoopsSound Sound, const FVector* Location, floa
 	{
 		return;
 	}
-	const float Pitch = 1.0f + Random.FRandRange(-Tuning.PitchJitter, Tuning.PitchJitter);
+	const float Pitch = 1.0f + static_cast<float>(Random.FRandRange(-Tuning.PitchJitter, Tuning.PitchJitter));
 
 	PruneVoices(AudioNow, HoopsAudioTuning::MaxVoices - 1);
 
