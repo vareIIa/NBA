@@ -35,6 +35,20 @@ enum class EHoopsClip : uint8
 	SpinL2R,
 	HesitationR,
 	HesitationL,
+	// Segunda leva da CMU (Tools/Animacao/README.md).
+	LayupR,
+	LayupL,
+	Dunk,
+	DribbleLowR,
+	DribbleLowL,
+	BetweenLegsR2L,
+	BetweenLegsL2R,
+	JumpShot2R,
+	JumpShot2L,
+	CelebrateBow,
+	CelebrateArmsUp,
+	CelebrateHighFive,
+	TurnBack,
 	Count
 };
 
@@ -53,7 +67,7 @@ namespace HoopsDummyRig
 
 	// Arremesso (quadros do clipe JumpShot a 60 fps): o jogo começa no "dip" e acerta a soltura no tempo ideal.
 	constexpr float JumpShotDipSeconds = 80.0f / 60.0f;
-	constexpr float JumpShotTakeoffSeconds = 100.0f / 60.0f; // bandeja/enterrada (provisório) começam aqui
+	constexpr float JumpShotTakeoffSeconds = 100.0f / 60.0f; // bandeja/enterrada sem os clipes delas (FBX antigo) começam aqui
 	constexpr float JumpShotReleaseSeconds = 117.0f / 60.0f;
 	constexpr float JumpShotEndSeconds = 150.0f / 60.0f;     // depois da aterrissagem: volta para a base
 	constexpr float JumpShotFollowThroughSeconds = 123.0f / 60.0f; // pose segurada depois da soltura (green)
@@ -92,6 +106,62 @@ namespace HoopsDummyRig
 	constexpr float HesitationStartSeconds = 5.0f / 60.0f;
 	constexpr float HesitationPushSeconds = 26.0f / 60.0f;
 	constexpr float HesitationEndSeconds = 34.0f / 60.0f;
+
+	// ---------------- Segunda leva (quadros do clipe a 60 fps; o _L / L2R é o espelho)
+
+	// Clipe de arremesso e seus quadros-chave. O jogo começa no Dip e acerta o Release no tempo ideal (centro da janela
+	// green), então trocar de clipe não muda o timing do green.
+	struct FJumpShotTiming
+	{
+		EHoopsClip Clip;
+		float Dip;
+		float Release;
+		float End;
+		float FollowThrough;
+	};
+	// Clássico (JumpShot_R, 06_15): soltura com os dedos ~12 cm acima da cabeça.
+	constexpr FJumpShotTiming JumpShotClassic = {EHoopsClip::JumpShotR, JumpShotDipSeconds, JumpShotReleaseSeconds,
+		JumpShotEndSeconds, JumpShotFollowThroughSeconds};
+	// Alto (JumpShot2_R, 124_05): arremesso de um tempo, bola da cintura à soltura com o braço todo estendido (dedos ~50 cm
+	// acima da cabeça), pés ~33 cm do chão, mão de apoio sai primeiro. Gather/dip 18 (início no jogo), quadril no mais
+	// baixo 33, decolagem 41, soltura 55, ápice 57, follow-through 61, aterrissagem 72, fim 88. Dip -> soltura = 37
+	// quadros, como no clássico.
+	constexpr FJumpShotTiming JumpShotHigh = {EHoopsClip::JumpShot2R, 18.0f / 60.0f, 55.0f / 60.0f, 88.0f / 60.0f, 61.0f / 60.0f};
+
+	// Bandeja (Layup_R, 124_06: salto de dois pés com a mão direita no alto; _L = espelho) e enterrada de duas mãos (Dunk,
+	// o mesmo salto com o braço esquerdo espelhando o direito). O jogo começa no Gather e acerta a soltura em
+	// LayupReleaseSeconds/DunkReleaseSeconds; o capsule decola no Takeoff com o ápice no Apex do clipe (o clipe guarda
+	// só 30% / 45% do arco da pelve; o resto do pulo é do capsule), então os pés saem e voltam ao chão junto com o mocap.
+	struct FFinishTiming
+	{
+		float Gather;
+		float Takeoff;
+		float Apex;
+		float Release;
+		float End;
+	};
+	// Gather 18 (bola no peito, quadril no mais baixo), decolagem 25, ápice e soltura 45, aterrissagem ~66, fim 82.
+	constexpr FFinishTiming LayupTiming = {18.0f / 60.0f, 25.0f / 60.0f, 45.0f / 60.0f, 45.0f / 60.0f, 82.0f / 60.0f};
+	// Começa mais perto da decolagem (mais tempo de subida = pulo mais alto, mãos acima do aro); soltura 49, já descendo
+	// as mãos na "martelada".
+	constexpr FFinishTiming DunkTiming = {22.0f / 60.0f, 25.0f / 60.0f, 45.0f / 60.0f, 49.0f / 60.0f, 82.0f / 60.0f};
+
+	// Entre as pernas (BetweenLegs_L2R, 06_13; o R2L é o espelho): base escalonada e baixa, a mão empurra a bola entre os
+	// pés e a outra recebe subindo pela frente. Início 12, solta ~23, recebe 40, fim 48.
+	constexpr float BetweenLegsStartSeconds = 12.0f / 60.0f;
+	constexpr float BetweenLegsReleaseSeconds = 23.0f / 60.0f;
+	constexpr float BetweenLegsCatchSeconds = 40.0f / 60.0f;
+	constexpr float BetweenLegsEndSeconds = 48.0f / 60.0f;
+
+	// Vira e volta depois do green (TurnBack, 69_39): últimos passos de costas, para e gira no lugar para a ESQUERDA. O giro
+	// (166° no mocap) saiu do clipe: o jogo gira o ATOR 180° pela curva medida, de TurnBackTurnStart a TurnBackTurnEnd.
+	constexpr float TurnBackStartSeconds = 4.0f / 60.0f;
+	constexpr float TurnBackTurnStartSeconds = 14.0f / 60.0f;
+	constexpr float TurnBackTurnEndSeconds = 112.0f / 60.0f;
+	constexpr float TurnBackEndSeconds = 118.0f / 60.0f;
+	constexpr int32 TurnBackSamples = 9;
+	constexpr float TurnBackProgress[TurnBackSamples] = {0.0f, 0.072f, 0.218f, 0.386f, 0.562f, 0.733f, 0.861f, 0.959f, 1.0f};
+	float TurnBackAlpha(float CoreAlpha); // CoreAlpha 0..1 do giro -> progresso (interpolado)
 
 	// Procura a malha e os clipes em Folder (Asset Registry). OutClips tem NumClips entradas (nullptr = faltando).
 	// Retorna false se não houver malha ou se faltar o drible parado / segurar a bola.
