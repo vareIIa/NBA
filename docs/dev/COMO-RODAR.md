@@ -60,6 +60,8 @@ Ajustes no painel Details do jogador durante o Play (categoria *Hoops*): `BodyHe
 - **D-pad nos ~2,5 s depois da cesta** (sem a bola na mão): **cima = flex**, **direita = shrug**, **esquerda = segura a pose do arremesso**. Fora dessa janela o D-pad faz o de sempre.
 - Ajustes em *Hoops|Green*: `GreenHoldSeconds`, `bAutoCelebrate`, `GreenSoundVolume`, `bGreenFeedbackAtRim` (ligado = o "GREEN!"/som/banner só aparecem quando a bola chega ao aro, como no 2K23; desligado = na hora, como o "Simple" do 2K25).
 
+**Som da quadra** (tudo sintetizado em código, sem arquivos de áudio): **quique** da bola no taco em cada toque no chão (drible e bola solta, mais forte quanto mais rápido o impacto), **rede** na cesta (abafada se a bola tocou o aro antes), **aro**, **tabela**, **chiado do tênis** no gather, nos cortes do drible e na aterrissagem, e o "ding" do green. Cada som tem 2–4 variações sorteadas, com um pouco de variação de pitch e volume. Ajustes no jogador durante o Play em *Hoops|Audio → AudioMix*: `bMute`, `MasterVolume`, volume por categoria (`BallVolume`, `NetVolume`, `RimVolume`, `ShoesVolume`) e `DistanceFalloff`. Para ouvir sem a Unreal (Linux/Mac/WSL): `g++ -O2 -std=c++17 -I Source/Garrafao Tools/Audio/ouvir_sons.cpp Source/Garrafao/HoopsAudioSynth.cpp -o ouvir_sons && ./ouvir_sons` gera os WAVs em `/tmp/garrafao-sons`, incluindo `sequencia_park.wav` (uma posse inteira: drible, gather, ding, rede, aro).
+
 Os dribles que trocam de mão (crossover, entre as pernas, por trás) tocam o **crossover do mocap** por enquanto; spin, step-back e hesitação ainda sem animação própria, e bandeja/enterrada usam o arremesso. Vêm na próxima etapa.
 
 ### Manequim da Epic (alternativa)
