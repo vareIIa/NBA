@@ -108,7 +108,7 @@ AHoopsPlayerCharacter::AHoopsPlayerCharacter()
 	{
 		PlaceholderBody->SetStaticMesh(CylinderMesh.Object);
 	}
-	PlaceholderBody->SetRelativeScale3D(FVector(0.55f, 0.40f, 1.94f));
+	PlaceholderBody->SetRelativeScale3D(FVector(0.32f, 0.50f, 1.94f)); // profundidade x largura dos ombros
 	PlaceholderBody->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	MannequinMeshPaths = {
@@ -375,7 +375,7 @@ FVector AHoopsPlayerCharacter::HandWorldLocation(Hoops::BallHand Hand, double Se
 	const FVector Forward = GetActorForwardVector();
 	const FVector Right = GetActorRightVector();
 	const double Side = Hand == Hoops::BallHand::Right ? 1.0 : -1.0;
-	return Base + Forward * 28.0 + Right * (32.0 * Side) + FVector(0.0, 0.0, HandHeightCm - CapsuleHalfHeightCm);
+	return Base + Forward * 16.0 + Right * (29.0 * Side) + FVector(0.0, 0.0, HandHeightCm - CapsuleHalfHeightCm);
 }
 
 FVector AHoopsPlayerCharacter::SetPointWorldLocation() const
@@ -889,6 +889,9 @@ void AHoopsPlayerCharacter::BeginShot(bool bFromProStick)
 		return;
 	}
 
+	Hoops::ShotTuning Tuning;
+	Tuning.PerfectWindowScale = GreenWindowScale;
+	ShotModel = Hoops::ShotModel(Tuning);
 	ShotContext = BuildJumperContext();
 	ShotWindows = ShotModel.ComputeWindows(ShotContext); // travada no gather
 	ContestSamples.Reset();

@@ -178,27 +178,31 @@ HOOPS_TEST(ShotProbabilityMatchesDesignTable)
 HOOPS_TEST(TimingWindowScalesAndFloor)
 {
 	const ShotModel Model;
-	EXPECT_NEAR(ShotModel::BasePerfectHalfWindowMs(85.0), 30.0, 1e-9);
-	EXPECT_NEAR(ShotModel::BasePerfectHalfWindowMs(99.0), 45.0, 1e-9);
-	EXPECT_NEAR(ShotModel::BasePerfectHalfWindowMs(50.0), 18.0, 1e-9);
+	EXPECT_NEAR(ShotModel::BasePerfectHalfWindowMs(85.0), 50.0, 1e-9);
+	EXPECT_NEAR(ShotModel::BasePerfectHalfWindowMs(99.0), 70.0, 1e-9);
+	EXPECT_NEAR(ShotModel::BasePerfectHalfWindowMs(50.0), 30.0, 1e-9);
 
 	ShotContext Heave = ThreeContext(40.0);
 	Heave.Type = ShotType::Heave;
 	const TimingWindows HeaveWindows = Model.ComputeWindows(Heave);
-	EXPECT_NEAR(HeaveWindows.PerfectHalfMs, 17.0, 1e-9); // piso de 2 frames
+	EXPECT_NEAR(HeaveWindows.PerfectHalfMs, 25.0, 1e-9); // piso de 3 frames
 
 	ShotContext MeterOff = ThreeContext(85.0);
 	MeterOff.bMeterOff = true;
-	EXPECT_NEAR(Model.ComputeWindows(MeterOff).PerfectHalfMs, 33.0, 1e-9);
+	EXPECT_NEAR(Model.ComputeWindows(MeterOff).PerfectHalfMs, 55.0, 1e-9);
 
 	ShotContext Tired = ThreeContext(85.0);
 	Tired.Fatigue = 1.0;
-	EXPECT_NEAR(Model.ComputeWindows(Tired).PerfectHalfMs, 21.0, 1e-9);
+	EXPECT_NEAR(Model.ComputeWindows(Tired).PerfectHalfMs, 35.0, 1e-9);
 
 	ShotContext QuickRelease = ThreeContext(85.0);
 	QuickRelease.Speed = ReleaseSpeed::Quick;
 	const TimingWindows Quick = Model.ComputeWindows(QuickRelease);
-	EXPECT_NEAR(Quick.PerfectHalfMs, 25.5, 1e-9);
+	EXPECT_NEAR(Quick.PerfectHalfMs, 42.5, 1e-9);
+
+	ShotTuning Wide;
+	Wide.PerfectWindowScale = 1.5;
+	EXPECT_NEAR(ShotModel(Wide).ComputeWindows(ThreeContext(85.0)).PerfectHalfMs, 75.0, 1e-9);
 	EXPECT_TRUE(Quick.IdealReleaseMs < Model.ComputeWindows(ThreeContext(85.0)).IdealReleaseMs);
 }
 
@@ -625,7 +629,7 @@ HOOPS_TEST(LayupAndDunkProbabilities)
 	Layup.bIsThree = false;
 	Layup.Type = ShotType::Layup;
 	const TimingWindows Windows = Model.ComputeWindows(Layup);
-	EXPECT_NEAR(Windows.PerfectHalfMs, 48.0, 1e-9);
+	EXPECT_NEAR(Windows.PerfectHalfMs, 80.0, 1e-9);
 	const ShotEvaluation Good = Model.Evaluate(Layup, Windows, Windows.IdealReleaseMs + Windows.PerfectHalfMs + 1.0, 0.0);
 	EXPECT_NEAR(Good.Probability, 0.91, 0.005);
 

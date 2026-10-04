@@ -106,6 +106,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Hoops|Configuracoes")
 	bool bShotFeedbackEnabled = true;
 
+	// Multiplicador da janela green (1 = padrão do jogo). Dá para mexer durante o Play no painel Details do jogador.
+	UPROPERTY(EditAnywhere, Category = "Hoops|Configuracoes", meta = (ClampMin = "0.5", ClampMax = "3.0"))
+	float GreenWindowScale = 1.0f;
+
 	// 0 = rápida, 1 = normal, 2 = lenta (velocidade de soltura do jumper).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Configuracoes", meta = (ClampMin = "0", ClampMax = "2"))
 	int32 JumperReleaseSpeed = 1;

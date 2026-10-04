@@ -36,6 +36,7 @@
 | D9 | 2026-10-03 | Captura de movimento **com atletas e quadra fornecidos pelo diretor** | Diretor |
 | D10 | 2026-10-03 | Vocabulário do jogo usa **"green"** para a soltura perfeita (termo que os jogadores de 2K já conhecem) | Proposta Claude, a confirmar |
 | D11 | 2026-10-03 | Mídias de referência versionadas com **Git LFS** | Claude |
+| D12 | 2026-10-04 | **Janela green maior** (~1,65×: rating 85 = ±50 ms) depois do 1º playtest; multiplicador ajustável no editor | Diretor |
 
 ## 4. Decisões pendentes (propostas com recomendação)
 

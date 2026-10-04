@@ -67,15 +67,15 @@ O ponto ideal de soltura é marcado na animação por um `AnimNotify_ReleasePoin
 
 | Faixa | Largura (exemplo, rating 85, livre, velocidade normal) | Efeito em L | Feedback |
 |---|---|---|---|
-| **Perfeito (green)** | ±30 ms | +2.5 (e **cesta garantida** se `contest < 0.30` e não for heave) | "GREEN" + som/rede especial |
-| **Bom** | ±31–70 ms | 0 (referência: a tabela `L_base` é calibrada no "Bom") | "Bom" |
-| **Leve cedo / leve tarde** | ±71–120 ms | −0.3 | "Cedo" / "Tarde" |
-| **Muito cedo / muito tarde** | > 120 ms | −1.5 | "Muito cedo" / "Muito tarde" |
+| **Perfeito (green)** | ±50 ms | +2.5 (e **cesta garantida** se `contest < 0.30` e não for heave) | "GREEN" + som/rede especial |
+| **Bom** | ±51–115 ms | 0 (referência: a tabela `L_base` é calibrada no "Bom") | "Bom" |
+| **Leve cedo / leve tarde** | ±116–200 ms | −0.3 | "Cedo" / "Tarde" |
+| **Muito cedo / muito tarde** | > 200 ms | −1.5 | "Muito cedo" / "Muito tarde" |
 
 **Largura da janela Perfeito**, calculada **uma única vez, no gather**, e **travada** até a soltura:
 
 ```
-W_perfeito = W_base(rating)          // 99 → ±45ms, 85 → ±30ms, 70 → ±24ms, 50 → ±18ms
+W_perfeito = W_base(rating)          // 99 → ±70ms, 85 → ±50ms, 70 → ±40ms, 50 → ±30ms  (D12: playtest do diretor)
            × M_tipo                  // spot-up 1.0, pull-up 0.85, step-back 0.8, fade 0.75, heave 0.3
            × M_velocidade_release    // rápido 0.85, normal 1.0, lento 1.15
            × (1 − 0.30 · fadiga)
@@ -88,9 +88,9 @@ A janela "Bom" é proporcional (≈ 2.3× a Perfeito) e a "Leve" ≈ 4×. Todos 
 
 **Por que o rating mexe na janela?** No 2K27 o rating quase não altera o núcleo do green; ele só alarga o "ombro" (a faixa de quase-acerto). É um modelo limpo, mas no 2K26 ele gerou pivôs de 2,24 m acertando de 3 como especialistas, e a correção veio em patch e com tetos de atributo. Nós usamos um meio-termo: o rating alarga a janela Perfeito **moderadamente** (2,5× do 50 ao 99), muda o `L` base (o "ombro"), e os tetos físicos por corpo valem desde o design.
 
-**Piso rígido**: depois de todos os multiplicadores, a janela Perfeito nunca fica menor que **±17 ms (2 frames a 60 Hz)**. Abaixo disso, o resultado vira loteria de frame — e loteria é o que queremos eliminar.
+**Piso rígido**: depois de todos os multiplicadores, a janela Perfeito nunca fica menor que **±25 ms (3 frames a 60 Hz)**. Há ainda um multiplicador geral (`PerfectWindowScale`, exposto como *Green Window Scale* no jogador) para ajuste fino em playtest. Abaixo disso, o resultado vira loteria de frame — e loteria é o que queremos eliminar.
 
-> Comparação com o 2K27 (medições da NBA2KLab): janela de green com **~35 ms** de largura a meia altura, núcleo "sempre green" de **4 ms** e pure green de ~15–20 ms ([comparação](https://www.nba2klab.com/shooting-comparison)). A nossa janela Perfeito para um rating 85 tem 60 ms no total: **de propósito mais generosa**. A dificuldade vem da contestação, do tipo de arremesso e de criar espaço, não de acertar um único frame (que, online, também depende do ping).
+> Comparação com o 2K27 (medições da NBA2KLab): janela de green com **~35 ms** de largura a meia altura, núcleo "sempre green" de **4 ms** e pure green de ~15–20 ms ([comparação](https://www.nba2klab.com/shooting-comparison)). A nossa janela Perfeito para um rating 85 tem **100 ms no total** (D12, depois do 1º playtest): **de propósito mais generosa**. A dificuldade vem da contestação, do tipo de arremesso e de criar espaço, não de acertar um único frame (que, online, também depende do ping).
 
 **Exemplo numérico (rating 85, 3PT, "Bom" livre = 42% → L = −0.32):**
 

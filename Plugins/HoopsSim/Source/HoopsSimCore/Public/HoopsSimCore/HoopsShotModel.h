@@ -65,7 +65,8 @@ namespace Hoops
 		// Faixas de timing em relação à janela Perfeito (meia-largura).
 		double GoodWindowScale = 2.3;
 		double SlightWindowScale = 4.0;
-		double MinPerfectHalfWindowMs = 17.0; // piso rígido: 2 frames a 60 Hz
+		double MinPerfectHalfWindowMs = 25.0; // piso rígido: 3 frames a 60 Hz
+		double PerfectWindowScale = 1.0;      // multiplicador geral (ajustável no editor pelo jogador/designer)
 
 		// Efeito em log-odds (relativo ao "Bom", que é a referência da tabela base).
 		double GreenBonus = 2.5;
@@ -143,7 +144,7 @@ namespace Hoops
 
 		const ShotTuning& GetTuning() const { return Tuning; }
 
-		// Meia-largura base da janela Perfeito para um rating (99 → 45 ms, 85 → 30, 70 → 24, 50 → 18).
+		// Meia-largura base da janela Perfeito para um rating (99 → 70 ms, 85 → 50, 70 → 40, 50 → 30).
 		static double BasePerfectHalfWindowMs(double Rating);
 
 		// Chance base (soltura "Boa", livre) pela tabela de rating, distância e tipo.

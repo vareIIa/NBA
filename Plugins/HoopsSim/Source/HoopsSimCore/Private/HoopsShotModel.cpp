@@ -37,7 +37,8 @@ namespace Hoops
 		// Bandeja/enterrada livres (sem contato): quase sempre entram, como no 2K23.
 		const RatingPoint LayupTable[] = {{40.0, 0.70}, {60.0, 0.80}, {75.0, 0.87}, {85.0, 0.91}, {99.0, 0.96}};
 		const RatingPoint DunkTable[] = {{40.0, 0.88}, {60.0, 0.93}, {75.0, 0.96}, {85.0, 0.97}, {99.0, 0.99}};
-		const RatingPoint PerfectWindowTable[] = {{50.0, 18.0}, {70.0, 24.0}, {85.0, 30.0}, {99.0, 45.0}};
+		// Decisão D12 (playtest do diretor): janela green ~1,65x maior que a proposta original.
+		const RatingPoint PerfectWindowTable[] = {{50.0, 30.0}, {70.0, 40.0}, {85.0, 50.0}, {99.0, 70.0}};
 
 		constexpr int TableSize = 5;
 
@@ -143,6 +144,7 @@ namespace Hoops
 		{
 			Half *= Tuning.MeterOffWindowScale;
 		}
+		Half *= Tuning.PerfectWindowScale;
 		if (Half < Tuning.MinPerfectHalfWindowMs)
 		{
 			Half = Tuning.MinPerfectHalfWindowMs;
