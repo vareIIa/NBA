@@ -567,6 +567,11 @@ void AHoopsPlayerCharacter::Tick(float DeltaSeconds)
 
 	const bool bMoving = GetVelocity().Size2D() > 50.0;
 	Dribble.Update(Now(), DeltaSeconds, bSprintHeld && bMoving, bMoving);
+	// Drible que estava no buffer começou agora (dentro do Update): aplica impulso, troca de mão e animação.
+	if (bHasBall && ShotPhase == EShotPhase::None && Dribble.IsMoveActive(Now()) && Dribble.GetActive().StartTime != LastDribbleEffectsStart)
+	{
+		StartDribbleMove(Dribble.GetActive().Move, false, true);
+	}
 
 	UpdateProStick();
 	UpdateMovement(DeltaSeconds);
@@ -761,18 +766,19 @@ void AHoopsPlayerCharacter::HandleGesture(const Hoops::StickGesture& Gesture)
 	StartDribbleMove(Intent.Move, Intent.bRedirect);
 }
 
-void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedirect)
+void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedirect, bool bAlreadyStarted)
 {
 	if (Move == Hoops::DribbleMove::None)
 	{
 		return;
 	}
 
-	if (!Dribble.Request(Move, Now(), bRedirect))
+	if (!bAlreadyStarted && !Dribble.Request(Move, Now(), bRedirect))
 	{
 		LogInput(FString::Printf(TEXT("  (buffer) %s"), *Ansi(Hoops::DribbleMoveLabel(Move))));
 		return;
 	}
+	LastDribbleEffectsStart = Dribble.GetActive().StartTime;
 
 	const Hoops::DribbleMoveSpec& Spec = Hoops::GetDribbleMoveSpec(Move);
 	const Hoops::ActiveDribbleMove& Active = Dribble.GetActive();

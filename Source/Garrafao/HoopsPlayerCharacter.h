@@ -253,7 +253,8 @@ private:
 	void UpdateMovement(float DeltaSeconds);
 	void UpdateProStick();
 	void HandleGesture(const Hoops::StickGesture& Gesture);
-	void StartDribbleMove(Hoops::DribbleMove Move, bool bRedirect = false);
+	// bAlreadyStarted: o núcleo já começou o movimento (saiu do buffer dentro do Dribble.Update); só aplica os efeitos.
+	void StartDribbleMove(Hoops::DribbleMove Move, bool bRedirect = false, bool bAlreadyStarted = false);
 	void UpdateDribbleBall(float DeltaSeconds);
 	void PlanDribbleArc(bool bSwitchHand, double PeriodOverride);
 	FVector HandWorldLocation(Hoops::BallHand Hand, double SecondsAhead) const;
@@ -370,6 +371,7 @@ private:
 	double SwitchFlightSeconds = 0.3;
 	// Green: último arremesso foi green (celebra se cair) e qual celebração vem a seguir.
 	bool bLastShotGreen = false;
+	double LastDribbleEffectsStart = -1.0; // StartTime do último drible cujos efeitos (impulso, bola, animação) já rodaram
 	bool bFeedbackPending = false;   // esperando a bola chegar ao aro (bGreenFeedbackAtRim)
 	double LastMakeTime = -100.0;
 	FVector ShotDrift = FVector::ZeroVector; // deriva para trás do arremesso com o boneco (fadeaway, step-back)
