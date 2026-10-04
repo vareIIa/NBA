@@ -625,11 +625,36 @@ void AHoopsPlayerCharacter::UpdateMovement(float DeltaSeconds)
 	// Size-up (encarando a cesta): com a bola, analógico pela metade ou LT. Analógico todo: corre virando o corpo.
 	const bool bShooting = ShotPhase != EShotPhase::None;
 	const bool bStrafe = bHasBall && !bSprintHeld && (bLeftTriggerHeld || MoveInput.Size() < StrafeStickThreshold);
-	// Durante um drible (crossover, hesitação...) o limite do size-up não segura o impulso do movimento.
-	const bool bMoveBurst = Dribble.IsMoveActive(Now());
+
+	// Arranque na saída do drible (docs/17 §4.4, P0-8): LS apontado quando o movimento acaba = speedboost ou cross
+	// launch na direção do LS, pago com energia (sem contador de boosts, D13). Corta a curva: sai reto para o LS.
+	if (bHasBall && !bShooting && Hoop)
+	{
+		const FVector CamFwd = CameraForwardFlat();
+		const FVector CamRight = FVector::CrossProduct(FVector::UpVector, CamFwd);
+		const FVector Wish = CamFwd * MoveInput.Y + CamRight * MoveInput.X;
+		const FVector AttackFwd = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
+		const FVector AttackRight = FVector::CrossProduct(FVector::UpVector, AttackFwd);
+		const Hoops::DribbleExitBurst Burst = Dribble.TryExitBurst(Now(),
+			FVector::DotProduct(Wish, AttackRight), FVector::DotProduct(Wish, AttackFwd));
+		if (Burst.IsValid())
+		{
+			const FVector BurstDir = Wish.GetSafeNormal2D();
+			const FVector Current2D(Movement->Velocity.X, Movement->Velocity.Y, 0.0);
+			const double Along = FMath::Max(0.0, FVector::DotProduct(Current2D, BurstDir));
+			const FVector Launch2D = BurstDir * (Along + Burst.Speed * 100.0);
+			Movement->Velocity = FVector(Launch2D.X, Launch2D.Y, Movement->Velocity.Z);
+			LogInput(FString::Printf(TEXT("  arranque: %s +%.1f m/s (energia -%.1f%%)"),
+				*Ansi(Hoops::ExitBurstKindLabel(Burst.Kind)), Burst.Speed, Burst.EnergyCost * 100.0));
+		}
+	}
+
+	// Durante um drible (crossover, hesitação...) ou o arranque de saída, o limite do size-up não segura o impulso.
+	const float BurstCm = static_cast<float>(Dribble.ExitBurstSpeed(Now()) * 100.0);
+	const bool bMoveBurst = Dribble.IsMoveActive(Now()) || BurstCm > 0.0f;
 	const float BaseSpeed = bSprintHeld ? SprintSpeedCm : ((bStrafe && !bMoveBurst) ? StrafeSpeedCm : JogSpeedCm);
 	const float BallScale = bHasBall ? WithBallSpeedScale : 1.0f;
-	Movement->MaxWalkSpeed = BaseSpeed * BallScale * static_cast<float>(Dribble.SpeedScale());
+	Movement->MaxWalkSpeed = BaseSpeed * BallScale * static_cast<float>(Dribble.SpeedScale()) + BurstCm;
 
 	if (!bShooting && !MoveInput.IsNearlyZero())
 	{
@@ -727,18 +752,20 @@ void AHoopsPlayerCharacter::HandleGesture(const Hoops::StickGesture& Gesture)
 	Context.Hand = Dribble.GetHand();
 	Context.bSprint = bSprintHeld;
 	Context.bMoving = GetVelocity().Size2D() > 80.0;
-	StartDribbleMove(Hoops::ResolveDribbleMove(Gesture, Context));
+	// Misdirection (docs/17 §4.4): antes do 1º quique o núcleo lê o gesto a partir da mão do início do movimento e,
+	// se ele leva a bola para o outro lado (ou é um combo), troca o movimento na hora.
+	const Hoops::DribbleIntent Intent = Dribble.ResolveGesture(Gesture, Context, Now());
+	StartDribbleMove(Intent.Move, Intent.bRedirect);
 }
 
-void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move)
+void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedirect)
 {
 	if (Move == Hoops::DribbleMove::None)
 	{
 		return;
 	}
 
-	const Hoops::BallHand HandBefore = Dribble.GetHand();
-	if (!Dribble.Request(Move, Now()))
+	if (!Dribble.Request(Move, Now(), bRedirect))
 	{
 		LogInput(FString::Printf(TEXT("  (buffer) %s"), *Ansi(Hoops::DribbleMoveLabel(Move))));
 		return;
@@ -746,8 +773,11 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move)
 
 	const Hoops::DribbleMoveSpec& Spec = Hoops::GetDribbleMoveSpec(Move);
 	const Hoops::ActiveDribbleMove& Active = Dribble.GetActive();
+	// Mão de onde o movimento sai (numa misdirection, a do movimento trocado: a bola não chegou a trocar).
+	const Hoops::BallHand HandBefore = Active.HandAtStart;
 	const double Duration = Spec.Duration / Active.PlayRate;
-	LogInput(FString::Printf(TEXT("  -> %s%s"), *Ansi(Hoops::DribbleMoveLabel(Move)), Active.bInRhythm ? TEXT(" (ritmo!)") : TEXT("")));
+	LogInput(FString::Printf(TEXT("  -> %s%s%s"), *Ansi(Hoops::DribbleMoveLabel(Move)), Active.bInRhythm ? TEXT(" (ritmo!)") : TEXT(""),
+		Active.bRedirected ? TEXT(" (misdirection)") : TEXT("")));
 
 	// Impulso do movimento no referencial do ataque.
 	const FVector AttackFwd = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
@@ -981,10 +1011,14 @@ void AHoopsPlayerCharacter::BeginShot(bool bFromProStick)
 		}
 	}
 
-	// Momentum: pull-up mantém um pouco do deslocamento; spot-up para.
+	// Pull-up sem frear (docs/17 §3.4, P0-9): o gather leva o embalo do drible (o último quique vira o gather) e o
+	// UpdateShot desacelera no plant até a deriva do salto. Spot-up planta na hora.
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
-	const double Keep = ShotContext.Type == Hoops::ShotType::PullUp ? 0.35 : 0.1;
-	Movement->Velocity = FVector(Movement->Velocity.X * Keep, Movement->Velocity.Y * Keep, Movement->Velocity.Z);
+	const FVector Entry2D(Movement->Velocity.X, Movement->Velocity.Y, 0.0);
+	PullUpCarryDir = Entry2D.GetSafeNormal2D();
+	PullUpCarry = Hoops::ComputeGatherCarry(Hoops::GatherCarryTuning(), ShotContext.Type, Entry2D.Size2D() / 100.0);
+	const double KeepCm = PullUpCarry.SpeedAt(0.0) * 100.0;
+	Movement->Velocity = FVector(PullUpCarryDir.X * KeepCm, PullUpCarryDir.Y * KeepCm, Movement->Velocity.Z);
 
 	LogInput(FString::Printf(TEXT("Gather: %s %.1f m (%s) janela green +-%.0f ms"),
 		*Ansi(Hoops::ShotTypeLabel(ShotContext.Type)), ShotContext.DistanceMeters,
@@ -1027,28 +1061,39 @@ void AHoopsPlayerCharacter::UpdateShot(float DeltaSeconds)
 		bJumpCommitted = true;
 		const double AirSeconds = FMath::Max(0.25, (ShotWindows.IdealReleaseMs - Tuning.PumpFakeMaxHoldMs) / 1000.0);
 		const double JumpZ = FMath::Abs(GetCharacterMovement()->GetGravityZ()) * AirSeconds;
-		FVector Horizontal = GetVelocity() * 0.5;
-		Horizontal.Z = 0.0;
+		// Deriva no ar: o que sobra do embalo do drible (pull-up: pouso 10–30 cm à frente) + step-back/fadeaway
+		// para trás.
+		FVector BackDrift = FVector::ZeroVector;
 		if (ShotContext.Type == Hoops::ShotType::Fadeaway || ShotContext.Type == Hoops::ShotType::StepBack)
 		{
-			Horizontal += -(Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D() * 160.0;
+			BackDrift = -(Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D() * 160.0;
 		}
 		if (bRigActive)
 		{
-			// O pulo está na animação; o capsule só leva o embalo horizontal (aplicado como input a cada frame,
-			// senão o atrito do chão mata o drift do fadeaway/step-back na hora).
-			ShotDrift = FVector(Horizontal.X, Horizontal.Y, 0.0);
+			// O pulo está na animação; o capsule só leva o embalo horizontal (aplicado abaixo a cada frame).
+			ShotDrift = FVector(BackDrift.X, BackDrift.Y, 0.0);
 		}
 		else
 		{
+			const FVector Horizontal = PullUpCarryDir * (PullUpCarry.DriftSpeed * 100.0) + BackDrift;
 			LaunchCharacter(FVector(Horizontal.X, Horizontal.Y, JumpZ), true, true);
 		}
 	}
 
-	if (bRigActive && bJumpCommitted && !ShotDrift.IsNearlyZero())
+	// Embalo horizontal no chão (docs/17 §3.4, P0-9): no plant cai da velocidade do drible até a deriva do salto; depois
+	// do commit soma a deriva do step-back/fadeaway. Velocidade direta + input igual, senão o atrito do chão freia
+	// o corpo no mesmo frame.
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!Movement->IsFalling() && (bRigActive || !bJumpCommitted))
 	{
-		const float MaxSpeed = FMath::Max(1.0f, GetCharacterMovement()->MaxWalkSpeed);
-		AddMovementInput(ShotDrift.GetSafeNormal2D(), FMath::Min(1.0f, static_cast<float>(ShotDrift.Size2D()) / MaxSpeed));
+		const FVector PlantVelocity = PullUpCarryDir * (PullUpCarry.SpeedAt(HoldMs / 1000.0) * 100.0);
+		const FVector Desired = bJumpCommitted ? PlantVelocity + ShotDrift : PlantVelocity;
+		if (!Desired.IsNearlyZero())
+		{
+			Movement->MaxWalkSpeed = FMath::Max(Movement->MaxWalkSpeed, static_cast<float>(Desired.Size2D()));
+			Movement->Velocity = FVector(Desired.X, Desired.Y, Movement->Velocity.Z);
+			AddMovementInput(Desired.GetSafeNormal2D(), FMath::Min(1.0f, static_cast<float>(Desired.Size2D()) / Movement->MaxWalkSpeed));
+		}
 	}
 
 	// Segurou demais: soltura automática (muito tarde).
