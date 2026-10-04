@@ -17,6 +17,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Garrafao.h"
 #include "DrawDebugHelpers.h"
+#include "HoopsAudio.h"
 #include "HoopsBall.h"
 #include "HoopsDummyDefender.h"
 #include "HoopsAnimInstance.h"
@@ -30,7 +31,6 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "Kismet/GameplayStatics.h"
-#include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
@@ -748,6 +748,7 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move)
 	const Hoops::ActiveDribbleMove& Active = Dribble.GetActive();
 	const double Duration = Spec.Duration / Active.PlayRate;
 	LogInput(FString::Printf(TEXT("  -> %s%s"), *Ansi(Hoops::DribbleMoveLabel(Move)), Active.bInRhythm ? TEXT(" (ritmo!)") : TEXT("")));
+	UHoopsAudioSubsystem::PlaySqueak(this, static_cast<float>(0.25 + 0.15 * (FMath::Abs(Spec.LateralSpeed) + FMath::Abs(Spec.ForwardSpeed)))); // tênis no corte
 
 	// Impulso do movimento no referencial do ataque.
 	const FVector AttackFwd = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
@@ -829,6 +830,7 @@ void AHoopsPlayerCharacter::UpdateDribbleBall(float DeltaSeconds)
 		PlanDribbleArc(false, bLeftTriggerHeld ? 0.36 : 0.0);
 	}
 	const Hoops::Vec3 Pos = CurrentArc.Evaluate(Now() - ArcStartTime);
+	UHoopsAudioSubsystem::NotifyDribbleArc(this, CurrentArc, Now() - ArcStartTime, DeltaSeconds); // quique no chão
 	Ball->SetControlledLocation(HoopsUnits::ToUnreal(Pos));
 }
 
@@ -970,6 +972,7 @@ void AHoopsPlayerCharacter::BeginShot(bool bFromProStick)
 	ShotDrift = FVector::ZeroVector;
 	bShotFromProStick = bFromProStick;
 	ShotPhase = EShotPhase::Jumper;
+	UHoopsAudioSubsystem::PlaySqueak(this, 0.35f + static_cast<float>(GetVelocity().Size2D()) / 800.0f); // tênis no plant do gather
 	if (bRigActive)
 	{
 		// A mão chega ao topo (soltura do clipe) exatamente no tempo ideal = centro da janela green.
@@ -1093,6 +1096,7 @@ void AHoopsPlayerCharacter::ReleaseShot()
 		Anim->ReleaseActionHold();
 	}
 	OnShotReleased(Eval, HoldMs);
+	UHoopsAudioSubsystem::PlayLandingSqueak(this, bLastShotGreen ? 0.85f : 0.65f); // tênis na aterrissagem
 
 	Hud.LabLines.Reset();
 	Hud.LabLines.Add(FString::Printf(TEXT("Ultimo: %s | %.2f m | rating %.0f"), *Ansi(Hoops::ShotTypeLabel(ShotContext.Type)), ShotContext.DistanceMeters, ShotContext.Rating));
@@ -1187,6 +1191,7 @@ void AHoopsPlayerCharacter::ReleaseFinish()
 	ReturnBallAt = -1.0;
 	++Hud.Attempts;
 	ShowFeedback(Eval, ShotContext);
+	UHoopsAudioSubsystem::PlayLandingSqueak(this, 0.8f); // tênis na aterrissagem
 }
 
 // ============================================================================ Bola livre, rebotedor, recepção
@@ -1725,6 +1730,7 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 			const FVector Live = HandBallPoint(FlightHand);
 			TrackHandStroke(FlightHand, Live, DeltaSeconds);
 			const double Elapsed = T - FlightStart;
+			UHoopsAudioSubsystem::NotifyDribbleArc(this, FlightArc, Elapsed, DeltaSeconds); // quique no chão
 			Target = HoopsUnits::ToUnreal(FlightArc.Evaluate(Elapsed));
 			// No fim do voo, encosta na mão animada (a previsão do ponto de recepção nunca é exata).
 			const double SteerFrom = FlightSeconds * 0.6;
@@ -1850,34 +1856,8 @@ void AHoopsPlayerCharacter::Celebrate()
 
 void AHoopsPlayerCharacter::PlayGreenChime()
 {
-	if (GreenSoundVolume <= 0.0f)
-	{
-		return;
-	}
-	// "Ding" de duas notas (Mi e Si agudos) com decaimento rápido, sintetizado na hora.
-	constexpr int32 SampleRate = 44100;
-	constexpr float Seconds = 0.7f;
-	const int32 NumSamples = static_cast<int32>(SampleRate * Seconds);
-	TArray<int16> Samples;
-	Samples.SetNumUninitialized(NumSamples);
-	for (int32 Index = 0; Index < NumSamples; ++Index)
-	{
-		const float T = static_cast<float>(Index) / static_cast<float>(SampleRate);
-		const float Attack = FMath::Min(1.0f, T / 0.004f);
-		const float First = FMath::Sin(2.0f * UE_PI * 1318.5f * T) * FMath::Exp(-T * 7.0f);
-		const float Second = T > 0.07f ? FMath::Sin(2.0f * UE_PI * 1975.5f * (T - 0.07f)) * FMath::Exp(-(T - 0.07f) * 6.0f) : 0.0f;
-		const float Value = Attack * (0.45f * First + 0.4f * Second);
-		Samples[Index] = static_cast<int16>(FMath::Clamp(Value, -1.0f, 1.0f) * 32000.0f);
-	}
-
-	GreenChime = NewObject<USoundWaveProcedural>(this);
-	GreenChime->SetSampleRate(SampleRate);
-	GreenChime->NumChannels = 1;
-	GreenChime->Duration = Seconds;
-	GreenChime->SoundGroup = SOUNDGROUP_Default;
-	GreenChime->bLooping = false;
-	GreenChime->QueueAudio(reinterpret_cast<const uint8*>(Samples.GetData()), Samples.Num() * static_cast<int32>(sizeof(int16)));
-	UGameplayStatics::PlaySound2D(this, GreenChime, GreenSoundVolume);
+	// "Ding" de duas notas (Mi e Si agudos), sintetizado em HoopsAudio (sem asset).
+	UHoopsAudioSubsystem::Play2D(this, EHoopsSound::GreenChime, GreenSoundVolume);
 }
 
 void AHoopsPlayerCharacter::FireShotFeedback()
