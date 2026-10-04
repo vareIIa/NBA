@@ -1,6 +1,8 @@
 #include "HoopsCourt.h"
 
 #include "Components/DirectionalLightComponent.h"
+#include "Components/RectLightComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "EngineUtils.h"
@@ -59,8 +61,44 @@ void AHoopsCourt::BeginPlay()
 		SkyLight->SetVisibility(false);
 		SkyAtmosphere->SetVisibility(false);
 	}
+	else if (Lighting == EHoopsCourtLighting::Gym)
+	{
+		// Ginásio à noite: sem sol; a luz vem dos refletores e do rebatimento no piso (Lumen).
+		Sun->SetVisibility(false);
+		SkyAtmosphere->SetVisibility(false);
+		SkyLight->SetIntensity(0.2f);
+		SpawnGymLights();
+	}
 
+	HoopsMeshUtil::RefreshProjectMaterials();
 	BuildCourt();
+}
+
+void AHoopsCourt::SpawnGymLights()
+{
+	// Grade 3 x 2 de refletores a 9 m sobre a meia-quadra, apontando para baixo.
+	const float Xs[] = {150.0f, 600.0f, 1050.0f};
+	const float Ys[] = {-450.0f, 450.0f};
+	for (const float X : Xs)
+	{
+		for (const float Y : Ys)
+		{
+			URectLightComponent* Light = NewObject<URectLightComponent>(this);
+			Light->SetupAttachment(Root);
+			Light->SetMobility(EComponentMobility::Movable);
+			Light->SetRelativeLocation(FVector(X, Y, 900.0f));
+			Light->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f));
+			Light->SetIntensityUnits(ELightUnits::Candelas);
+			Light->SetIntensity(GymLightCandelas);
+			Light->SetSourceWidth(320.0f);
+			Light->SetSourceHeight(120.0f);
+			Light->SetAttenuationRadius(2600.0f);
+			Light->SetLightColor(FLinearColor(1.0f, 0.95f, 0.88f));
+			Light->SetCastShadows(true);
+			Light->RegisterComponent();
+			AddInstanceComponent(Light);
+		}
+	}
 }
 
 void AHoopsCourt::AddLine(const FVector2D& A, const FVector2D& B)
@@ -98,8 +136,19 @@ void AHoopsCourt::BuildCourt()
 	const float FloorLength = (HalfCourt - Baseline) + 2.0f * MarginCm;
 	const float FloorWidth = 2.0f * HalfWidth + 2.0f * MarginCm;
 	const FVector FloorCenter((Baseline + HalfCourt) * 0.5f, 0.0f, -5.0f);
-	HoopsMeshUtil::AddMesh(this, Root, Shapes.Cube,
+	UStaticMeshComponent* Floor = HoopsMeshUtil::AddMesh(this, Root, Shapes.Cube,
 		FTransform(FRotator::ZeroRotator, FloorCenter, FVector(FloorLength / 100.0f, FloorWidth / 100.0f, 0.1f)), WoodColor, true);
+	// Piso de madeira realista (texturas CC0 do Poly Haven) se o script de quadra realista já rodou.
+	if (UMaterialInterface* Wood = HoopsMeshUtil::GetProjectMaterial(TEXT("M_HoopsWoodFloor")))
+	{
+		if (Floor)
+		{
+			Floor->SetMaterial(0, Wood);
+		}
+	}
+	// Entorno escuro (o "resto do ginásio"), um pouco abaixo do piso.
+	HoopsMeshUtil::AddMesh(this, Root, Shapes.Cube,
+		FTransform(FRotator::ZeroRotator, FloorCenter - FVector(0.0f, 0.0f, 2.0f), FVector(60.0f, 60.0f, 0.1f)), FLinearColor(0.03f, 0.03f, 0.035f), true);
 
 	// Garrafão pintado.
 	HoopsMeshUtil::AddStrip(this, Root, FVector2D(Baseline, 0.0f), FVector2D(FreeThrowX, 0.0f), 2.0f * LaneHalf, 0.1f, PaintZCm, PaintColor);

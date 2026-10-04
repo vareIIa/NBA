@@ -29,6 +29,15 @@ git lfs pull          # baixa os vídeos de referência
 3. Com o editor aberto: **File → New Level → Empty Level**. (Se usar um nível com luz própria, a quadra não cria uma segunda iluminação.)
 4. Aperte **Play** (Alt+P). O modo **Freestyle** cria sozinho a quadra, a cesta, a bola e a iluminação.
 
+### Quadra realista (opcional, recomendado)
+
+A quadra já abre com **iluminação de ginásio à noite** (6 refletores, sem sol). Para o **piso de madeira envernizado**:
+1. **Tools → Execute Python Script…** → escolha `Tools/Editor/setup_quadra_realista.py`.
+2. O script baixa texturas **CC0 do Poly Haven** (licença livre, uso comercial ok), cria `M_HoopsWoodFloor` e `M_HoopsSolid` em `/Game/Hoops/Materials` e salva.
+3. Aperte **Play**: o piso e as peças passam a usar os materiais novos automaticamente.
+
+Para trocar para quadra ao ar livre (sol + céu): selecione o ator **HoopsCourt** durante o Play e mude `Lighting` para `Outdoor`, ou coloque um HoopsCourt no nível com essa opção.
+
 ### Manequim (opcional, recomendado)
 
 Sem asset nenhum, o jogador aparece como um cilindro preto. Para ver o **Manny** animado (andar/correr):

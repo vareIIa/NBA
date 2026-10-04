@@ -6,6 +6,7 @@
 #include "HoopsCourt.h"
 #include "HoopsHUD.h"
 #include "HoopsHoop.h"
+#include "HoopsMeshUtil.h"
 #include "HoopsPlayerCharacter.h"
 
 AHoopsFreestyleGameMode::AHoopsFreestyleGameMode()
@@ -22,6 +23,7 @@ void AHoopsFreestyleGameMode::EnsureEnvironment(UWorld* World, AHoopsHoop*& OutH
 	{
 		return;
 	}
+	HoopsMeshUtil::RefreshProjectMaterials();
 
 	AHoopsCourt* Court = nullptr;
 	for (TActorIterator<AHoopsCourt> It(World); It; ++It)

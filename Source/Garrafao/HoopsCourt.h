@@ -6,8 +6,16 @@
 #include "HoopsCourt.generated.h"
 
 class UDirectionalLightComponent;
+class UStaticMeshComponent;
 class USkyAtmosphereComponent;
 class USkyLightComponent;
+
+UENUM(BlueprintType)
+enum class EHoopsCourtLighting : uint8
+{
+	Gym,      // ginásio à noite: refletores retangulares sobre a quadra, sem sol
+	Outdoor,  // ao ar livre: sol + céu
+};
 
 // Meia-quadra graybox com medidas oficiais (linhas, garrafão, arco de 3) + iluminação básica.
 // Origem do ator = ponto no chão sob o centro do aro; +X do ator = da tabela para dentro da quadra.
@@ -21,6 +29,13 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Hoops|Quadra")
 	bool bSpawnLighting = true;
+
+	UPROPERTY(EditAnywhere, Category = "Hoops|Luz")
+	EHoopsCourtLighting Lighting = EHoopsCourtLighting::Gym;
+
+	// Intensidade de cada refletor do ginásio (candelas).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Luz")
+	float GymLightCandelas = 25000.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Hoops|Quadra")
 	FLinearColor WoodColor = FLinearColor(0.60f, 0.38f, 0.20f);
@@ -36,6 +51,7 @@ protected:
 
 private:
 	void BuildCourt();
+	void SpawnGymLights();
 	void AddLine(const FVector2D& A, const FVector2D& B);
 	void AddArc(const FVector2D& Center, float Radius, float StartDeg, float EndDeg, int32 Segments);
 

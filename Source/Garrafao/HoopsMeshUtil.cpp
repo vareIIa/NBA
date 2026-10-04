@@ -30,17 +30,37 @@ const FHoopsBasicShapes& FHoopsBasicShapes::Get()
 	return Shapes;
 }
 
+namespace
+{
+	TWeakObjectPtr<UMaterialInterface> GPreferredSolidMaterial;
+}
+
 namespace HoopsMeshUtil
 {
-	void SetColor(UObject* Outer, UStaticMeshComponent* Component, const FLinearColor& Color)
+	UMaterialInterface* GetProjectMaterial(const TCHAR* AssetName)
 	{
-		const FHoopsBasicShapes& Shapes = FHoopsBasicShapes::Get();
-		if (!Component || !Shapes.BaseMaterial)
+		const FString Path = FString::Printf(TEXT("/Game/Hoops/Materials/%s.%s"), AssetName, AssetName);
+		return LoadObject<UMaterialInterface>(nullptr, *Path, nullptr, static_cast<ELoadFlags>(LOAD_NoWarn | LOAD_Quiet));
+	}
+
+	void RefreshProjectMaterials()
+	{
+		GPreferredSolidMaterial = GetProjectMaterial(TEXT("M_HoopsSolid"));
+	}
+
+	void SetColor(UObject* Outer, UStaticMeshComponent* Component, const FLinearColor& Color, float Roughness)
+	{
+		UMaterialInterface* Base = GPreferredSolidMaterial.IsValid() ? GPreferredSolidMaterial.Get() : FHoopsBasicShapes::Get().BaseMaterial;
+		if (!Component || !Base)
 		{
 			return;
 		}
-		UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(Shapes.BaseMaterial, Outer);
+		UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(Base, Outer);
 		Material->SetVectorParameterValue(TEXT("Color"), Color);
+		if (Roughness >= 0.0f)
+		{
+			Material->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+		}
 		Component->SetMaterial(0, Material);
 	}
 

@@ -27,8 +27,13 @@ namespace HoopsMeshUtil
 	UStaticMeshComponent* AddMesh(AActor* Owner, USceneComponent* Parent, UStaticMesh* Mesh,
 		const FTransform& RelativeTransform, const FLinearColor& Color, bool bCollision = false);
 
-	// Aplica cor via material dinâmico (BasicShapeMaterial "Color").
-	void SetColor(UObject* Outer, UStaticMeshComponent* Component, const FLinearColor& Color);
+	// Aplica cor via material dinâmico (parâmetro "Color"). Roughness >= 0 ajusta o parâmetro "Roughness"
+	// (existe no M_HoopsSolid criado pelo script de quadra realista; no BasicShapeMaterial é ignorado).
+	void SetColor(UObject* Outer, UStaticMeshComponent* Component, const FLinearColor& Color, float Roughness = -1.0f);
+
+	// Procura os materiais do projeto (Tools/Editor/setup_quadra_realista.py). Sem eles, usa os da engine.
+	void RefreshProjectMaterials();
+	UMaterialInterface* GetProjectMaterial(const TCHAR* AssetName); // ex.: TEXT("M_HoopsWoodFloor"); nullptr se não existir
 
 	// Caixa fina entre dois pontos no plano local (linhas da quadra, barras). Altura Z = ZCenter.
 	UStaticMeshComponent* AddStrip(AActor* Owner, USceneComponent* Parent, const FVector2D& A, const FVector2D& B,

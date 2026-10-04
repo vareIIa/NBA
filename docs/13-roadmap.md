@@ -8,15 +8,17 @@
 
 **Pergunta a responder: "sozinho na quadra, driblar e arremessar já tem a sensação de 2K23?"**
 
-- [ ] Projeto UE 5.8, Git LFS, estrutura de módulos (`12-arquitetura-tecnica.md`)
-- [ ] **Controles idênticos ao 2K** via Enhanced Input (`02-controles.md`)
-- [ ] Movement component de basquete (aceleração, plant-and-cut, energia)
-- [ ] Solver da bola (aro, tabela, chão) + arremesso com timing/green + feedback
-- [ ] Drible: size-ups, crossover, entre as pernas, por trás, spin, hesitação, step-back, **parado e em movimento**
-- [ ] Gather em movimento → dribble pull-up, fadeaway, bandejas e enterradas básicas
-- [ ] **Quadra realista** (ginásio indoor) com assets gratuitos/open-source
-- [ ] **Modo Freestyle** com overlay de laboratório (`10-modos.md §0`)
-- [ ] Teste de 10.000 arremessos e medidor de latência input→pose
+- [x] Projeto UE 5.8, Git LFS, estrutura de módulos (`12-arquitetura-tecnica.md`) — *aguardando 1ª compilação no PC do diretor*
+- [x] **Controles idênticos ao 2K23** via Enhanced Input (`02-controles.md`)
+- [ ] Movement component de basquete (aceleração, plant-and-cut, energia) — *hoje: CharacterMovement ajustado + energia/Explosões no núcleo*
+- [x] Solver da bola (aro, tabela, chão) + arremesso com timing/green + feedback (núcleo testado)
+- [x] Drible pelo Pro Stick do 2K23 (crossover, entre as pernas, por trás, hesitação, step-back, spin, half-spin, combos) — *sem animação própria ainda*
+- [x] Gather em movimento → dribble pull-up, step-back, fadeaway, bandejas e enterradas básicas
+- [x] Defensor manequim + contestação geométrica
+- [ ] **Quadra realista** (ginásio indoor) com assets gratuitos/open-source — *iluminação de ginásio + script de piso CC0 prontos; falta arquibancada/paredes*
+- [x] **Modo Freestyle** com overlay de laboratório (inputs, janelas, contestação, câmera lenta)
+- [ ] Teste de 10.000 arremessos (núcleo: feito) e medidor de latência input→pose (falta)
+- [ ] Animações: Motion Matching (GASP) com o personagem do jogo
 - [ ] Primeira sessão de captura com os atletas do diretor
 
 **Critério para avançar**: o diretor joga 30 min de Freestyle e reconhece a sensação de drible/arremesso do 2K23.
