@@ -95,7 +95,31 @@ Na distância da quadra, a mão ocupa só 30–60 px num vídeo 1080p: dedos fic
 
 Cada atleta assina um termo cobrindo **movimento, imagem e uso comercial** (inclusive em jogo vendido e em material de divulgação), com opção de anonimato (o personagem não precisa ter o rosto dele).
 
-### 4.6 Dados gratuitos para começar antes da primeira sessão
+### 4.6 Captura própria open source — pronto para usar
+
+Guia do diretor e ferramentas em **`Tools/Captura/README.md`** (2026-10-04). Provado de ponta a ponta aqui com o demo
+de 4 câmeras do Pose2Sim: calibração → pose 2D (RTMW, 133 pontos) → sincronia → triangulação → filtro → aumento de
+marcadores → OpenSim IK → **BVH no esqueleto CMU 06** → FBX do boneco no Blender (`exemplos/` tem as imagens).
+
+- **Celulares em vez de GoPros**: 4 celulares (mínimo 2) nas diagonais, a 5–7 m, dois a ~1,2 m e dois a ~2,2 m,
+  1080p a 120 fps, obturador 1/1000 s, app Blackmagic Camera. Ensaiar antes com 2.
+- **Calibração**: tabuleiro A3 impresso (`gerar_tabuleiro.py`) para as lentes + 12 pontos medidos da quadra
+  (garrafão, lance livre, linha de 3, tabela) clicados uma vez por sessão.
+- **Sincronia pelo som**: o atleta dá um "pulo de sincronia" no começo de cada take; `sincronizar_audio.py` acha o
+  instante em cada vídeo e as câmeras são alinhadas quadro a quadro (no teste, deslocamentos exatos). A sincronia
+  automática do Pose2Sim pelo movimento fica como alternativa: ela erra no drible, que é periódico.
+- **Um comando por take** (Windows ou Linux): `rodar_pose2sim.py <take> --calib <Calib.toml> --bvh <saida.bvh>`.
+  O conversor `pose2sim_para_bvh.py` usa os ângulos do OpenSim (ossos de comprimento fixo) e orienta o punho pela
+  palma (pontos da mão do RTMW). CPU funciona (~4 quadros/s em 4 núcleos); GPU NVIDIA é opcional.
+- **Licenças conferidas** (tabela no guia): Pose2Sim BSD-3, rtmlib/MMPose Apache-2.0, OpenSim Apache-2.0, modelo
+  Rajagopal MIT, caliscope BSD-2, ONNX Runtime MIT, OpenVINO Apache-2.0. ⚠️ Os **pesos** (Apache-2.0) foram treinados
+  com bases de termos variados, inclusive não comerciais (ex.: Human-Art, no detector padrão): não usamos as bases nem
+  distribuímos os pesos; risco baixo, documentado no guia com a troca possível do detector. O aumento de marcadores
+  (LSTM do OpenCap, Apache-2.0) fica desligado por padrão.
+- **Limitações** do conversor: retarget por direção (o pé pode deslizar alguns cm, sem trava de pé ainda), dedos só
+  como flexão média (usar as poses de mão autorais da §4.4), clavícula presa ao tórax.
+
+### 4.7 Dados gratuitos para começar antes da primeira sessão
 
 | Fonte | Conteúdo útil |
 |---|---|

@@ -2,8 +2,10 @@
 Monta o personagem "HoopsDummy" no Blender (rodar com Blender 4.x/5.x ou o módulo bpy):
 
     blender --background --python montar_personagem_blender.py -- <pasta_bvh> <saida.fbx> [--render <pasta_png>]
+                                                                   [--clipes Nome1,Nome2,...]
 
-  1. Importa os BVH processados (processar_clipes.py) no MESMO esqueleto (sujeito 06 da CMU).
+  1. Importa os BVH processados (processar_clipes.py) no MESMO esqueleto (sujeito 06 da CMU). --clipes troca a
+     lista padrão (CLIPS), p.ex. para testar um take convertido da captura própria (Tools/Captura).
   2. Renomeia os ossos para nomes no padrão da Unreal (pelvis, spine_01, thigh_l, hand_r, ...).
   3. Gera uma malha articulada ("boneco de teste"): cada parte presa 100% ao seu osso, em 3 materiais
      (Pele, Uniforme, Tenis) para a Unreal colorir.
@@ -72,7 +74,8 @@ def parse_args():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
     bvh_dir, out_fbx = argv[0], argv[1]
     render_dir = argv[argv.index("--render") + 1] if "--render" in argv else None
-    return bvh_dir, out_fbx, render_dir
+    clips = argv[argv.index("--clipes") + 1].split(",") if "--clipes" in argv else CLIPS
+    return bvh_dir, out_fbx, render_dir, clips
 
 
 def import_bvh(path):
@@ -187,19 +190,19 @@ def build_mesh(arm):
 
 
 def main():
-    bvh_dir, out_fbx, render_dir = parse_args()
+    bvh_dir, out_fbx, render_dir, clips = parse_args()
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     scene.render.fps = 60
 
-    arm = import_bvh(os.path.join(bvh_dir, CLIPS[0] + ".bvh"))
+    arm = import_bvh(os.path.join(bvh_dir, clips[0] + ".bvh"))
     arm.name = "HoopsDummy"
     arm.data.name = "HoopsDummy_Skeleton"
     rename_bones(arm)
-    arm.animation_data.action.name = CLIPS[0]
+    arm.animation_data.action.name = clips[0]
 
     actions = [arm.animation_data.action]
-    for clip in CLIPS[1:]:
+    for clip in clips[1:]:
         other = import_bvh(os.path.join(bvh_dir, clip + ".bvh"))
         rename_bones(other)  # renomear com a ação atribuída atualiza os caminhos das F-curves
         action = other.animation_data.action

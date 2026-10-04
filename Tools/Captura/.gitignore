@@ -1,0 +1,19 @@
+# Nunca commitar vídeos, saídas do Pose2Sim, tabuleiros impressos nem ambientes virtuais.
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.pdf
+*.trc
+*.mot
+*.osim
+*.c3d
+*.bvh
+*.fbx
+opensim.log
+venv/
+pose/
+pose-sync/
+pose-associated/
+pose-3d/
+kinematics/
