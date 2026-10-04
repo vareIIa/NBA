@@ -822,7 +822,8 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedi
 	if (bRigActive)
 	{
 		// Com o boneco, a troca acontece no Tick da bola (LateUpdateHeldBall), a partir da mão animada.
-		bSwitchRequested = Spec.HandSwitches > 0;
+		// Misdirection: a bola já pode estar indo para a outra mão; pede a troca de novo para ela seguir a mão certa.
+		bSwitchRequested = Spec.HandSwitches > 0 || Active.bRedirected;
 		bDoubleCrossPending = bDoubleSwitch;
 		SwitchFlightSeconds = FMath::Clamp(Duration * (bDoubleSwitch ? 0.4 : 0.6), 0.18, 0.6);
 
@@ -831,6 +832,10 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedi
 		const bool bSpin = Move == Hoops::DribbleMove::Spin || Move == Hoops::DribbleMove::HalfSpin;
 		UHoopsAnimInstance* Anim = GetHoopsAnim();
 		UAnimSequence* Cross = GetActionClip(HandBefore == Hoops::BallHand::Right ? EHoopsClip::CrossR2L : EHoopsClip::CrossL2R);
+		if (Active.bRedirected && Spec.HandSwitches == 0 && Anim)
+		{
+			Anim->StopAction(0.1f); // o crossover trocado não continua tocando
+		}
 		if (Spec.HandSwitches == 1 && !bSpin && Anim && Cross)
 		{
 			const float Rate = (HoopsDummyRig::CrossCatchSeconds - HoopsDummyRig::CrossStartSeconds) /
