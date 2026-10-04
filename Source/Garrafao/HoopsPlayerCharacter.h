@@ -9,10 +9,14 @@
 #include "HoopsSimCore/HoopsProStick.h"
 #include "HoopsSimCore/HoopsRandom.h"
 #include "HoopsSimCore/HoopsShotModel.h"
+#include "HoopsDummyRig.h"
 
 #include "HoopsPlayerCharacter.generated.h"
 
 class AHoopsBall;
+class UAnimSequence;
+class UHoopsAnimInstance;
+class USkeletalMesh;
 class AHoopsDummyDefender;
 class AHoopsHoop;
 class UCameraComponent;
@@ -67,7 +71,8 @@ struct FHoopsHudData
 };
 
 // Jogador do Freestyle: controles do 2K23 (docs/02-controles.md), drible pelo Pro Stick, arremesso com green.
-// Fase 0: sem animações próprias ainda (manequim/placeholder); a lógica vem do núcleo HoopsSimCore.
+// Corpo: boneco animado (mocap, Tools/Animacao) se importado; senão manequim da Epic; senão um cilindro.
+// A lógica vem do núcleo HoopsSimCore.
 UCLASS()
 class GARRAFAO_API AHoopsPlayerCharacter : public ACharacter
 {
@@ -117,7 +122,50 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Hoops|Freestyle")
 	bool bInfiniteEnergy = false;
 
-	// Caminhos do manequim (pacote "Third Person" da Epic). Se não existir, usa um corpo placeholder.
+	// --- Movimento com a bola ---
+	// Com o analógico abaixo disso (ou segurando LT), o jogador encara a cesta e anda de frente/lado/costas
+	// (size-up). Acima, corre na direção do analógico, virando o corpo (como no 2K).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Movimento", meta = (ClampMin = "0.2", ClampMax = "1.0"))
+	float StrafeStickThreshold = 0.7f;
+
+	// Velocidade máxima (cm/s) no size-up, encarando a cesta.
+	UPROPERTY(EditAnywhere, Category = "Hoops|Movimento", meta = (ClampMin = "100", ClampMax = "500"))
+	float StrafeSpeedCm = 260.0f;
+
+	// --- Boneco animado (Art/Characters/HoopsDummy, importado por Tools/Editor/importar_personagem.py) ---
+	UPROPERTY(EditDefaultsOnly, Category = "Hoops|Visual")
+	FString DummyAssetFolder = TEXT("/Game/Hoops/Characters/Dummy");
+
+	// Altura do jogador: o boneco é escalado para ela.
+	UPROPERTY(EditAnywhere, Category = "Hoops|Visual", meta = (ClampMin = "160", ClampMax = "230"))
+	float BodyHeightCm = 196.0f;
+
+	// Ajuste fino da frente do boneco (graus, somado à frente medida pelos pés).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Visual")
+	float MeshYawAdjust = 0.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Hoops|Visual")
+	FLinearColor SkinColor = FLinearColor(0.36f, 0.22f, 0.14f);
+
+	UPROPERTY(EditAnywhere, Category = "Hoops|Visual")
+	FLinearColor JerseyColor = FLinearColor(0.04f, 0.16f, 0.50f);
+
+	UPROPERTY(EditAnywhere, Category = "Hoops|Visual")
+	FLinearColor ShoesColor = FLinearColor(0.85f, 0.85f, 0.85f);
+
+	// Velocidade do drible parado (o mocap é lento: 1 quique a cada 0,85 s).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao", meta = (ClampMin = "0.5", ClampMax = "2.5"))
+	float DribbleIdlePlayRate = 1.3f;
+
+	// Centro da bola em relação à palma no drible (cm; X = frente do jogador, Y = para fora, Z = cima).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao")
+	FVector DribbleBallOffset = FVector(0.0, 2.0, -14.0);
+
+	// Centro da bola em relação à palma da mão do arremesso (cm; X = frente, Y = direita, Z = cima).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao")
+	FVector ShotBallOffset = FVector(3.0, 0.0, 11.0);
+
+	// Caminhos do manequim (pacote "Third Person" da Epic), usado se o boneco não foi importado.
 	UPROPERTY(EditDefaultsOnly, Category = "Hoops|Visual")
 	TArray<FString> MannequinMeshPaths;
 
@@ -131,6 +179,7 @@ private:
 	// ---------------- Setup
 	void EnsureInputConfig();
 	void EnsureWorldRefs();
+	bool TryLoadDummyRig();
 	void TryLoadMannequin();
 	void ResetToSpot(int32 SpotIndex);
 
@@ -189,6 +238,19 @@ private:
 	void ShowFeedback(const Hoops::ShotEvaluation& Eval, const Hoops::ShotContext& Context);
 	void UpdateHud();
 
+	// ---------------- Boneco animado
+	UHoopsAnimInstance* GetHoopsAnim() const;
+	UAnimSequence* GetClip(EHoopsClip Clip) const;
+	void UpdateBodyAnimation(float DeltaSeconds);
+	void PlayShotAction(float StartSeconds, float SecondsToRelease);
+	// Bola segura pelo boneco: roda no Tick da bola, depois da animação deste frame.
+	void LateUpdateHeldBall(float DeltaSeconds);
+	FVector HandBallPoint(Hoops::BallHand Hand) const;
+	FVector ShotBallPoint() const;
+	void BeginBallFlight(const FVector& Start, Hoops::BallHand ToHand, double Seconds);
+	void ResetBallCarry(Hoops::BallHand Hand, double BlendSeconds);
+	void TrackHandStroke(Hoops::BallHand Hand, const FVector& HandPoint, float DeltaSeconds);
+
 	double Now() const;
 	FVector HoopForward() const;
 	FVector CameraForwardFlat() const;
@@ -219,6 +281,47 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AHoopsDummyDefender> Dummy;
+
+	// ---------------- Boneco animado
+	UPROPERTY(Transient)
+	TObjectPtr<USkeletalMesh> DummyMesh;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UAnimSequence>> DummyClips; // índice = EHoopsClip
+
+	bool bRigActive = false;
+	float MeshYawOffset = 0.0f;   // yaw base do corpo visual (boneco calibrado / manequim -90 / cilindro 0)
+	float MeshScale = 1.0f;
+	EHoopsClip BaseClip = EHoopsClip::HoldIdle;
+
+	// Bola na mão animada: na mão (sobe e desce com ela) ou em voo (quique até a mão que vai receber).
+	enum class EBallCarry : uint8 { Hand, Flight };
+	EBallCarry Carry = EBallCarry::Hand;
+	Hoops::BallHand CarryHand = Hoops::BallHand::Right;
+	Hoops::BallHand FlightHand = Hoops::BallHand::Right;
+	Hoops::DribbleArc FlightArc;
+	double FlightStart = 0.0;
+	double FlightSeconds = 0.3;
+	double CarryStart = 0.0;
+	double LastPushTime = -10.0;
+	double PushPeriod = 0.6;      // intervalo medido entre empurrões (s)
+	// Curso da mão (altura relativa ao capsule) para detectar o empurrão do drible na animação.
+	bool bHandTrackValid = false;
+	Hoops::BallHand TrackedHand = Hoops::BallHand::Right;
+	float HandPrevZ = 0.0f;
+	float HandVz = 0.0f;
+	float StrokeTopZ = 0.0f;
+	float StrokePeakVz = 0.0f;
+	bool bHasTopRelative = false;
+	FVector LastTopRelative = FVector::ZeroVector; // ponto da bola no topo do curso (referencial do jogador)
+	// Troca de mão pedida por um drible (crossover etc.).
+	bool bSwitchRequested = false;
+	bool bDoubleCrossPending = false;
+	double SwitchFlightSeconds = 0.3;
+	// Transição suave da bola (recepção, gather, pump fake).
+	FVector BallBlendFrom = FVector::ZeroVector;
+	double BallBlendStart = -10.0;
+	double BallBlendSeconds = 0.0;
 
 	// ---------------- Estado (núcleo)
 	Hoops::ShotModel ShotModel;

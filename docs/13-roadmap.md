@@ -12,12 +12,14 @@
 - [x] **Controles idênticos ao 2K23** via Enhanced Input (`02-controles.md`)
 - [ ] Movement component de basquete (aceleração, plant-and-cut, energia) — *hoje: CharacterMovement ajustado + energia (stamina) no núcleo; sem Explosões (D13)*
 - [x] Solver da bola (aro, tabela, chão) + arremesso com timing/green + feedback (núcleo testado)
-- [x] Drible pelo Pro Stick do 2K23 (crossover, entre as pernas, por trás, hesitação, step-back, spin, half-spin, combos) — *sem animação própria ainda*
+- [x] Drible pelo Pro Stick do 2K23 (crossover, entre as pernas, por trás, hesitação, step-back, spin, half-spin, combos) — *bola troca de mão na mão animada; animação própria de cada drible: falta*
 - [x] Gather em movimento → dribble pull-up, step-back, fadeaway, bandejas e enterradas básicas
 - [x] Defensor manequim + contestação geométrica
 - [ ] **Quadra realista** (ginásio indoor) com assets gratuitos/open-source — *iluminação de ginásio + script de piso CC0 prontos; falta arquibancada/paredes*
 - [x] **Modo Freestyle** com overlay de laboratório (inputs, janelas, contestação, câmera lenta)
 - [ ] Teste de 10.000 arremessos (núcleo: feito) e medidor de latência input→pose (falta)
+- [x] **Boneco animado com mocap aberto** (CMU): drible parado/andando/correndo/de costas/de lado nas duas mãos, andar, correr, arremesso saindo do drible sincronizado com o green; a bola segue a mão animada (Tools/Animacao)
+- [ ] Animações dos dribles do Pro Stick, bandeja/enterrada (124_06), pull-up/fadeaway próprios
 - [ ] Animações: Motion Matching (GASP) com o personagem do jogo
 - [ ] Primeira sessão de captura com os atletas do diretor
 

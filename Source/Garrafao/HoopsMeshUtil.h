@@ -6,6 +6,7 @@
 
 class AActor;
 class UMaterialInterface;
+class UMeshComponent;
 class USceneComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
@@ -30,6 +31,9 @@ namespace HoopsMeshUtil
 	// Aplica cor via material dinâmico (parâmetro "Color"). Roughness >= 0 ajusta o parâmetro "Roughness"
 	// (existe no M_HoopsSolid criado pelo script de quadra realista; no BasicShapeMaterial é ignorado).
 	void SetColor(UObject* Outer, UStaticMeshComponent* Component, const FLinearColor& Color, float Roughness = -1.0f);
+
+	// Mesmo, para um slot de material de qualquer malha (ex.: Pele/Uniforme/Tenis do boneco animado).
+	void SetSlotColor(UObject* Outer, UMeshComponent* Component, int32 MaterialIndex, const FLinearColor& Color, float Roughness = -1.0f);
 
 	// Procura os materiais do projeto (Tools/Editor/setup_quadra_realista.py). Sem eles, usa os da engine.
 	void RefreshProjectMaterials();

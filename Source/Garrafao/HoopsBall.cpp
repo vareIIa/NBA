@@ -74,7 +74,12 @@ void AHoopsBall::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (Mode != EHoopsBallMode::Free || !Sim)
+	if (Mode == EHoopsBallMode::Controlled)
+	{
+		OnHeldUpdate.ExecuteIfBound(DeltaSeconds);
+		return;
+	}
+	if (!Sim)
 	{
 		return;
 	}

@@ -1,5 +1,6 @@
 #include "HoopsMeshUtil.h"
 
+#include "Components/MeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/Actor.h"
@@ -50,6 +51,11 @@ namespace HoopsMeshUtil
 
 	void SetColor(UObject* Outer, UStaticMeshComponent* Component, const FLinearColor& Color, float Roughness)
 	{
+		SetSlotColor(Outer, Component, 0, Color, Roughness);
+	}
+
+	void SetSlotColor(UObject* Outer, UMeshComponent* Component, int32 MaterialIndex, const FLinearColor& Color, float Roughness)
+	{
 		UMaterialInterface* Base = GPreferredSolidMaterial.IsValid() ? GPreferredSolidMaterial.Get() : FHoopsBasicShapes::Get().BaseMaterial;
 		if (!Component || !Base)
 		{
@@ -61,7 +67,7 @@ namespace HoopsMeshUtil
 		{
 			Material->SetScalarParameterValue(TEXT("Roughness"), Roughness);
 		}
-		Component->SetMaterial(0, Material);
+		Component->SetMaterial(MaterialIndex, Material);
 	}
 
 	UStaticMeshComponent* AddMesh(AActor* Owner, USceneComponent* Parent, UStaticMesh* Mesh,

@@ -1,6 +1,6 @@
 # Como rodar o Freestyle no seu PC (Unreal Engine 5.8)
 
-> O núcleo de simulação foi compilado e testado na nuvem (24 testes passando).
+> O núcleo de simulação foi compilado e testado na nuvem (28 testes passando).
 > A parte da Unreal **ainda não foi compilada** (a nuvem não tem a engine). Na primeira compilação podem aparecer erros pequenos: copie o log do **Output** do Visual Studio (ou a janela de erro da Unreal) e me mande. Eu corrijo.
 
 ## 1. Pré-requisitos (uma vez só)
@@ -38,16 +38,30 @@ A quadra já abre com **iluminação de ginásio à noite** (6 refletores, sem s
 
 Para trocar para quadra ao ar livre (sol + céu): selecione o ator **HoopsCourt** durante o Play e mude `Lighting` para `Outdoor`, ou coloque um HoopsCourt no nível com essa opção.
 
-### Manequim (opcional, recomendado)
+### Jogador animado (recomendado)
 
-Sem asset nenhum, o jogador aparece como um cilindro preto. Para ver o **Manny** animado (andar/correr):
-**Content Browser → Add → Add Feature or Content Pack → Third Person → Add to Project**. O jogo detecta o manequim sozinho no próximo Play.
+Sem asset nenhum, o jogador aparece como um cilindro preto. Para ele **driblar de verdade** (mocap):
+1. Confira que o FBX veio inteiro: `git lfs pull` (o `Art/Characters/HoopsDummy/SK_HoopsDummy.fbx` tem ~5 MB).
+2. **Tools → Execute Python Script…** → escolha `Tools/Editor/importar_personagem.py`. Ele importa a malha, o esqueleto e as **15 animações** em `/Game/Hoops/Characters/Dummy` e salva.
+   (Sem o script: arraste o FBX para essa pasta no Content Browser com *Import Animations* ligado.)
+3. Aperte **Play**. O Output Log mostra `Boneco animado ativo: escala ..., yaw ...`.
+
+O boneco é um "manequim de teste" (partes rígidas, cores de pele/uniforme/tênis) com mocap da CMU: drible parado, andando, correndo, de costas e de lado (as duas mãos), andar e correr sem bola e o arremesso saindo do drible. A **bola segue a mão animada** (sai no fim do empurrão e volta para a mão no topo) e no arremesso a **mão chega ao topo exatamente no centro da janela green**.
+
+Ajustes no painel Details do jogador durante o Play (categoria *Hoops*): `BodyHeightCm` (altura), `MeshYawAdjust` (se ele aparecer de lado/de costas), `DribbleIdlePlayRate` (velocidade do drible parado), `DribbleBallOffset`/`ShotBallOffset` (onde a bola fica na mão), cores.
+
+Ainda **sem** animação própria: os dribles do Pro Stick (o corpo troca de mão e a bola cruza, mas sem o movimento do crossover), bandeja e enterrada (usam o arremesso por enquanto). Vêm na próxima etapa.
+
+### Manequim da Epic (alternativa)
+
+Se o boneco não estiver importado, o jogo usa o **Manny** do pacote Third Person, se existir:
+**Content Browser → Add → Add Feature or Content Pack → Third Person → Add to Project**.
 
 ## 4. Controles (iguais ao 2K23, Xbox)
 
 | Botão | Ação no Freestyle |
 |---|---|
-| **LS** | Mover |
+| **LS** | Mover. Com a bola: **analógico pela metade** = size-up encarando a cesta (anda de frente, de lado, de costas); **analógico todo** = corre virando o corpo |
 | **X** segurar → soltar | Arremesso (solte no topo do medidor = **GREEN**). Toque rápido = pump fake |
 | **RS** toque cima / esquerda / baixo-esquerda / direita / baixo | Crossover / entre as pernas / por trás / hesitação / step-back |
 | **RS** giro / ¼ de giro | Spin / half-spin |
@@ -56,7 +70,7 @@ Sem asset nenhum, o jogador aparece como um cilindro preto. Para ver o **Manny**
 | **RT** segurar | Sprint (gasta **energia**; com RT, os dribles viram escapes). A barra de energia fica embaixo dos pés e no canto: abaixo de 40% o jogador fica mais lento e o arremesso piora |
 | **RT + X** ou **RT + RS cima** perto da cesta | Enterrada |
 | **X** ou **RS cima** infiltrando | Bandeja |
-| **LT** | Proteger a bola (drible mais baixo) |
+| **LT** | Proteger a bola (drible mais baixo); segurando, o jogador fica encarando a cesta mesmo com o analógico todo |
 | **D-pad cima** | Pedir a bola de volta |
 | **D-pad baixo** | Resetar no spot atual |
 | **D-pad esquerda/direita** | Trocar de spot (topo, alas, cantos, cotovelos, lance livre, logo) |
@@ -64,7 +78,7 @@ Sem asset nenhum, o jogador aparece como um cilindro preto. Para ver o **Manny**
 | **Menu** | **Defensor manequim**: sem defensor → parado (mãos baixas) → mãos para cima → contesta (pula) → marca e contesta |
 | **L3** (clicar o analógico esquerdo) | **Câmera lenta** 100% → 50% → 25% (o timing estica junto: é para analisar, não para treinar green) |
 
-Teclado (provisório): WASD mover · setas = Pro Stick · Espaço = X · Shift = RT · Ctrl = LT · G = pedir bola · Backspace = reset · 1/2 = spots · Tab = laboratório · M = defensor · T = câmera lenta.
+Teclado (provisório; o teclado é sempre "analógico todo", então use Ctrl para o size-up): WASD mover · setas = Pro Stick · Espaço = X · Shift = RT · Ctrl = LT · G = pedir bola · Backspace = reset · 1/2 = spots · Tab = laboratório · M = defensor · T = câmera lenta.
 
 ## 5. O que testar e me contar
 

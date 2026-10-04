@@ -15,5 +15,8 @@ public class Garrafao : ModuleRules
 			"EnhancedInput",
 			"HoopsSimCore",
 		});
+
+		// Busca do boneco animado importado (HoopsDummyRig).
+		PrivateDependencyModuleNames.Add("AssetRegistry");
 	}
 }

@@ -8,6 +8,10 @@
 
 class UStaticMeshComponent;
 
+// Chamado no Tick da bola enquanto ela está segura (modo Controlled). A bola tica DEPOIS da animação do
+// jogador, então quem segura a bola posiciona ela aqui usando a pose já animada da mão (sem 1 frame de atraso).
+DECLARE_DELEGATE_OneParam(FHoopsBallHeldUpdate, float /*DeltaSeconds*/);
+
 UENUM(BlueprintType)
 enum class EHoopsBallMode : uint8
 {
@@ -31,6 +35,7 @@ public:
 
 	// Controle pelo jogador.
 	void SetControlledLocation(const FVector& WorldLocation);
+	FHoopsBallHeldUpdate OnHeldUpdate;
 
 	// Solta na física com o estado inicial (metros).
 	void LaunchFree(const Hoops::BallState& Initial);

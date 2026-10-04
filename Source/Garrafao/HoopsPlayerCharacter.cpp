@@ -1,6 +1,7 @@
 #include "HoopsPlayerCharacter.h"
 
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimSequence.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -18,6 +19,7 @@
 #include "DrawDebugHelpers.h"
 #include "HoopsBall.h"
 #include "HoopsDummyDefender.h"
+#include "HoopsAnimInstance.h"
 #include "HoopsFreestyleGameMode.h"
 #include "HoopsHoop.h"
 #include "HoopsMeshUtil.h"
@@ -136,7 +138,10 @@ void AHoopsPlayerCharacter::BeginPlay()
 
 	HoopsMeshUtil::SetColor(this, PlaceholderBody, FLinearColor(0.08f, 0.08f, 0.09f));
 	Hud.DummyLabel = TEXT("Sem defensor");
-	TryLoadMannequin();
+	if (!TryLoadDummyRig())
+	{
+		TryLoadMannequin();
+	}
 	EnsureWorldRefs();
 	ResetToSpot(0);
 }
@@ -159,8 +164,9 @@ void AHoopsPlayerCharacter::TryLoadMannequin()
 		return;
 	}
 
+	MeshYawOffset = -90.0f;
 	GetMesh()->SetSkeletalMeshAsset(MeshAsset);
-	GetMesh()->SetRelativeLocationAndRotation(FVector(0.0f, 0.0f, -CapsuleHalfHeightCm), FRotator(0.0f, -90.0f, 0.0f));
+	GetMesh()->SetRelativeLocationAndRotation(FVector(0.0f, 0.0f, -CapsuleHalfHeightCm), FRotator(0.0f, MeshYawOffset, 0.0f));
 	for (const FString& Path : MannequinAnimClassPaths)
 	{
 		if (UClass* AnimClass = LoadClass<UAnimInstance>(nullptr, *Path, nullptr, Quiet))
@@ -186,6 +192,12 @@ void AHoopsPlayerCharacter::EnsureWorldRefs()
 	if (Ball)
 	{
 		Ball->AddTickPrerequisiteActor(this); // a bola se move depois do jogador no mesmo frame
+		if (bRigActive)
+		{
+			// ... e depois da animação do boneco: a bola segue a mão animada deste frame.
+			Ball->AddTickPrerequisiteComponent(GetMesh());
+			Ball->OnHeldUpdate.BindUObject(this, &AHoopsPlayerCharacter::LateUpdateHeldBall);
+		}
 	}
 }
 
@@ -346,6 +358,14 @@ void AHoopsPlayerCharacter::ResetToSpot(int32 SpotIndex)
 	Dribble.SetHand(Hoops::BallHand::Right);
 	bArcValid = false;
 	Ball->SetControlledLocation(HandWorldLocation(Dribble.GetHand(), 0.0));
+	if (bRigActive)
+	{
+		if (UHoopsAnimInstance* Anim = GetHoopsAnim())
+		{
+			Anim->StopAction(0.1f);
+		}
+		ResetBallCarry(Dribble.GetHand(), 0.0);
+	}
 	Hud.SpotName = Spot.Name;
 	LogInput(FString::Printf(TEXT("Spot: %s"), Spot.Name));
 }
@@ -532,9 +552,14 @@ void AHoopsPlayerCharacter::Tick(float DeltaSeconds)
 	{
 		UpdateFinish(DeltaSeconds);
 	}
-	else if (bHasBall)
+	else if (bHasBall && !bRigActive)
 	{
-		UpdateDribbleBall(DeltaSeconds);
+		UpdateDribbleBall(DeltaSeconds); // sem boneco: quique procedural (com boneco, a bola segue a mão: LateUpdateHeldBall)
+	}
+
+	if (bRigActive)
+	{
+		UpdateBodyAnimation(DeltaSeconds);
 	}
 
 	UpdateBallPossession(DeltaSeconds);
@@ -551,7 +576,7 @@ void AHoopsPlayerCharacter::Tick(float DeltaSeconds)
 	// Giro visual do spin (Fase 0: gira o corpo; depois vira animação).
 	const double SpinElapsed = Now() - SpinVisualStart;
 	USceneComponent* Body = PlaceholderBody->IsVisible() ? static_cast<USceneComponent*>(PlaceholderBody) : static_cast<USceneComponent*>(GetMesh());
-	const float BaseYaw = PlaceholderBody->IsVisible() ? 0.0f : -90.0f;
+	const float BaseYaw = PlaceholderBody->IsVisible() ? 0.0f : MeshYawOffset;
 	if (SpinVisualDuration > 0.0 && SpinElapsed < SpinVisualDuration)
 	{
 		const float Alpha = static_cast<float>(SpinElapsed / SpinVisualDuration);
@@ -569,11 +594,15 @@ void AHoopsPlayerCharacter::UpdateMovement(float DeltaSeconds)
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 
-	const float BaseSpeed = bSprintHeld ? SprintSpeedCm : JogSpeedCm;
+	// Size-up (encarando a cesta): com a bola, analógico pela metade ou LT. Analógico todo: corre virando o corpo.
+	const bool bShooting = ShotPhase != EShotPhase::None;
+	const bool bStrafe = bHasBall && !bSprintHeld && (bLeftTriggerHeld || MoveInput.Size() < StrafeStickThreshold);
+	// Durante um drible (crossover, hesitação...) o limite do size-up não segura o impulso do movimento.
+	const bool bMoveBurst = Dribble.IsMoveActive(Now());
+	const float BaseSpeed = bSprintHeld ? SprintSpeedCm : ((bStrafe && !bMoveBurst) ? StrafeSpeedCm : JogSpeedCm);
 	const float BallScale = bHasBall ? WithBallSpeedScale : 1.0f;
 	Movement->MaxWalkSpeed = BaseSpeed * BallScale * static_cast<float>(Dribble.SpeedScale());
 
-	const bool bShooting = ShotPhase != EShotPhase::None;
 	if (!bShooting && !MoveInput.IsNearlyZero())
 	{
 		const FVector Fwd = CameraForwardFlat();
@@ -582,8 +611,8 @@ void AHoopsPlayerCharacter::UpdateMovement(float DeltaSeconds)
 		AddMovementInput(Right, static_cast<float>(MoveInput.X));
 	}
 
-	// Com a bola e sem sprint: corpo de frente para a cesta (postura do 2K). Sprint/sem bola: vira para onde corre.
-	const bool bFaceHoop = bShooting || (bHasBall && !bSprintHeld);
+	// Arremessando ou no size-up: corpo de frente para a cesta. Correndo/sprint/sem bola: vira para onde corre.
+	const bool bFaceHoop = bShooting || bStrafe;
 	Movement->bOrientRotationToMovement = !bFaceHoop;
 	if (bFaceHoop && Hoop)
 	{
@@ -723,6 +752,14 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move)
 	// Bola: drible baixo e rápido. 1 troca: o controlador já trocou a mão, o quique vai para a nova.
 	// 2 trocas (double cross): vai para a outra mão agora e o próximo quique normal volta.
 	const bool bDoubleSwitch = Spec.HandSwitches == 2;
+	if (bRigActive)
+	{
+		// Com o boneco, a troca acontece no Tick da bola (LateUpdateHeldBall), a partir da mão animada.
+		bSwitchRequested = Spec.HandSwitches > 0;
+		bDoubleCrossPending = bDoubleSwitch;
+		SwitchFlightSeconds = Duration * (bDoubleSwitch ? 0.4 : 0.6);
+		return;
+	}
 	PlanDribbleArc(bDoubleSwitch, Duration * (bDoubleSwitch ? 0.4 : 0.6));
 }
 
@@ -891,6 +928,11 @@ void AHoopsPlayerCharacter::BeginShot(bool bFromProStick)
 	bJumpCommitted = false;
 	bShotFromProStick = bFromProStick;
 	ShotPhase = EShotPhase::Jumper;
+	if (bRigActive)
+	{
+		// A mão chega ao topo (soltura do clipe) exatamente no tempo ideal = centro da janela green.
+		PlayShotAction(HoopsDummyRig::JumpShotDipSeconds, static_cast<float>(ShotWindows.IdealReleaseMs / 1000.0));
+	}
 
 	// Momentum: pull-up mantém um pouco do deslocamento; spot-up para.
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
@@ -906,6 +948,14 @@ void AHoopsPlayerCharacter::CancelShotAsPumpFake()
 {
 	ShotPhase = EShotPhase::None;
 	bArcValid = false;
+	if (bRigActive)
+	{
+		if (UHoopsAnimInstance* Anim = GetHoopsAnim())
+		{
+			Anim->StopAction(0.15f);
+		}
+		ResetBallCarry(Dribble.GetHand(), 0.18);
+	}
 	LogInput(TEXT("Pump fake"));
 }
 
@@ -916,9 +966,12 @@ void AHoopsPlayerCharacter::UpdateShot(float DeltaSeconds)
 
 	ContestSamples.Add(TPair<double, double>(Now(), SampleContest().Contest));
 
-	// Bola sobe até o set point.
-	const FVector Target = SetPointWorldLocation();
-	Ball->SetControlledLocation(FMath::VInterpTo(Ball->GetActorLocation(), Target, DeltaSeconds, 22.0f));
+	// Bola sobe até o set point (com o boneco, ela fica nas mãos animadas: LateUpdateHeldBall).
+	if (!bRigActive)
+	{
+		const FVector Target = SetPointWorldLocation();
+		Ball->SetControlledLocation(FMath::VInterpTo(Ball->GetActorLocation(), Target, DeltaSeconds, 22.0f));
+	}
 
 	// Passou do tempo de pump fake: sai do chão, com ápice perto do ponto ideal de soltura.
 	if (!bJumpCommitted && HoldMs >= Tuning.PumpFakeMaxHoldMs)
@@ -932,7 +985,16 @@ void AHoopsPlayerCharacter::UpdateShot(float DeltaSeconds)
 		{
 			Horizontal += -(Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D() * 160.0;
 		}
-		LaunchCharacter(FVector(Horizontal.X, Horizontal.Y, JumpZ), true, true);
+		if (bRigActive)
+		{
+			// O pulo está na animação; o capsule só leva o embalo horizontal.
+			UCharacterMovementComponent* Movement = GetCharacterMovement();
+			Movement->Velocity = FVector(Horizontal.X, Horizontal.Y, Movement->Velocity.Z);
+		}
+		else
+		{
+			LaunchCharacter(FVector(Horizontal.X, Horizontal.Y, JumpZ), true, true);
+		}
 	}
 
 	// Segurou demais: soltura automática (muito tarde).
@@ -999,8 +1061,14 @@ void AHoopsPlayerCharacter::BeginFinish(bool bDunk)
 	const double DistCm = FVector::Dist2D(Hoop->GetRimFloorPointWorld(), GetActorLocation());
 	const double Airtime = bFinishIsDunk ? DunkReleaseSeconds : LayupReleaseSeconds;
 	const double Forward = FMath::Clamp((DistCm - 60.0) / Airtime, 0.0, 450.0);
-	const double JumpZ = FMath::Abs(GetCharacterMovement()->GetGravityZ()) * Airtime * (bFinishIsDunk ? 1.15 : 1.0);
+	// Com o boneco, parte da subida já está na animação (provisória: o clipe de arremesso, até ter bandeja/enterrada).
+	const double RigJumpScale = bRigActive ? 0.55 : 1.0;
+	const double JumpZ = FMath::Abs(GetCharacterMovement()->GetGravityZ()) * Airtime * (bFinishIsDunk ? 1.15 : 1.0) * RigJumpScale;
 	LaunchCharacter(FVector(ToRim.X * Forward, ToRim.Y * Forward, JumpZ), true, true);
+	if (bRigActive)
+	{
+		PlayShotAction(HoopsDummyRig::JumpShotTakeoffSeconds, static_cast<float>(Airtime));
+	}
 
 	ShotContext = Hoops::ShotContext();
 	ShotContext.Type = bFinishIsDunk ? Hoops::ShotType::Dunk : Hoops::ShotType::Layup;
@@ -1015,8 +1083,11 @@ void AHoopsPlayerCharacter::UpdateFinish(float DeltaSeconds)
 {
 	const double Elapsed = Now() - GatherTime;
 	const FVector ToRim = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
-	const FVector Carry = GetActorLocation() + ToRim * 35.0 + FVector(0.0, 0.0, CapsuleHalfHeightCm + (bFinishIsDunk ? 75.0 : 60.0));
-	Ball->SetControlledLocation(FMath::VInterpTo(Ball->GetActorLocation(), Carry, DeltaSeconds, 20.0f));
+	if (!bRigActive)
+	{
+		const FVector CarryPoint = GetActorLocation() + ToRim * 35.0 + FVector(0.0, 0.0, CapsuleHalfHeightCm + (bFinishIsDunk ? 75.0 : 60.0));
+		Ball->SetControlledLocation(FMath::VInterpTo(Ball->GetActorLocation(), CarryPoint, DeltaSeconds, 20.0f));
+	}
 
 	if (Elapsed >= (bFinishIsDunk ? DunkReleaseSeconds : LayupReleaseSeconds))
 	{
@@ -1136,7 +1207,15 @@ void AHoopsPlayerCharacter::CatchBall()
 	ReturnBallAt = -1.0;
 	Dribble.ResetPossession();
 	bArcValid = false;
-	Ball->SetControlledLocation(HandWorldLocation(Dribble.GetHand(), 0.0));
+	if (bRigActive)
+	{
+		Ball->SetControlledLocation(Ball->GetActorLocation()); // a bola vai da posição atual para a mão
+		ResetBallCarry(Dribble.GetHand(), 0.15);
+	}
+	else
+	{
+		Ball->SetControlledLocation(HandWorldLocation(Dribble.GetHand(), 0.0));
+	}
 	LogInput(TEXT("Recebeu a bola"));
 }
 
@@ -1191,4 +1270,418 @@ void AHoopsPlayerCharacter::UpdateHud()
 	{
 		Hud.bShowFeedback = false;
 	}
+}
+
+// ============================================================================ Boneco animado
+
+namespace
+{
+	const FName BonePalmR(TEXT("palm_r"));
+	const FName BonePalmL(TEXT("palm_l"));
+	const FName BoneFingersR(TEXT("fingers_r"));
+	const FName BoneFingersL(TEXT("fingers_l"));
+
+	bool IsRunClip(EHoopsClip Clip)
+	{
+		return Clip == EHoopsClip::Run || Clip == EHoopsClip::DribbleRunR || Clip == EHoopsClip::DribbleRunL;
+	}
+
+	bool IsIdleClip(EHoopsClip Clip)
+	{
+		return Clip == EHoopsClip::HoldIdle || Clip == EHoopsClip::DribbleIdleR || Clip == EHoopsClip::DribbleIdleL;
+	}
+
+	// Mesmo clipe com a outra mão (Dribble_X_R <-> Dribble_X_L): troca mantendo a fase do ciclo.
+	bool IsHandPair(EHoopsClip A, EHoopsClip B)
+	{
+		const int32 First = static_cast<int32>(EHoopsClip::DribbleIdleR);
+		const int32 Last = static_cast<int32>(EHoopsClip::DribbleSideL);
+		const int32 IndexA = static_cast<int32>(A);
+		const int32 IndexB = static_cast<int32>(B);
+		return IndexA != IndexB && IndexA >= First && IndexA <= Last && IndexB >= First && IndexB <= Last &&
+			(IndexA - First) / 2 == (IndexB - First) / 2;
+	}
+}
+
+bool AHoopsPlayerCharacter::TryLoadDummyRig()
+{
+	USkeletalMesh* MeshAsset = nullptr;
+	TArray<UAnimSequence*> Clips;
+	if (!HoopsDummyRig::FindAssets(DummyAssetFolder, MeshAsset, Clips))
+	{
+		UE_LOG(LogHoops, Log, TEXT("Boneco animado nao encontrado em %s (rode Tools/Editor/importar_personagem.py)."), *DummyAssetFolder);
+		return false;
+	}
+	HoopsDummyRig::FMeshMeasure Measure;
+	if (!HoopsDummyRig::MeasureMesh(MeshAsset, Measure))
+	{
+		UE_LOG(LogHoops, Warning, TEXT("Boneco: esqueleto sem os ossos esperados (foot_l, ball_l, hand_r...). Usando o corpo antigo."));
+		return false;
+	}
+	if (!Measure.bRightHandOnRight)
+	{
+		UE_LOG(LogHoops, Warning, TEXT("Boneco: a mao direita ficou do lado esquerdo (importacao espelhada?). Ajuste MeshYawAdjust ou reimporte."));
+	}
+
+	DummyMesh = MeshAsset;
+	DummyClips.Reset();
+	for (UAnimSequence* Clip : Clips)
+	{
+		DummyClips.Add(Clip);
+	}
+
+	// Frente medida pelos pés -> +X do ator; altura -> BodyHeightCm; pés no fundo do capsule.
+	MeshScale = BodyHeightCm / Measure.Height;
+	MeshYawOffset = -Measure.ForwardYaw + MeshYawAdjust;
+
+	USkeletalMeshComponent* Body = GetMesh();
+	Body->SetSkeletalMeshAsset(MeshAsset);
+	Body->SetRelativeScale3D(FVector(MeshScale));
+	Body->SetRelativeLocationAndRotation(FVector(0.0, 0.0, -CapsuleHalfHeightCm - Measure.BottomZ * MeshScale), FRotator(0.0f, MeshYawOffset, 0.0f));
+	Body->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones; // a bola lê a mão
+	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Body->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+	Body->SetAnimInstanceClass(UHoopsAnimInstance::StaticClass());
+	Body->SetVisibility(true);
+
+	// Cores por slot de material (Pele / Uniforme / Tenis, nomes do FBX).
+	const TArray<FName> Slots = Body->GetMaterialSlotNames();
+	for (int32 Index = 0; Index < Slots.Num(); ++Index)
+	{
+		const FString Slot = Slots[Index].ToString();
+		if (Slot.Contains(TEXT("Pele")))
+		{
+			HoopsMeshUtil::SetSlotColor(this, Body, Index, SkinColor, 0.6f);
+		}
+		else if (Slot.Contains(TEXT("Tenis")))
+		{
+			HoopsMeshUtil::SetSlotColor(this, Body, Index, ShoesColor, 0.45f);
+		}
+		else
+		{
+			HoopsMeshUtil::SetSlotColor(this, Body, Index, JerseyColor, 0.8f);
+		}
+	}
+
+	PlaceholderBody->SetVisibility(false);
+	bRigActive = true;
+	BaseClip = EHoopsClip::DribbleIdleR;
+	if (UHoopsAnimInstance* Anim = GetHoopsAnim())
+	{
+		Anim->SetBase(GetClip(BaseClip), DribbleIdlePlayRate, 0.0f, false);
+	}
+	ResetBallCarry(Hoops::BallHand::Right, 0.0);
+	UE_LOG(LogHoops, Log, TEXT("Boneco animado ativo: escala %.2f, yaw %.0f."), MeshScale, MeshYawOffset);
+	return true;
+}
+
+UHoopsAnimInstance* AHoopsPlayerCharacter::GetHoopsAnim() const
+{
+	return Cast<UHoopsAnimInstance>(GetMesh()->GetAnimInstance());
+}
+
+UAnimSequence* AHoopsPlayerCharacter::GetClip(EHoopsClip Clip) const
+{
+	for (int32 Step = 0; Step < HoopsDummyRig::NumClips; ++Step)
+	{
+		const int32 Index = static_cast<int32>(Clip);
+		if (DummyClips.IsValidIndex(Index) && DummyClips[Index])
+		{
+			return DummyClips[Index];
+		}
+		const EHoopsClip Next = HoopsDummyRig::Fallback(Clip);
+		if (Next == Clip)
+		{
+			break;
+		}
+		Clip = Next;
+	}
+	const int32 HoldIndex = static_cast<int32>(EHoopsClip::HoldIdle);
+	return DummyClips.IsValidIndex(HoldIndex) ? DummyClips[HoldIndex].Get() : nullptr;
+}
+
+void AHoopsPlayerCharacter::UpdateBodyAnimation(float DeltaSeconds)
+{
+	UHoopsAnimInstance* Anim = GetHoopsAnim();
+	if (!Anim)
+	{
+		return;
+	}
+
+	// Velocidade no referencial do corpo: X = frente, Y = direita.
+	const FVector Local = GetActorRotation().UnrotateVector(FVector(GetVelocity().X, GetVelocity().Y, 0.0));
+	const float Speed = static_cast<float>(Local.Size2D());
+	const bool bRight = Dribble.GetHand() == Hoops::BallHand::Right;
+	const bool bDribbling = bHasBall && ShotPhase == EShotPhase::None;
+
+	// Histerese: não fica piscando entre parado/andar/correr perto dos limites.
+	const float IdleThreshold = IsIdleClip(BaseClip) ? 45.0f : 30.0f;
+	const float RunThreshold = IsRunClip(BaseClip) ? 190.0f : 230.0f;
+	const auto RateFor = [Speed](EHoopsClip Clip, float MaxRate)
+	{
+		const float Native = static_cast<float>(HoopsDummyRig::NativeVelocity(Clip).Size());
+		return Native > 1.0f ? FMath::Clamp(Speed / Native, 0.6f, MaxRate) : 1.0f;
+	};
+
+	EHoopsClip Clip = EHoopsClip::HoldIdle;
+	float Rate = 1.0f;
+	if (Speed < IdleThreshold)
+	{
+		Clip = bDribbling ? (bRight ? EHoopsClip::DribbleIdleR : EHoopsClip::DribbleIdleL) : EHoopsClip::HoldIdle;
+		Rate = bDribbling ? DribbleIdlePlayRate : 1.0f;
+	}
+	else
+	{
+		const float Angle = FMath::RadiansToDegrees(FMath::Atan2(static_cast<float>(Local.Y), static_cast<float>(Local.X))); // 0 = frente, +90 = direita
+		const float AbsAngle = FMath::Abs(Angle);
+		const bool bRun = Speed > RunThreshold;
+		if (!bDribbling)
+		{
+			Clip = bRun ? EHoopsClip::Run : EHoopsClip::Walk;
+			Rate = RateFor(Clip, 1.8f);
+		}
+		else if (AbsAngle <= 55.0f)
+		{
+			Clip = bRun ? (bRight ? EHoopsClip::DribbleRunR : EHoopsClip::DribbleRunL) : (bRight ? EHoopsClip::DribbleWalkR : EHoopsClip::DribbleWalkL);
+			Rate = RateFor(Clip, 1.8f);
+		}
+		else if (AbsAngle >= 125.0f)
+		{
+			Clip = bRight ? EHoopsClip::DribbleBackR : EHoopsClip::DribbleBackL;
+			Rate = RateFor(Clip, 2.0f);
+		}
+		else
+		{
+			// De lado: Side_R anda para a esquerda e Side_L para a direita; o outro sentido toca o clipe ao contrário.
+			Clip = bRight ? EHoopsClip::DribbleSideR : EHoopsClip::DribbleSideL;
+			const bool bClipGoesRight = HoopsDummyRig::NativeVelocity(Clip).Y > 0.0;
+			Rate = RateFor(Clip, 2.0f) * (bClipGoesRight == (Angle > 0.0f) ? 1.0f : -1.0f);
+		}
+	}
+	if (bDribbling)
+	{
+		Rate *= static_cast<float>(Dribble.MovePlayRateScale()); // cansado: drible mais lento (docs/05 §2.5)
+	}
+
+	const bool bKeepPhase = IsHandPair(Clip, BaseClip);
+	Anim->SetBase(GetClip(Clip), Rate, bKeepPhase ? 0.15f : 0.22f, bKeepPhase);
+	BaseClip = Clip;
+}
+
+void AHoopsPlayerCharacter::PlayShotAction(float StartSeconds, float SecondsToRelease)
+{
+	UHoopsAnimInstance* Anim = GetHoopsAnim();
+	const int32 ShotIndex = static_cast<int32>(EHoopsClip::JumpShotR); // destro (o _L fica para canhotos)
+	UAnimSequence* Shot = DummyClips.IsValidIndex(ShotIndex) ? DummyClips[ShotIndex].Get() : nullptr;
+	if (!Anim || !Shot)
+	{
+		return;
+	}
+	// A mão chega ao topo (quadro de soltura do clipe) em SecondsToRelease.
+	const float Rate = (HoopsDummyRig::JumpShotReleaseSeconds - StartSeconds) / FMath::Max(0.15f, SecondsToRelease);
+	Anim->PlayAction(Shot, StartSeconds, Rate, 0.12f, HoopsDummyRig::JumpShotEndSeconds);
+
+	// A bola vai da posição atual para as mãos do arremesso.
+	BallBlendFrom = Ball ? Ball->GetActorLocation() : FVector::ZeroVector;
+	BallBlendStart = Now();
+	BallBlendSeconds = 0.15;
+}
+
+FVector AHoopsPlayerCharacter::HandBallPoint(Hoops::BallHand Hand) const
+{
+	const bool bRight = Hand == Hoops::BallHand::Right;
+	const USkeletalMeshComponent* Body = GetMesh();
+	const FVector Palm = Body->GetBoneLocation(bRight ? BonePalmR : BonePalmL);
+	const FVector Fingers = Body->GetBoneLocation(bRight ? BoneFingersR : BoneFingersL);
+	FVector Offset = DribbleBallOffset;
+	if (!bRight)
+	{
+		Offset.Y = -Offset.Y; // "para fora" é o outro lado
+	}
+	// Frente do corpo visual (inclui o giro do spin).
+	const FRotator BodyRotation(0.0, Body->GetComponentRotation().Yaw - MeshYawOffset, 0.0);
+	return (Palm + Fingers) * 0.5 + BodyRotation.RotateVector(Offset);
+}
+
+FVector AHoopsPlayerCharacter::ShotBallPoint() const
+{
+	const USkeletalMeshComponent* Body = GetMesh();
+	const FVector PalmR = Body->GetBoneLocation(BonePalmR);
+	const FVector PalmL = Body->GetBoneLocation(BonePalmL);
+	const FVector Hand = (PalmR + Body->GetBoneLocation(BoneFingersR)) * 0.5;
+	const FRotator BodyRotation(0.0, Body->GetComponentRotation().Yaw - MeshYawOffset, 0.0);
+	// Bola apoiada na mão do arremesso, encostada na mão de apoio.
+	return Hand + (PalmL - PalmR).GetSafeNormal() * (AHoopsBall::RadiusCm * 0.5) + BodyRotation.RotateVector(ShotBallOffset);
+}
+
+void AHoopsPlayerCharacter::ResetBallCarry(Hoops::BallHand Hand, double BlendSeconds)
+{
+	Carry = EBallCarry::Hand;
+	CarryHand = Hand;
+	FlightHand = Hand;
+	CarryStart = Now();
+	bHandTrackValid = false;
+	bHasTopRelative = false;
+	bSwitchRequested = false;
+	bDoubleCrossPending = false;
+	BallBlendFrom = Ball ? Ball->GetActorLocation() : FVector::ZeroVector;
+	BallBlendStart = Now();
+	BallBlendSeconds = BlendSeconds;
+}
+
+void AHoopsPlayerCharacter::TrackHandStroke(Hoops::BallHand Hand, const FVector& HandPoint, float DeltaSeconds)
+{
+	// Altura relativa ao capsule: o curso da mão na animação, sem o movimento do jogador.
+	const float RelZ = static_cast<float>(HandPoint.Z - GetActorLocation().Z);
+	if (!bHandTrackValid || Hand != TrackedHand)
+	{
+		bHandTrackValid = true;
+		TrackedHand = Hand;
+		HandPrevZ = RelZ;
+		HandVz = 0.0f;
+		StrokeTopZ = RelZ;
+		StrokePeakVz = 0.0f;
+		return;
+	}
+
+	const float PrevVz = HandVz;
+	HandVz = FMath::Lerp(HandVz, (RelZ - HandPrevZ) / DeltaSeconds, 0.5f);
+	HandPrevZ = RelZ;
+	if (HandVz > 0.0f)
+	{
+		// Subindo: o curso recomeça; o topo é o ponto mais alto até agora.
+		StrokeTopZ = RelZ;
+		StrokePeakVz = 0.0f;
+	}
+	else
+	{
+		if (PrevVz > 0.0f)
+		{
+			// Passou do topo: é aí que a bola deve encontrar a mão no próximo quique.
+			LastTopRelative = GetActorTransform().InverseTransformPosition(HandPoint);
+			bHasTopRelative = true;
+		}
+		StrokePeakVz = FMath::Min(StrokePeakVz, HandVz);
+	}
+}
+
+void AHoopsPlayerCharacter::BeginBallFlight(const FVector& Start, Hoops::BallHand ToHand, double Seconds)
+{
+	const FVector Velocity2D(GetVelocity().X, GetVelocity().Y, 0.0);
+	// Recepção prevista: o topo do curso da mesma mão (medido no ciclo anterior) ou, trocando de mão, um pouco
+	// acima da outra mão agora. O fim do voo encosta na mão animada de qualquer jeito.
+	const bool bSameHand = Carry == EBallCarry::Hand && ToHand == CarryHand && bHasTopRelative;
+	FVector End = bSameHand ? GetActorTransform().TransformPosition(LastTopRelative) : HandBallPoint(ToHand) + FVector(0.0, 0.0, 10.0 * MeshScale);
+	End += Velocity2D * Seconds;
+	const double FloorZ = (GetActorLocation().Z - CapsuleHalfHeightCm) / 100.0;
+
+	FlightArc = Hoops::MakeDribbleArc(HoopsUnits::ToSim(Start), HoopsUnits::ToSim(End), HoopsUnits::ToSim(Velocity2D),
+		Seconds, AHoopsBall::RadiusCm / 100.0, FloorZ);
+	Carry = EBallCarry::Flight;
+	FlightHand = ToHand;
+	FlightStart = Now();
+	FlightSeconds = Seconds;
+}
+
+void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
+{
+	if (!bRigActive || !Ball || !bHasBall || DeltaSeconds <= UE_KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	const double T = Now();
+	FVector Target;
+
+	if (ShotPhase != EShotPhase::None)
+	{
+		Target = ShotBallPoint();
+	}
+	else
+	{
+		// Troca de mão pedida por um drible (crossover, entre as pernas, por trás...).
+		const Hoops::BallHand HeldHand = Carry == EBallCarry::Hand ? CarryHand : FlightHand;
+		const FVector BallNow = Carry == EBallCarry::Hand ? HandBallPoint(CarryHand) : Ball->GetActorLocation();
+		if (bSwitchRequested)
+		{
+			bSwitchRequested = false;
+			const Hoops::BallHand To = bDoubleCrossPending ? Hoops::OtherHand(HeldHand) : Dribble.GetHand();
+			const double Seconds = FMath::Clamp(SwitchFlightSeconds, 0.18, 0.6);
+			if (To != HeldHand)
+			{
+				if (Carry == EBallCarry::Flight && T - FlightStart > FlightArc.DownSeconds)
+				{
+					FlightHand = To; // já subindo do quique: o fim do voo leva a bola para a outra mão
+				}
+				else
+				{
+					BeginBallFlight(BallNow, To, Seconds);
+				}
+			}
+		}
+		else if (Carry == EBallCarry::Hand && CarryHand != Dribble.GetHand() && !bDoubleCrossPending)
+		{
+			BeginBallFlight(BallNow, Dribble.GetHand(), 0.3); // bola na mão errada (ex.: depois de receber): troca
+		}
+
+		if (Carry == EBallCarry::Flight)
+		{
+			const FVector Live = HandBallPoint(FlightHand);
+			TrackHandStroke(FlightHand, Live, DeltaSeconds);
+			const double Elapsed = T - FlightStart;
+			Target = HoopsUnits::ToUnreal(FlightArc.Evaluate(Elapsed));
+			// No fim do voo, encosta na mão animada (a previsão do ponto de recepção nunca é exata).
+			const double SteerFrom = FlightSeconds * 0.6;
+			if (Elapsed > SteerFrom)
+			{
+				const float Alpha = FMath::SmoothStep(0.0f, 1.0f, static_cast<float>((Elapsed - SteerFrom) / (FlightSeconds - SteerFrom)));
+				Target = FMath::Lerp(Target, Live, Alpha);
+			}
+			if (Elapsed >= FlightSeconds)
+			{
+				Carry = EBallCarry::Hand;
+				CarryHand = FlightHand;
+				CarryStart = T;
+				Target = Live;
+				StrokeTopZ = HandPrevZ;
+				StrokePeakVz = 0.0f;
+				if (bDoubleCrossPending)
+				{
+					// Double cross: chegou na outra mão, volta na hora.
+					bDoubleCrossPending = false;
+					if (CarryHand != Dribble.GetHand())
+					{
+						BeginBallFlight(Target, Dribble.GetHand(), FMath::Clamp(SwitchFlightSeconds, 0.18, 0.6));
+					}
+				}
+			}
+		}
+		else
+		{
+			// Na mão: a bola desce com a mão e sai no fim do empurrão (a mão desacelera descendo).
+			Target = HandBallPoint(CarryHand);
+			TrackHandStroke(CarryHand, Target, DeltaSeconds);
+			const float Drop = StrokeTopZ - HandPrevZ;
+			const bool bPush = Drop > 7.0f * MeshScale && StrokePeakVz < -70.0f && HandVz > StrokePeakVz * 0.55f && T - CarryStart > 0.1;
+			const bool bStuck = T - CarryStart > FMath::Max(1.2, PushPeriod * 2.0); // segurança: nunca fica presa na mão
+			if (bPush || bStuck)
+			{
+				const double Interval = T - LastPushTime;
+				if (bPush && Interval > 0.25 && Interval < 1.6)
+				{
+					PushPeriod = FMath::Lerp(PushPeriod, Interval, 0.5);
+				}
+				LastPushTime = T;
+				// A mão leva ~meio ciclo para voltar ao topo, onde recebe a bola.
+				BeginBallFlight(Target, CarryHand, FMath::Clamp(PushPeriod * 0.5, 0.26, 0.55));
+			}
+		}
+	}
+
+	// Transição suave (recepção, gather, pump fake).
+	if (BallBlendSeconds > 0.0 && T - BallBlendStart < BallBlendSeconds)
+	{
+		const float Alpha = FMath::SmoothStep(0.0f, 1.0f, static_cast<float>((T - BallBlendStart) / BallBlendSeconds));
+		Target = FMath::Lerp(BallBlendFrom, Target, Alpha);
+	}
+	Ball->SetControlledLocation(Target);
 }
