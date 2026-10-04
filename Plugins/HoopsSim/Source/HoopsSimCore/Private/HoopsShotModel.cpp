@@ -287,6 +287,40 @@ namespace Hoops
 		return Decision;
 	}
 
+	GatherCarry ComputeGatherCarry(const GatherCarryTuning& Tuning, ShotType Type, double EntrySpeed)
+	{
+		const double Entry = EntrySpeed > 0.0 ? EntrySpeed : 0.0;
+		double Keep = Tuning.SpotUpKeep;
+		switch (Type)
+		{
+		case ShotType::PullUp: Keep = Tuning.PullUpKeep; break;
+		case ShotType::StepBack: Keep = Tuning.StepBackKeep; break;
+		case ShotType::Fadeaway: Keep = Tuning.FadeawayKeep; break;
+		default: break;
+		}
+
+		GatherCarry Carry;
+		Carry.KeepSpeed = Entry * Keep;
+		// Só o pull-up deriva para frente no ar; step-back/fadeaway derivam para trás (fora daqui), o resto planta.
+		if (Type == ShotType::PullUp)
+		{
+			const double Drift = Entry * Tuning.PullUpDriftFraction;
+			Carry.DriftSpeed = Drift < Tuning.PullUpDriftMaxSpeed ? Drift : Tuning.PullUpDriftMaxSpeed;
+			if (Carry.DriftSpeed > Carry.KeepSpeed)
+			{
+				Carry.DriftSpeed = Carry.KeepSpeed;
+			}
+		}
+		// Plant de 1–2 passos; em velocidade alta ele fica mais curto para não andar mais que o limite.
+		Carry.PlantSeconds = Tuning.PlantSeconds;
+		const double Average = 0.5 * (Carry.KeepSpeed + Carry.DriftSpeed);
+		if (Average > 1e-9 && Average * Carry.PlantSeconds > Tuning.PlantMaxMeters)
+		{
+			Carry.PlantSeconds = Tuning.PlantMaxMeters / Average;
+		}
+		return Carry;
+	}
+
 	const char* TimingGradeLabel(TimingGrade Grade)
 	{
 		switch (Grade)

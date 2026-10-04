@@ -32,5 +32,10 @@ O build usa as mesmas restrições da Unreal (sem exceções/RTTI, `-Wshadow -Wc
 | GesturesMapToTwoKMoves | Gesto → movimento igual ao manual do 2K23 (com troca de mão) |
 | DribbleControllerCommitBufferAndRhythm | Commit, buffer de 150 ms, combo no ritmo (+15% de velocidade) |
 | EnergyIsTheOnlyLimiter | Sem Explosões: sprint e dribles gastam energia, energia baixa deixa mais lento, parado recupera mais rápido |
+| MisdirectionWindowAcceptsAndRejects | Misdirection só antes do 1º quique (janela = commit), só para o lado oposto (mesmo lado vai para o buffer), variante com RT, uma por movimento |
+| MisdirectionReplacesMoveBeforeBounce | A troca substitui o movimento na hora (mão volta, buffer antigo descartado, ritmo herdado, energia dos dois); double throw vira double cross |
+| ExitBurstDirectionStrengthAndCost | Arranque de saída: cross launch / speedboost / contra o movimento, força por tipo de movimento, perfil de 0,45 s, janela de 0,20 s, custo de energia |
+| ExitBurstOnlyLimitedByEnergy | Sem contador de boosts (D13): energia < 40% reduz o arranque, 30 arranques seguidos só enfraquecem com a energia, barra cheia devolve tudo |
+| PullUpKeepsMomentumIntoGather | Pull-up sem frear: 85% da velocidade no gather, plant ≤ 0,6 m sem degrau, deriva de 10–30 cm; step-back/fadeaway/spot-up |
 | LayupAndDunkProbabilities | Bandeja livre ~91% (rating 85); enterrada livre garantida |
 | RollingBallComesToRest | Bola rolando no chão para (resistência ao rolamento) |
