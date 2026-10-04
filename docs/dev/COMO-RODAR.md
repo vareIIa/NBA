@@ -41,9 +41,9 @@ Para trocar para quadra ao ar livre (sol + céu): selecione o ator **HoopsCourt*
 ### Jogador animado (recomendado)
 
 O jogador **dribla de verdade** (mocap) assim que o boneco é importado — e isso agora é **automático**:
-1. Depois do `git pull`, rode `git lfs pull` (o `Art/Characters/HoopsDummy/SK_HoopsDummy.fbx` tem ~8 MB; sem isso vem só um "ponteiro" de 130 bytes).
-2. Abra o editor. Ao terminar de carregar, ele importa sozinho a malha, o esqueleto e as **25 animações** em `/Game/Hoops/Characters/Dummy` (Output Log: `[Garrafao] Pronto!`). Só reimporta quando o FBX muda.
-3. Aperte **Play**. No topo da tela aparece `Garrafao Freestyle v0.5 | Boneco animado: ATIVO (25/25 clipes)`. Se aparecer em amarelo "NAO IMPORTADO", rode **Tools → Execute Python Script…** → `Tools/Editor/importar_personagem.py` e me mande o Output Log.
+1. Depois do `git pull`, rode `git lfs pull` (o `Art/Characters/HoopsDummy/SK_HoopsDummy.fbx` tem ~13 MB; sem isso vem só um "ponteiro" de 130 bytes).
+2. Abra o editor. Ao terminar de carregar, ele importa sozinho a malha, o esqueleto e as **38 animações** em `/Game/Hoops/Characters/Dummy` (Output Log: `[Garrafao] Pronto!`). Só reimporta quando o FBX muda.
+3. Aperte **Play**. No topo da tela aparece `Garrafao Freestyle v0.5 | Boneco animado: ATIVO (38/38 clipes)`. Se aparecer em amarelo "NAO IMPORTADO", rode **Tools → Execute Python Script…** → `Tools/Editor/importar_personagem.py` e me mande o Output Log.
    (Último recurso: arraste o FBX para `/Game/Hoops/Characters/Dummy` no Content Browser com *Import Animations* ligado.)
 
 O boneco é um "manequim de teste" (partes rígidas, cores de pele/uniforme/tênis) com mocap da CMU: drible parado, andando, correndo, de costas e de lado (as duas mãos), andar e correr sem bola e o arremesso saindo do drible. A **bola segue a mão animada** (sai no fim do empurrão e volta para a mão no topo) e no arremesso a **mão chega ao topo exatamente no centro da janela green**.
@@ -58,11 +58,14 @@ Ajustes no painel Details do jogador durante o Play (categoria *Hoops*): `BodyHe
 - **Medidor do 2K23**: enche até o topo no ponto ideal e, se você segurar além, volta a descer. Depois da soltura fica ~1 s congelado onde você soltou, na cor do resultado; no green pisca em verde.
 - **"GREEN!"** sobe ao lado do jogador + um **"ding"** (sintetizado) + banner de timing/cobertura no canto.
 - O jogador **segura o follow-through** (~1,1 s no green, ~0,45 s nos outros) enquanto as pernas aterrissam.
-- Se cair: **celebração automática** (flex / shrug, alternando) e o rebotedor espera um pouco mais para devolver a bola.
-- **D-pad nos ~2,5 s depois da cesta** (sem a bola na mão): **cima = flex**, **direita = shrug**, **esquerda = segura a pose do arremesso**. Fora dessa janela o D-pad faz o de sempre.
+- Se cair: **celebração automática** (bíceps, ombros, arco e flecha e braços para o alto, alternando) e o rebotedor espera um pouco mais para devolver a bola.
+- ~1,3 s depois da soltura, se você não mexer o LS: o jogador **vira de costas para a cesta** (passos e giro de 180° do mocap) com o braço ainda no alto, como no Park. Mexer o LS ou receber a bola cancela; `bTurnBackAfterGreen` desliga.
+- **D-pad nos ~2,5 s depois da cesta** (sem a bola na mão): **cima = bíceps** (de novo: braços para o alto), **direita = ombros** (de novo: toca aqui), **baixo = arco e flecha**, **esquerda = segura a pose do arremesso**. Fora dessa janela o D-pad faz o de sempre.
 - Ajustes em *Hoops|Green*: `GreenHoldSeconds`, `bAutoCelebrate`, `GreenSoundVolume`, `bGreenFeedbackAtRim` (ligado = o "GREEN!"/som/banner só aparecem quando a bola chega ao aro, como no 2K23; desligado = na hora, como o "Simple" do 2K25).
 
-Dribles com mocap próprio (CMU 102, atlético e baixo): **crossover de ataque/escape** (RT + cima, ou qualquer troca de mão já correndo: planta, cruza e sai acelerando), **spin/half-spin** (o corpo gira pela curva medida no mocap) e **hesitação / in-and-out** (finta baixa e arranque); crossover parado, entre as pernas e por trás usam o crossover do 06_14; step-back, retreat e double cross ainda sem clipe (`Art/Characters/HoopsDummy/preview_moves.png`).
+Dribles com mocap próprio (CMU 102, atlético e baixo): **crossover de ataque/escape** (RT + cima, ou qualquer troca de mão já correndo: planta, cruza e sai acelerando), **spin/half-spin** (o corpo gira pela curva medida no mocap) e **hesitação / in-and-out** (finta baixa e arranque); **entre as pernas** parado com mocap do 06_13; crossover parado e por trás usam o crossover do 06_14; step-back, retreat e double cross ainda sem clipe (`Art/Characters/HoopsDummy/preview_moves.png`).
+
+**Segunda leva de mocap** (CMU, `Art/Characters/HoopsDummy/preview_wave2.png`): **bandeja** de verdade (salto de dois pés, com a mão do lado do aro por onde você entra) e **enterrada de duas mãos** (RT), em que o corpo fica no chão no gather e decola no quadro do mocap; **jump shot alto** (braço todo estendido, mão de apoio sai primeiro; `JumpShotStyle` = 0 volta ao antigo, e o green não muda); **LT parado** = drible baixo e rápido de proteção (`DribbleLowPlayRate`). Se algo parecer pior que antes, me diga qual e eu volto só aquele.
 
 **Som da quadra** (tudo sintetizado em código, sem arquivos de áudio): **quique** da bola no taco em cada toque no chão (drible e bola solta, mais forte quanto mais rápido o impacto), **rede** na cesta (abafada se a bola tocou o aro antes), **aro**, **tabela**, **chiado do tênis** no gather, nos cortes do drible e na aterrissagem, e o "ding" do green. Cada som tem 2–4 variações sorteadas, com um pouco de variação de pitch e volume. Ajustes no jogador durante o Play em *Hoops|Audio → AudioMix*: `bMute`, `MasterVolume`, volume por categoria (`BallVolume`, `NetVolume`, `RimVolume`, `ShoesVolume`) e `DistanceFalloff`. Para ouvir sem a Unreal (Linux/Mac/WSL): `g++ -O2 -std=c++17 -I Source/Garrafao Tools/Audio/ouvir_sons.cpp Source/Garrafao/HoopsAudioSynth.cpp -o ouvir_sons && ./ouvir_sons` gera os WAVs em `/tmp/garrafao-sons`, incluindo `sequencia_park.wav` (uma posse inteira: drible, gather, ding, rede, aro).
 
@@ -84,9 +87,9 @@ Se o boneco não estiver importado, o jogo usa o **Manny** do pacote Third Perso
 | **RT** segurar | Sprint (gasta **energia**; com RT, os dribles viram escapes). A barra de energia fica embaixo dos pés e no canto: abaixo de 40% o jogador fica mais lento e o arremesso piora |
 | **RT + X** ou **RT + RS cima** perto da cesta | Enterrada |
 | **X** ou **RS cima** infiltrando | Bandeja |
-| **LT** | Proteger a bola (drible mais baixo); segurando, o jogador fica encarando a cesta mesmo com o analógico todo |
+| **LT** | Proteger a bola (drible baixo e rápido, ~3 quiques/s, base escalonada e braço livre de escudo); segurando, o jogador fica encarando a cesta mesmo com o analógico todo |
 | **D-pad cima** | Pedir a bola de volta |
-| **D-pad baixo** | Resetar no spot atual |
+| **D-pad baixo** | Resetar no spot atual (nos ~2,5 s depois da cesta: arco e flecha) |
 | **D-pad esquerda/direita** | Trocar de spot (topo, alas, cantos, cotovelos, lance livre, logo) |
 | **View** | Liga/desliga o **laboratório** (histórico de inputs, janelas, chance, física, linha de contestação) |
 | **Menu** | **Defensor manequim**: sem defensor → parado (mãos baixas) → mãos para cima → contesta (pula) → marca e contesta |
