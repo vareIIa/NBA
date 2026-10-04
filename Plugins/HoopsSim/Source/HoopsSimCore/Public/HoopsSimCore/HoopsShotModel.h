@@ -169,6 +169,47 @@ namespace Hoops
 		ShotTuning Tuning;
 	};
 
+	// Pull-up sem frear (docs/17 §3.4, P0-9): em vez de cortar a velocidade no gather, o corpo leva o embalo do
+	// drible (o último quique vira o gather) e desacelera em 1–2 passos de plant até a deriva do salto.
+	struct GatherCarryTuning
+	{
+		double PullUpKeep = 0.85;          // fração da velocidade de entrada mantida no gather (antes: 0,35 e freio)
+		double StepBackKeep = 0.85;        // step-back: leva o embalo para trás do próprio movimento
+		double FadeawayKeep = 0.35;        // fadeaway: a deriva dele é para trás (somada fora daqui)
+		double SpotUpKeep = 0.10;          // spot-up, heave...: pés já posicionados, planta na hora
+		double PlantSeconds = 0.30;        // gather → decolagem: a velocidade cai em linha reta até a deriva
+		double PlantMaxMeters = 0.60;      // o plant nunca anda mais que isso (limite de warp, docs/04 §1.2)
+		double PullUpDriftFraction = 0.12; // deriva no ar do pull-up = fração da entrada...
+		double PullUpDriftMaxSpeed = 0.75; // ...até 0,75 m/s (pouso 10–30 cm à frente, docs/17 §3.6)
+	};
+
+	struct GatherCarry
+	{
+		double KeepSpeed = 0.0;    // m/s logo no gather, no sentido em que o jogador vinha
+		double DriftSpeed = 0.0;   // m/s depois do plant (deriva do salto, mesmo sentido)
+		double PlantSeconds = 0.0; // duração do plant
+
+		// Velocidade (m/s) no sentido do embalo, SecondsSinceGather depois do gather.
+		double SpeedAt(double SecondsSinceGather) const
+		{
+			if (SecondsSinceGather <= 0.0)
+			{
+				return KeepSpeed;
+			}
+			if (PlantSeconds <= 0.0 || SecondsSinceGather >= PlantSeconds)
+			{
+				return DriftSpeed;
+			}
+			return Lerp(KeepSpeed, DriftSpeed, SecondsSinceGather / PlantSeconds);
+		}
+
+		// Distância andada no plant (m).
+		double PlantMeters() const { return 0.5 * (KeepSpeed + DriftSpeed) * PlantSeconds; }
+	};
+
+	// EntrySpeed = velocidade horizontal (m/s) no gather, já com o impulso do drible e o arranque de saída.
+	HOOPSSIMCORE_API GatherCarry ComputeGatherCarry(const GatherCarryTuning& Tuning, ShotType Type, double EntrySpeed);
+
 	// Texto curto (pt-BR) para HUD e logs.
 	HOOPSSIMCORE_API const char* TimingGradeLabel(TimingGrade Grade);
 	HOOPSSIMCORE_API const char* CoverageGradeLabel(CoverageGrade Grade);

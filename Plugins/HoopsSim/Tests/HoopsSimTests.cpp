@@ -633,6 +633,340 @@ HOOPS_TEST(EnergyIsTheOnlyLimiter)
 	EXPECT_NEAR(Infinite.GetEnergy(), 1.0, 1e-9);
 }
 
+HOOPS_TEST(MisdirectionWindowAcceptsAndRejects)
+{
+	// Misdirection (docs/17 §4.4): até o 1º quique (fim do commit), um gesto para o lado oposto troca o movimento.
+	DribbleController Controller;
+	const DribbleContext Context; // a mão vem do controlador
+	StickGesture Flick;
+	Flick.Kind = StickGestureKind::Flick;
+
+	EXPECT_TRUE(Controller.Request(DribbleMove::Crossover, 0.0)); // bola da direita para a esquerda
+	EXPECT_TRUE(Controller.CanRedirect(0.05));
+	EXPECT_TRUE(Controller.CanRedirect(0.119));
+	EXPECT_TRUE(!Controller.CanRedirect(0.12)); // janela = commit do crossover (0,12 s)
+
+	// Direita (de volta para a mão do início) antes do quique: lido a partir da mão direita = hesitação, troca.
+	Flick.Dir = StickDir::Right;
+	DribbleIntent Intent = Controller.ResolveGesture(Flick, Context, 0.05);
+	EXPECT_TRUE(Intent.bRedirect);
+	EXPECT_TRUE(Intent.Move == DribbleMove::Hesitation);
+
+	// O mesmo gesto depois do quique: lido na mão atual (esquerda) = entre as pernas, sem troca.
+	Intent = Controller.ResolveGesture(Flick, Context, 0.13);
+	EXPECT_TRUE(!Intent.bRedirect);
+	EXPECT_TRUE(Intent.Move == DribbleMove::BetweenLegs);
+
+	// Para o mesmo lado (esquerda, para onde a bola já vai) não é misdirection: lido na mão atual = hesitação com a
+	// esquerda, e vai para o buffer de 150 ms como antes.
+	Flick.Dir = StickDir::Left;
+	Intent = Controller.ResolveGesture(Flick, Context, 0.05);
+	EXPECT_TRUE(!Intent.bRedirect);
+	EXPECT_TRUE(Intent.Move == DribbleMove::Hesitation);
+	EXPECT_TRUE(!Controller.Request(Intent.Move, 0.05, Intent.bRedirect));
+	EXPECT_TRUE(Controller.GetActive().Move == DribbleMove::Crossover);
+	Controller.Update(0.13, 0.08, false);
+	EXPECT_TRUE(Controller.GetActive().Move == DribbleMove::Hesitation);
+	EXPECT_TRUE(Controller.GetHand() == BallHand::Left);
+
+	// Pedido de troca que chega com a janela já fechada não troca (segue o caminho normal).
+	DribbleController Closed;
+	Closed.Request(DribbleMove::Crossover, 0.0);
+	EXPECT_TRUE(Closed.Request(DribbleMove::Hesitation, 0.2, true)); // depois do commit: encadeia
+	EXPECT_TRUE(!Closed.GetActive().bRedirected);
+	EXPECT_TRUE(Closed.GetHand() == BallHand::Left);
+
+	// Variante do 2K26: só com RT segurado.
+	DribbleEnergyConfig NeedsSprint;
+	NeedsSprint.bMisdirectionNeedsSprint = true;
+	DribbleController Strict(NeedsSprint);
+	Strict.Request(DribbleMove::Crossover, 0.0);
+	Flick.Dir = StickDir::Right;
+	EXPECT_TRUE(!Strict.ResolveGesture(Flick, Context, 0.05).bRedirect);
+	DribbleContext Sprint;
+	Sprint.bSprint = true;
+	Intent = Strict.ResolveGesture(Flick, Sprint, 0.05);
+	EXPECT_TRUE(Intent.bRedirect);
+	EXPECT_TRUE(Intent.Move == DribbleMove::EscapeHesitation);
+
+	// Uma misdirection por movimento: a troca não pode ser trocada de novo (o resto vai para o buffer).
+	EXPECT_TRUE(Strict.Request(Intent.Move, 0.05, Intent.bRedirect));
+	EXPECT_TRUE(!Strict.CanRedirect(0.06));
+	Flick.Dir = StickDir::Left;
+	EXPECT_TRUE(!Strict.ResolveGesture(Flick, Sprint, 0.06).bRedirect);
+
+	// Sem movimento ativo não há o que trocar.
+	const DribbleController Idle;
+	EXPECT_TRUE(!Idle.CanRedirect(0.0));
+	EXPECT_TRUE(!Idle.ResolveGesture(Flick, Context, 0.0).bRedirect);
+}
+
+HOOPS_TEST(MisdirectionReplacesMoveBeforeBounce)
+{
+	DribbleController Controller;
+	const DribbleContext Context;
+	EXPECT_TRUE(Controller.Request(DribbleMove::Crossover, 0.0));
+	const double AfterCross = Controller.GetEnergy();
+	EXPECT_TRUE(!Controller.Request(DribbleMove::BehindBack, 0.02)); // vai para o buffer
+
+	// Fingiu o crossover e voltou para a direita antes do quique: troca na hora, sem esperar o commit nem o fim.
+	StickGesture Flick;
+	Flick.Kind = StickGestureKind::Flick;
+	Flick.Dir = StickDir::Right;
+	const DribbleIntent Intent = Controller.ResolveGesture(Flick, Context, 0.06);
+	EXPECT_TRUE(Controller.Request(Intent.Move, 0.06, Intent.bRedirect));
+	const ActiveDribbleMove& Active = Controller.GetActive();
+	EXPECT_TRUE(Active.Move == DribbleMove::Hesitation);
+	EXPECT_TRUE(Active.bRedirected);
+	EXPECT_TRUE(Active.RedirectedFrom == DribbleMove::Crossover);
+	EXPECT_NEAR(Active.StartTime, 0.06, 1e-9);
+	EXPECT_TRUE(Active.HandAtStart == BallHand::Right);
+	EXPECT_TRUE(Controller.GetHand() == BallHand::Right);         // a bola nem chegou a trocar de mão
+	EXPECT_TRUE(Controller.GetComboCount() == 1);                 // troca, não encadeamento
+	EXPECT_TRUE(Controller.GetLastMove() == DribbleMove::None);   // o crossover não "terminou"
+	// Paga os dois movimentos (o fingido e o real).
+	EXPECT_NEAR(Controller.GetEnergy(), AfterCross - GetDribbleMoveSpec(DribbleMove::Hesitation).EnergyCost, 1e-9);
+
+	// O buffer antigo (por trás) foi descartado: a troca é o input mais novo.
+	Controller.Update(0.20, 0.14, false);
+	EXPECT_TRUE(Controller.GetActive().Move == DribbleMove::Hesitation);
+	Controller.Update(0.47, 0.27, false); // hesitação acaba em 0,46
+	EXPECT_TRUE(!Controller.IsMoveActive(0.47));
+	EXPECT_TRUE(Controller.GetLastMove() == DribbleMove::Hesitation);
+
+	// A troca herda o ritmo do movimento trocado (combo no ritmo continua no ritmo, sem contar duas vezes).
+	DribbleController Rhythm;
+	Rhythm.Request(DribbleMove::Hesitation, 0.0);
+	const double End = Rhythm.GetActive().EndTime();
+	EXPECT_TRUE(Rhythm.Request(DribbleMove::Crossover, End - 0.05));
+	EXPECT_TRUE(Rhythm.GetActive().bInRhythm);
+	const int Combo = Rhythm.GetComboCount();
+	const DribbleIntent Fake = Rhythm.ResolveGesture(Flick, Context, End - 0.02);
+	EXPECT_TRUE(Fake.bRedirect);
+	EXPECT_TRUE(Rhythm.Request(Fake.Move, End - 0.02, Fake.bRedirect));
+	EXPECT_TRUE(Rhythm.GetActive().Move == DribbleMove::Hesitation);
+	EXPECT_TRUE(Rhythm.GetActive().bInRhythm);
+	EXPECT_NEAR(Rhythm.GetActive().PlayRate, 1.15, 1e-9);
+	EXPECT_TRUE(Rhythm.GetComboCount() == Combo);
+
+	// Double throw: o 2º toque chega junto com o combo, e o combo substitui o crossover do 1º toque.
+	DribbleController Double;
+	StickGesture Up;
+	Up.Kind = StickGestureKind::Flick;
+	Up.Dir = StickDir::Up;
+	const DribbleIntent First = Double.ResolveGesture(Up, Context, 0.0);
+	EXPECT_TRUE(Double.Request(First.Move, 0.0, First.bRedirect)); // crossover (direita → esquerda)
+	const DribbleIntent Second = Double.ResolveGesture(Up, Context, 0.10);
+	EXPECT_TRUE(!Second.bRedirect);
+	EXPECT_TRUE(!Double.Request(Second.Move, 0.10, Second.bRedirect)); // 2º crossover vai para o buffer
+	StickGesture Throw;
+	Throw.Kind = StickGestureKind::DoubleThrow;
+	Throw.Dir = StickDir::Up;
+	Throw.FirstDir = StickDir::Up;
+	const DribbleIntent ComboIntent = Double.ResolveGesture(Throw, Context, 0.10);
+	EXPECT_TRUE(ComboIntent.bRedirect);
+	EXPECT_TRUE(ComboIntent.Move == DribbleMove::DoubleCross);
+	EXPECT_TRUE(Double.Request(ComboIntent.Move, 0.10, ComboIntent.bRedirect));
+	EXPECT_TRUE(Double.GetHand() == BallHand::Right); // direita → esquerda → direita
+	Double.Update(0.30, 0.20, false);
+	EXPECT_TRUE(Double.GetActive().Move == DribbleMove::DoubleCross); // o crossover do buffer foi descartado
+}
+
+HOOPS_TEST(ExitBurstDirectionStrengthAndCost)
+{
+	// Arranque na saída (docs/17 §4.4): LS apontado quando o movimento acaba = velocidade extra nessa direção.
+	const DribbleEnergyConfig Defaults;
+	const double CrossBurst = GetDribbleMoveSpec(DribbleMove::Crossover).ExitBurst;
+	DribbleController Controller;
+	EXPECT_TRUE(Controller.Request(DribbleMove::Crossover, 0.0)); // direita → esquerda, acaba em 0,40
+	EXPECT_TRUE(!Controller.TryExitBurst(0.2, -1.0, 0.0).IsValid()); // durante o movimento, não
+	Controller.Update(0.41, 0.41, false);
+	const double Before = Controller.GetEnergy();
+
+	// LS para a esquerda (lado da nova mão) = cross launch cheio, pago com energia.
+	const DribbleExitBurst Launch = Controller.TryExitBurst(0.41, -1.0, 0.0);
+	EXPECT_TRUE(Launch.IsValid());
+	EXPECT_TRUE(Launch.Kind == ExitBurstKind::CrossLaunch);
+	EXPECT_TRUE(Launch.FromMove == DribbleMove::Crossover);
+	EXPECT_NEAR(Launch.DirX, -1.0, 1e-9);
+	EXPECT_NEAR(Launch.DirY, 0.0, 1e-9);
+	EXPECT_NEAR(Launch.Speed, CrossBurst, 1e-9);
+	EXPECT_TRUE(Launch.EnergyCost > 0.0);
+	EXPECT_NEAR(Controller.GetEnergy(), Before - CrossBurst * Defaults.ExitBurstEnergyPerMps, 1e-9);
+	EXPECT_TRUE(!Controller.TryExitBurst(0.42, -1.0, 0.0).IsValid()); // um arranque por saída
+
+	// Perfil: cheio no 1º passo (0,15 s), depois cai até zero em 0,30 s.
+	EXPECT_NEAR(Controller.ExitBurstSpeed(0.51), CrossBurst, 1e-9);
+	EXPECT_NEAR(Controller.ExitBurstSpeed(0.71), CrossBurst * 0.5, 1e-6);
+	EXPECT_NEAR(Controller.ExitBurstSpeed(0.87), 0.0, 1e-9);
+
+	// Sair contra o movimento (de volta para a direita depois do crossover, ou para trás) vale metade.
+	DribbleController Against;
+	Against.Request(DribbleMove::Crossover, 0.0);
+	Against.Update(0.41, 0.41, false);
+	const DribbleExitBurst Back = Against.TryExitBurst(0.41, 1.0, 0.0);
+	EXPECT_TRUE(Back.Kind == ExitBurstKind::AgainstMove);
+	EXPECT_NEAR(Back.Speed, Defaults.AgainstMoveBurstScale * CrossBurst, 1e-9);
+
+	// Speedboost: escape de hesitação (sem troca de mão) e LS para frente na diagonal do lado da bola.
+	DribbleController Escape;
+	Escape.Request(DribbleMove::EscapeHesitation, 0.0);
+	Escape.Update(0.5, 0.5, false);
+	const DribbleExitBurst Boost = Escape.TryExitBurst(0.5, 0.6, 0.8);
+	EXPECT_TRUE(Boost.Kind == ExitBurstKind::Speedboost);
+	EXPECT_NEAR(Boost.DirX, 0.6, 1e-9);
+	EXPECT_NEAR(Boost.DirY, 0.8, 1e-9);
+	EXPECT_NEAR(Boost.Speed, GetDribbleMoveSpec(DribbleMove::EscapeHesitation).ExitBurst, 1e-9);
+
+	// Tipo de movimento: crossovers e escapes lançam mais.
+	EXPECT_TRUE(GetDribbleMoveSpec(DribbleMove::AttackingCrossover).ExitBurst > CrossBurst);
+	EXPECT_TRUE(CrossBurst > GetDribbleMoveSpec(DribbleMove::BetweenLegs).ExitBurst);
+	EXPECT_TRUE(GetDribbleMoveSpec(DribbleMove::EscapeHesitation).ExitBurst > GetDribbleMoveSpec(DribbleMove::Hesitation).ExitBurst);
+	EXPECT_TRUE(CrossBurst > GetDribbleMoveSpec(DribbleMove::StepBack).ExitBurst);
+
+	// Janela: LS fraco não dispara (a janela continua aberta); 0,25 s depois do fim já não vale.
+	DribbleController Late;
+	Late.Request(DribbleMove::Crossover, 0.0);
+	Late.Update(0.41, 0.41, false);
+	EXPECT_TRUE(!Late.TryExitBurst(0.45, -0.3, 0.0).IsValid());
+	EXPECT_TRUE(Late.TryExitBurst(0.55, -0.8, 0.3).IsValid());
+	DribbleController TooLate;
+	TooLate.Request(DribbleMove::Crossover, 0.0);
+	TooLate.Update(0.41, 0.41, false);
+	EXPECT_TRUE(!TooLate.TryExitBurst(0.65, -1.0, 0.0).IsValid());
+
+	// Encadear outro drible fecha a saída: o arranque é do último movimento da sequência.
+	DribbleController Chain;
+	Chain.Request(DribbleMove::Crossover, 0.0);
+	Chain.Update(0.41, 0.41, false);
+	EXPECT_TRUE(Chain.Request(DribbleMove::BehindBack, 0.45));
+	Chain.Update(0.50, 0.05, false);
+	EXPECT_TRUE(!Chain.TryExitBurst(0.50, 1.0, 0.0).IsValid());
+	Chain.Update(0.91, 0.41, false); // por trás acaba em 0,90 com a bola na direita
+	const DribbleExitBurst AfterChain = Chain.TryExitBurst(0.91, 1.0, 0.0);
+	EXPECT_TRUE(AfterChain.FromMove == DribbleMove::BehindBack);
+	EXPECT_TRUE(AfterChain.Kind == ExitBurstKind::CrossLaunch);
+}
+
+HOOPS_TEST(ExitBurstOnlyLimitedByEnergy)
+{
+	// D13: não existe contador de boosts. Energia baixa (< 40%) reduz o arranque; encher a barra devolve tudo.
+	const double Full = GetDribbleMoveSpec(DribbleMove::Crossover).ExitBurst;
+	auto BurstAt = [](double Energy)
+	{
+		DribbleController Controller;
+		Controller.Request(DribbleMove::Crossover, 0.0);
+		Controller.Update(0.41, 0.41, false);
+		Controller.SetEnergy(Energy);
+		return Controller.TryExitBurst(0.41, -1.0, 0.0);
+	};
+	EXPECT_NEAR(BurstAt(0.8).Speed, Full, 1e-9);
+	EXPECT_NEAR(BurstAt(0.4).Speed, Full, 1e-9);
+	EXPECT_NEAR(BurstAt(0.2).Speed, Full * 0.7, 1e-9); // metade do caminho entre 40% e 100% do arranque
+	EXPECT_NEAR(BurstAt(0.0).Speed, Full * 0.4, 1e-9); // barra vazia: ainda sai, mas fraco
+
+	// 30 saídas seguidas: o arranque nunca some por contagem; só cai junto com a energia...
+	DribbleController Spam;
+	double Now = 0.0;
+	double LastSpeed = 1e9;
+	bool bAllFired = true;
+	bool bNeverGrows = true;
+	for (int Index = 0; Index < 30; ++Index)
+	{
+		Spam.Request(DribbleMove::Crossover, Now);
+		Now = Spam.GetActive().EndTime() + 0.01; // cansado, o drible fica mais lento: sai logo depois do fim real
+		Spam.Update(Now, 0.0, false);
+		const DribbleExitBurst Burst = Spam.TryExitBurst(Now, Spam.GetHand() == BallHand::Left ? -1.0 : 1.0, 0.0);
+		bAllFired = bAllFired && Burst.IsValid() && Burst.Kind == ExitBurstKind::CrossLaunch;
+		bNeverGrows = bNeverGrows && Burst.Speed <= LastSpeed + 1e-12;
+		LastSpeed = Burst.Speed;
+		Now += 0.5;
+	}
+	EXPECT_TRUE(bAllFired);
+	EXPECT_TRUE(bNeverGrows);
+	EXPECT_TRUE(Spam.GetEnergy() < 0.4);
+	EXPECT_TRUE(LastSpeed < Full);
+
+	// ...e encher a barra devolve o arranque cheio: não há nada escondido contando arranques.
+	Spam.SetEnergy(1.0);
+	Spam.Request(DribbleMove::Crossover, Now);
+	Now = Spam.GetActive().EndTime() + 0.01;
+	Spam.Update(Now, 0.0, false);
+	EXPECT_NEAR(Spam.TryExitBurst(Now, Spam.GetHand() == BallHand::Left ? -1.0 : 1.0, 0.0).Speed, Full, 1e-9);
+
+	// Energia infinita (treino do Freestyle): todos os arranques iguais e a barra não mexe.
+	DribbleEnergyConfig Training;
+	Training.bInfiniteEnergy = true;
+	DribbleController Infinite(Training);
+	bool bAllFull = true;
+	for (int Index = 0; Index < 30; ++Index)
+	{
+		Infinite.Request(DribbleMove::Crossover, Now);
+		Now = Infinite.GetActive().EndTime() + 0.01;
+		Infinite.Update(Now, 0.0, false);
+		const DribbleExitBurst Burst = Infinite.TryExitBurst(Now, Infinite.GetHand() == BallHand::Left ? -1.0 : 1.0, 0.0);
+		bAllFull = bAllFull && std::fabs(Burst.Speed - Full) < 1e-9 && Burst.EnergyCost == 0.0;
+		Now += 0.5;
+	}
+	EXPECT_TRUE(bAllFull);
+	EXPECT_NEAR(Infinite.GetEnergy(), 1.0, 1e-9);
+}
+
+HOOPS_TEST(PullUpKeepsMomentumIntoGather)
+{
+	// P0-9 (docs/17 §3.4): o gather do pull-up leva o embalo do drible e desacelera no plant até a deriva do salto.
+	const GatherCarryTuning Tuning;
+	const double Jog = 4.4;    // com bola, correndo (m/s)
+	const double Sprint = 6.7; // com bola, em sprint
+	const GatherCarry PullUp = ComputeGatherCarry(Tuning, ShotType::PullUp, Jog);
+	EXPECT_NEAR(PullUp.SpeedAt(0.0), Jog * Tuning.PullUpKeep, 1e-9);
+	EXPECT_TRUE(PullUp.SpeedAt(0.0) > Jog * 0.35 * 2.0); // antes: 35% e freio do chão na hora
+
+	// Desacelera sem degrau (nunca acelera) e anda no plant o que PlantMeters diz.
+	bool bNeverGrows = true;
+	double Previous = PullUp.SpeedAt(0.0);
+	double Walked = 0.0;
+	for (int Step = 1; Step <= 600; ++Step)
+	{
+		const double T = static_cast<double>(Step) * 0.001;
+		const double Speed = PullUp.SpeedAt(T);
+		bNeverGrows = bNeverGrows && Speed <= Previous + 1e-12;
+		if (T <= PullUp.PlantSeconds)
+		{
+			Walked += Speed * 0.001;
+		}
+		Previous = Speed;
+	}
+	EXPECT_TRUE(bNeverGrows);
+	EXPECT_RANGE(PullUp.PlantSeconds, 0.20, 0.30);
+	EXPECT_NEAR(Walked, PullUp.PlantMeters(), 0.01);
+	EXPECT_TRUE(PullUp.PlantMeters() <= Tuning.PlantMaxMeters + 1e-9);
+	EXPECT_NEAR(PullUp.SpeedAt(PullUp.PlantSeconds), PullUp.DriftSpeed, 1e-9);
+	EXPECT_RANGE(PullUp.DriftSpeed * 0.4, 0.10, 0.30 + 1e-9); // pouso 10–30 cm à frente num voo de ~0,4 s
+
+	// Em sprint o plant encurta para não andar mais de 0,6 m, e a deriva para no teto.
+	const GatherCarry Fast = ComputeGatherCarry(Tuning, ShotType::PullUp, Sprint);
+	EXPECT_NEAR(Fast.PlantMeters(), Tuning.PlantMaxMeters, 1e-9);
+	EXPECT_TRUE(Fast.PlantSeconds < Tuning.PlantSeconds);
+	EXPECT_NEAR(Fast.DriftSpeed, Tuning.PullUpDriftMaxSpeed, 1e-9);
+
+	// Spot-up planta na hora; step-back leva o embalo (para trás) do próprio movimento; fadeaway freia mais.
+	// Nenhum dos três deriva no sentido da entrada (a deriva para trás do step-back/fadeaway é somada na Unreal).
+	const GatherCarry Spot = ComputeGatherCarry(Tuning, ShotType::SpotUp, 2.0);
+	EXPECT_NEAR(Spot.SpeedAt(0.0), 0.2, 1e-9);
+	EXPECT_NEAR(Spot.DriftSpeed, 0.0, 1e-9);
+	const GatherCarry Step = ComputeGatherCarry(Tuning, ShotType::StepBack, 3.0);
+	EXPECT_NEAR(Step.SpeedAt(0.0), 3.0 * Tuning.StepBackKeep, 1e-9);
+	EXPECT_NEAR(Step.SpeedAt(1.0), 0.0, 1e-9);
+	const GatherCarry Fade = ComputeGatherCarry(Tuning, ShotType::Fadeaway, 3.0);
+	EXPECT_TRUE(Fade.SpeedAt(0.0) < Step.SpeedAt(0.0));
+	EXPECT_NEAR(Fade.DriftSpeed, 0.0, 1e-9);
+	EXPECT_NEAR(ComputeGatherCarry(Tuning, ShotType::PullUp, 0.0).PlantMeters(), 0.0, 1e-12); // parado: nada
+
+	// O último quique vira o gather: gather → soltura ideal ≈ 0,6 s (docs/17 §0, clipe do diretor).
+	EXPECT_RANGE(ShotTuning().IdealReleaseMsNormal / 1000.0, 0.50, 0.65);
+}
+
 HOOPS_TEST(LayupAndDunkProbabilities)
 {
 	const ShotModel Model;

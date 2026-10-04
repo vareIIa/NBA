@@ -253,7 +253,7 @@ private:
 	void UpdateMovement(float DeltaSeconds);
 	void UpdateProStick();
 	void HandleGesture(const Hoops::StickGesture& Gesture);
-	void StartDribbleMove(Hoops::DribbleMove Move);
+	void StartDribbleMove(Hoops::DribbleMove Move, bool bRedirect = false);
 	void UpdateDribbleBall(float DeltaSeconds);
 	void PlanDribbleArc(bool bSwitchHand, double PeriodOverride);
 	FVector HandWorldLocation(Hoops::BallHand Hand, double SecondsAhead) const;
@@ -372,7 +372,9 @@ private:
 	bool bLastShotGreen = false;
 	bool bFeedbackPending = false;   // esperando a bola chegar ao aro (bGreenFeedbackAtRim)
 	double LastMakeTime = -100.0;
-	FVector ShotDrift = FVector::ZeroVector; // embalo horizontal do arremesso com o boneco (fadeaway, step-back)
+	FVector ShotDrift = FVector::ZeroVector; // deriva para trás do arremesso com o boneco (fadeaway, step-back)
+	Hoops::GatherCarry PullUpCarry;               // pull-up sem frear: embalo do drible no gather (docs/17 §3.4)
+	FVector PullUpCarryDir = FVector::ZeroVector; // sentido do embalo no gather (mundo, 2D)
 	float CurrentBaseRateAbs = 1.0f;         // playrate do loop de base (ajusta o detector do empurrão)
 	int32 CelebrationIndex = 0;
 
