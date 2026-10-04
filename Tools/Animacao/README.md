@@ -25,12 +25,18 @@ O FBX do jogo é um asset derivado, usado dentro do jogo (permitido).
 mkdir -p cmu && cd cmu
 curl -O http://mocap.cs.cmu.edu/subjects/06/06.asf
 for i in 01 02 04 05 06 08 12 15; do curl -O http://mocap.cs.cmu.edu/subjects/06/06_$i.amc; done
+curl -O http://mocap.cs.cmu.edu/subjects/06/06_14.amc
 curl -O http://mocap.cs.cmu.edu/subjects/16/16.asf
 curl -O http://mocap.cs.cmu.edu/subjects/16/16_45.amc
+curl -O http://mocap.cs.cmu.edu/subjects/79/79.asf
+curl -O http://mocap.cs.cmu.edu/subjects/79/79_94.amc
+curl -O http://mocap.cs.cmu.edu/subjects/141/141.asf
+curl -O http://mocap.cs.cmu.edu/subjects/141/141_21.amc
 ```
 
 - Sujeito 06: drible (parado, andando, de costas, de lado, crossover) e arremesso saindo do drible.
 - Sujeito 16: corrida (16_45, ~4 m/s), passada para o esqueleto do 06.
+- Sujeitos 79 (flexing) e 141 (shrug): celebrações, também passadas para o esqueleto do 06.
 - Próximos: sujeito 124 (124_05 jump shot, 124_06 bandeja) e 06_13 (drible baixo/rápido, entre as pernas).
 
 ## 2. Processar os clipes (numpy)
@@ -83,6 +89,9 @@ Ver `docs/dev/COMO-RODAR.md` (script `Tools/Editor/importar_personagem.py`, ou a
 | Dribble_Side_R | 06_08 | 1,32 s | 1,23 m/s para a ESQUERDA do jogador | 37, 77 |
 | Dribble_Side_L | espelho | 1,32 s | 1,23 m/s para a DIREITA do jogador | 38, 77 |
 | JumpShot_R / _L | 06_15 quadros 55–fim (+ espelho) | 3,63 s | one-shot | — |
+| Cross_R2L / _L2R | 06_14 quadros 8–60 (+ espelho) | 0,88 s | ação (crossover) | solta ~9, recebe ~30 |
+| Celebrate_Flex | 79_94 quadros 295–370 (retarget) | 1,27 s | só tronco no jogo | — |
+| Celebrate_Shrug | 141_21 quadros 25–90 (retarget) | 1,10 s | só tronco no jogo | — |
 
 **JumpShot** (quadros do clipe): gather 33 · dip **80** (início da ação no jogo; o clipe é centralizado aqui)
 · pés saem ~108 · **soltura 117** · ápice 119 · aterrissagem ~132. O jogo toca a partir do 80 com

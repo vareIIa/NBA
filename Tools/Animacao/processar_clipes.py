@@ -450,6 +450,22 @@ def main():
     emit("Dribble_Run_R", dribble_run, unit, "Run + 1 drible do Dribble_Walk_R {}-{} (dist {:.2f})".format(i, j, d))
     emit("Dribble_Run_L", mirror(dribble_run), unit, "espelho")
 
+    # Crossover direita -> esquerda: 06_14 (crossover e arremesso), do último drible com a direita até o
+    # primeiro com a esquerda. Tocado como ação no drible "crossover" do Pro Stick; o espelho faz esquerda -> direita.
+    clip, unit = load("14")
+    cross = clip.copy(8, 61)
+    align_heading(cross, unit)
+    cross = in_place(cross)
+    emit("Cross_R2L", cross, unit, "06_14 quadros 8-60 (ação)")
+    emit("Cross_L2R", mirror(cross), unit, "espelho")
+
+    # Celebrações (o jogo toca só o tronco/braços, por cima da locomoção): "flex" (79_94) e "shrug" (141_21).
+    for subj, trial, a, b, name in (("79", "94", 295, 371, "Celebrate_Flex"), ("141", "21", 25, 91, "Celebrate_Shrug")):
+        src, src_unit = load_clip(os.path.join(cmu, subj + ".asf"), os.path.join(cmu, "{}_{}.amc".format(subj, trial)))
+        celebration = retarget(src.copy(a, b), src_unit, bones06, unit)
+        align_heading(celebration, unit)
+        emit(name, in_place(celebration), unit, "{}_{} quadros {}-{} (retarget, só tronco no jogo)".format(subj, trial, a, b - 1))
+
     # Arremesso saindo do drible (pull-up): 06_15, do último drible até a aterrissagem. A frente e o centro do
     # clipe são medidos no "dip" (quadro 80 = início da ação no jogo), para o corpo não escorregar no blend.
     clip, unit = load("15")

@@ -94,6 +94,38 @@ void UHoopsAnimInstance::StopAction(float BlendOut)
 	}
 }
 
+void UHoopsAnimInstance::PlayUpperBody(UAnimSequence* Sequence, float StartTime, float PlayRate, float BlendIn, float HoldSeconds, float BlendOut)
+{
+	if (!Sequence)
+	{
+		return;
+	}
+	Upper.Sequence = Sequence;
+	Upper.Time = FMath::Clamp(StartTime, 0.0f, SequenceLength(Sequence));
+	Upper.PlayRate = PlayRate;
+	Upper.bLooping = false;
+	Upper.bUpperBodyOnly = true;
+	Upper.BlendTime = BlendIn;
+	Upper.TargetWeight = 1.0f;
+	if (!bUpperActive)
+	{
+		Upper.Weight = 0.0f;
+	}
+	UpperElapsed = 0.0f;
+	UpperHoldSeconds = HoldSeconds;
+	UpperBlendOut = BlendOut;
+	bUpperActive = true;
+}
+
+void UHoopsAnimInstance::StopUpperBody(float BlendOut)
+{
+	if (bUpperActive)
+	{
+		Upper.TargetWeight = 0.0f;
+		Upper.BlendTime = BlendOut;
+	}
+}
+
 void UHoopsAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
@@ -129,6 +161,23 @@ void UHoopsAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		}
 	}
 
+	if (bUpperActive)
+	{
+		const float Length = SequenceLength(Upper.Sequence);
+		Upper.Time = FMath::Clamp(Upper.Time + DeltaSeconds * Upper.PlayRate, 0.0f, Length);
+		UpperElapsed += DeltaSeconds;
+		if (UpperElapsed >= UpperHoldSeconds && Upper.TargetWeight > 0.0f)
+		{
+			Upper.TargetWeight = 0.0f;
+			Upper.BlendTime = UpperBlendOut;
+		}
+		Upper.Weight = StepWeight(Upper.Weight, Upper.TargetWeight, Upper.BlendTime, DeltaSeconds);
+		if (Upper.TargetWeight <= 0.0f && Upper.Weight <= 0.001f)
+		{
+			bUpperActive = false;
+		}
+	}
+
 	// Entrega as camadas deste frame ao proxy (a avaliação roda depois, possivelmente em outra thread).
 	TArray<FHoopsAnimLayer> Layers;
 	GetEvaluationLayers(Layers);
@@ -159,6 +208,10 @@ void UHoopsAnimInstance::GetEvaluationLayers(TArray<FHoopsAnimLayer>& OutLayers)
 		FHoopsAnimLayer& Copy = OutLayers.Add_GetRef(Action);
 		Copy.Weight = ActionWeight;
 	}
+	if (bUpperActive && Upper.Weight > 0.001f)
+	{
+		OutLayers.Add(Upper); // bUpperBodyOnly: o proxy aplica por cima, só do tronco para cima
+	}
 }
 
 FAnimInstanceProxy* UHoopsAnimInstance::CreateAnimInstanceProxy()
@@ -173,57 +226,99 @@ void UHoopsAnimInstance::DestroyAnimInstanceProxy(FAnimInstanceProxy* InProxy)
 
 // ============================================================================ Proxy (thread de animação)
 
-bool FHoopsAnimInstanceProxy::Evaluate(FPoseContext& Output)
+namespace
 {
-	const int32 Count = EvalLayers.Num();
-	if (Count == 0)
+	// Amostra uma camada numa pose (mesmos ossos de Output).
+	void SampleLayer(const FHoopsAnimLayer& Layer, FPoseContext& Context)
 	{
-		Output.ResetToRefPose();
-		return true;
-	}
-
-	TArray<FCompactPose, TInlineAllocator<4>> Poses;
-	TArray<FBlendedCurve, TInlineAllocator<4>> Curves;
-	TArray<UE::Anim::FStackAttributeContainer, TInlineAllocator<4>> Attributes;
-	TArray<float, TInlineAllocator<4>> Weights;
-	Poses.SetNum(Count);
-	Curves.SetNum(Count);
-	Attributes.SetNum(Count);
-	Weights.SetNum(Count);
-
-	float WeightSum = 0.0f;
-	for (int32 Index = 0; Index < Count; ++Index)
-	{
-		const FHoopsAnimLayer& Layer = EvalLayers[Index];
-		FPoseContext LayerContext(Output);
 		if (Layer.Sequence)
 		{
-			FAnimationPoseData LayerData(LayerContext);
+			FAnimationPoseData PoseData(Context);
 			const FAnimExtractContext Extract(static_cast<double>(Layer.Time), false, FDeltaTimeRecord(), Layer.bLooping);
-			Layer.Sequence->GetAnimationPose(LayerData, Extract);
+			Layer.Sequence->GetAnimationPose(PoseData, Extract);
 		}
 		else
 		{
-			LayerContext.ResetToRefPose();
+			Context.ResetToRefPose();
 		}
-		Poses[Index].MoveBonesFrom(LayerContext.Pose);
-		Curves[Index].MoveFrom(LayerContext.Curve);
-		Attributes[Index].MoveFrom(LayerContext.CustomAttributes);
-		Weights[Index] = Layer.Weight;
-		WeightSum += Layer.Weight;
 	}
 
-	if (WeightSum <= UE_KINDA_SMALL_NUMBER)
+	const FName UpperBodyRootBone(TEXT("spine_02"));
+}
+
+bool FHoopsAnimInstanceProxy::Evaluate(FPoseContext& Output)
+{
+	// 1) Corpo inteiro: bases + ação, misturadas por peso.
+	TArray<const FHoopsAnimLayer*, TInlineAllocator<4>> FullBody;
+	TArray<const FHoopsAnimLayer*, TInlineAllocator<4>> UpperBody;
+	for (const FHoopsAnimLayer& Layer : EvalLayers)
+	{
+		(Layer.bUpperBodyOnly ? UpperBody : FullBody).Add(&Layer);
+	}
+
+	const int32 Count = FullBody.Num();
+	float WeightSum = 0.0f;
+	for (const FHoopsAnimLayer* Layer : FullBody)
+	{
+		WeightSum += Layer->Weight;
+	}
+	if (Count == 0 || WeightSum <= UE_KINDA_SMALL_NUMBER)
 	{
 		Output.ResetToRefPose();
-		return true;
 	}
-	for (float& Weight : Weights)
+	else if (Count == 1)
 	{
-		Weight /= WeightSum;
+		SampleLayer(*FullBody[0], Output);
+	}
+	else
+	{
+		TArray<FCompactPose, TInlineAllocator<4>> Poses;
+		TArray<FBlendedCurve, TInlineAllocator<4>> Curves;
+		TArray<UE::Anim::FStackAttributeContainer, TInlineAllocator<4>> Attributes;
+		TArray<float, TInlineAllocator<4>> Weights;
+		Poses.SetNum(Count);
+		Curves.SetNum(Count);
+		Attributes.SetNum(Count);
+		Weights.SetNum(Count);
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			FPoseContext LayerContext(Output);
+			SampleLayer(*FullBody[Index], LayerContext);
+			Poses[Index].MoveBonesFrom(LayerContext.Pose);
+			Curves[Index].MoveFrom(LayerContext.Curve);
+			Attributes[Index].MoveFrom(LayerContext.CustomAttributes);
+			Weights[Index] = FullBody[Index]->Weight / WeightSum;
+		}
+		FAnimationPoseData OutData(Output);
+		FAnimationRuntime::BlendPosesTogether(Poses, Curves, Attributes, Weights, OutData);
 	}
 
-	FAnimationPoseData OutData(Output);
-	FAnimationRuntime::BlendPosesTogether(Poses, Curves, Attributes, Weights, OutData);
+	// 2) Tronco/braços por cima (spine_02 e tudo abaixo dele na hierarquia), em espaço local.
+	if (UpperBody.Num() > 0)
+	{
+		const FBoneContainer& Bones = Output.Pose.GetBoneContainer();
+		const int32 MeshRoot = Bones.GetReferenceSkeleton().FindBoneIndex(UpperBodyRootBone);
+		if (MeshRoot != INDEX_NONE)
+		{
+			const FCompactPoseBoneIndex Root = Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(MeshRoot));
+			TArray<bool, TInlineAllocator<64>> IsUpper;
+			IsUpper.SetNumZeroed(Output.Pose.GetNumBones());
+			for (const FHoopsAnimLayer* Layer : UpperBody)
+			{
+				FPoseContext UpperContext(Output);
+				SampleLayer(*Layer, UpperContext);
+				for (const FCompactPoseBoneIndex BoneIndex : Output.Pose.ForEachBoneIndex())
+				{
+					const FCompactPoseBoneIndex Parent = Bones.GetParentBoneIndex(BoneIndex);
+					const bool bUpper = BoneIndex == Root || (Parent.IsValid() && IsUpper[Parent.GetInt()]);
+					IsUpper[BoneIndex.GetInt()] = bUpper;
+					if (bUpper)
+					{
+						Output.Pose[BoneIndex].BlendWith(UpperContext.Pose[BoneIndex], Layer->Weight);
+					}
+				}
+			}
+		}
+	}
 	return true;
 }

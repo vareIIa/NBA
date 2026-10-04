@@ -15,6 +15,7 @@
 
 class AHoopsBall;
 class UAnimSequence;
+class USoundWaveProcedural;
 class UHoopsAnimInstance;
 class USkeletalMesh;
 class AHoopsDummyDefender;
@@ -45,6 +46,13 @@ struct FHoopsHudData
 	FString FeedbackDetail;
 	FLinearColor FeedbackColor = FLinearColor::White;
 	double FeedbackTime = -100.0;
+
+	// Medidor congelado na soltura (fica ~1 s na tela com a cor do resultado, como no 2K) e o flash do green.
+	float ResultFill = 0.0f;
+	FLinearColor ResultColor = FLinearColor::White;
+	double ResultTime = -100.0;
+	double GreenTime = -100.0;
+	double Now = 0.0;
 
 	// Jogador.
 	float Energy = 1.0f;
@@ -114,6 +122,19 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Hoops|Configuracoes")
 	bool bShotFeedbackEnabled = true;
+
+	// --- Green (estilo 2K Park) ---
+	// Quanto tempo o jogador segura o follow-through depois de um green (s). Soltura normal segura menos.
+	UPROPERTY(EditAnywhere, Category = "Hoops|Green", meta = (ClampMin = "0.2", ClampMax = "3.0"))
+	float GreenHoldSeconds = 1.3f;
+
+	// Celebra sozinho quando um green cai (alterna as celebrações).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Green")
+	bool bAutoCelebrate = true;
+
+	// Som do green (sintetizado, sem asset).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Green", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float GreenSoundVolume = 0.8f;
 
 	// Multiplicador da janela green (1 = padrão do jogo). Dá para mexer durante o Play no painel Details do jogador.
 	UPROPERTY(EditAnywhere, Category = "Hoops|Configuracoes", meta = (ClampMin = "0.5", ClampMax = "3.0"))
@@ -248,6 +269,10 @@ private:
 	UAnimSequence* GetClip(EHoopsClip Clip) const;
 	void UpdateBodyAnimation(float DeltaSeconds);
 	void PlayShotAction(float StartSeconds, float SecondsToRelease);
+	UAnimSequence* GetActionClip(EHoopsClip Clip) const; // sem cair para a base: nullptr se não houver
+	void PlayGreenChime();
+	void OnShotReleased(const Hoops::ShotEvaluation& Eval, double HoldMs);
+	void Celebrate();
 	// Bola segura pelo boneco: roda no Tick da bola, depois da animação deste frame.
 	void LateUpdateHeldBall(float DeltaSeconds);
 	FVector HandBallPoint(Hoops::BallHand Hand) const;
@@ -323,6 +348,10 @@ private:
 	bool bSwitchRequested = false;
 	bool bDoubleCrossPending = false;
 	double SwitchFlightSeconds = 0.3;
+	// Green: último arremesso foi green (celebra se cair) e qual celebração vem a seguir.
+	bool bLastShotGreen = false;
+	int32 CelebrationIndex = 0;
+
 	// Transição suave da bola (recepção, gather, pump fake).
 	FVector BallBlendFrom = FVector::ZeroVector;
 	double BallBlendStart = -10.0;
@@ -373,4 +402,7 @@ private:
 	double LastBPressTime = -10.0;
 
 	FHoopsHudData Hud;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundWaveProcedural> GreenChime; // mantém o som vivo enquanto toca
 };

@@ -30,6 +30,7 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "Kismet/GameplayStatics.h"
+#include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
@@ -760,6 +761,18 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move)
 		bSwitchRequested = Spec.HandSwitches > 0;
 		bDoubleCrossPending = bDoubleSwitch;
 		SwitchFlightSeconds = Duration * (bDoubleSwitch ? 0.4 : 0.6);
+
+		// Troca de mão simples (crossover, entre as pernas, por trás): toca o crossover do mocap, com a mão que
+		// recebe chegando junto com a bola. (Spin/half-spin giram o corpo; double cross ainda sem clipe.)
+		const bool bSpin = Move == Hoops::DribbleMove::Spin || Move == Hoops::DribbleMove::HalfSpin;
+		UHoopsAnimInstance* Anim = GetHoopsAnim();
+		UAnimSequence* Cross = GetActionClip(HandBefore == Hoops::BallHand::Right ? EHoopsClip::CrossR2L : EHoopsClip::CrossL2R);
+		if (Spec.HandSwitches == 1 && !bSpin && Anim && Cross)
+		{
+			const float Rate = (HoopsDummyRig::CrossCatchSeconds - HoopsDummyRig::CrossStartSeconds) /
+				FMath::Max(0.12f, static_cast<float>(SwitchFlightSeconds));
+			Anim->PlayAction(Cross, HoopsDummyRig::CrossStartSeconds, Rate, 0.08f, HoopsDummyRig::CrossEndSeconds);
+		}
 		return;
 	}
 	PlanDribbleArc(bDoubleSwitch, Duration * (bDoubleSwitch ? 0.4 : 0.6));
@@ -1036,6 +1049,7 @@ void AHoopsPlayerCharacter::ReleaseShot()
 		++Hud.Greens;
 	}
 	ShowFeedback(Eval, ShotContext);
+	OnShotReleased(Eval, HoldMs);
 
 	Hud.LabLines.Reset();
 	Hud.LabLines.Add(FString::Printf(TEXT("Ultimo: %s | %.2f m | rating %.0f"), *Ansi(Hoops::ShotTypeLabel(ShotContext.Type)), ShotContext.DistanceMeters, ShotContext.Rating));
@@ -1099,6 +1113,7 @@ void AHoopsPlayerCharacter::UpdateFinish(float DeltaSeconds)
 
 void AHoopsPlayerCharacter::ReleaseFinish()
 {
+	bLastShotGreen = false; // bandeja/enterrada não têm green (timing desligado)
 	// Timing de bandeja desligado por padrão (como "Shot Timing: Shots Only" do 2K23): conta como soltura "Boa".
 	const double HoldMs = bFinishIsDunk ? ShotWindows.IdealReleaseMs : ShotWindows.IdealReleaseMs + ShotWindows.PerfectHalfMs + 1.0;
 	ContestSamples.Reset();
@@ -1144,6 +1159,10 @@ void AHoopsPlayerCharacter::UpdateBallPossession(float DeltaSeconds)
 	{
 		if (Ball->ConsumeScoreEvent())
 		{
+			if (bLastShotGreen && bAutoCelebrate)
+			{
+				Celebrate();
+			}
 			bAwaitingShotResult = false;
 			++Hud.Makes;
 			++Hud.Streak;
@@ -1211,6 +1230,10 @@ void AHoopsPlayerCharacter::CatchBall()
 	bArcValid = false;
 	if (bRigActive)
 	{
+		if (UHoopsAnimInstance* Anim = GetHoopsAnim())
+		{
+			Anim->StopUpperBody(0.15f); // mãos de volta para a bola
+		}
 		Ball->SetControlledLocation(Ball->GetActorLocation()); // a bola vai da posição atual para a mão
 		ResetBallCarry(Dribble.GetHand(), 0.15);
 	}
@@ -1255,6 +1278,7 @@ void AHoopsPlayerCharacter::UpdateHud()
 	Hud.PlayerWorldLocation = GetActorLocation();
 	Hud.HalfHeight = CapsuleHalfHeightCm;
 
+	Hud.Now = Now();
 	Hud.bShowMeter = bShotMeterEnabled && ShotPhase == EShotPhase::Jumper;
 	if (Hud.bShowMeter)
 	{
@@ -1265,8 +1289,8 @@ void AHoopsPlayerCharacter::UpdateHud()
 		Hud.GreenEnd = static_cast<float>((Ideal + ShotWindows.PerfectHalfMs) / Ideal);
 		Hud.GoodStart = static_cast<float>((Ideal - ShotWindows.GoodHalfMs) / Ideal);
 		Hud.GoodEnd = static_cast<float>((Ideal + ShotWindows.GoodHalfMs) / Ideal);
-		Hud.MeterWorldAnchor = GetActorLocation() + GetActorRightVector() * 70.0;
 	}
+	Hud.MeterWorldAnchor = GetActorLocation() + GetActorRightVector() * 70.0; // segue o jogador (também no resultado)
 
 	if (Hud.bShowFeedback && Now() - Hud.FeedbackTime > 2.8)
 	{
@@ -1696,4 +1720,99 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 		Target = FMath::Lerp(BallBlendFrom, Target, Alpha);
 	}
 	Ball->SetControlledLocation(Target);
+}
+
+// ============================================================================ Green (estilo 2K Park)
+
+UAnimSequence* AHoopsPlayerCharacter::GetActionClip(EHoopsClip Clip) const
+{
+	const int32 Index = static_cast<int32>(Clip);
+	if (DummyClips.IsValidIndex(Index) && DummyClips[Index])
+	{
+		return DummyClips[Index];
+	}
+	const int32 FallbackIndex = static_cast<int32>(HoopsDummyRig::Fallback(Clip));
+	return DummyClips.IsValidIndex(FallbackIndex) && FallbackIndex != static_cast<int32>(EHoopsClip::HoldIdle) ? DummyClips[FallbackIndex].Get() : nullptr;
+}
+
+void AHoopsPlayerCharacter::OnShotReleased(const Hoops::ShotEvaluation& Eval, double HoldMs)
+{
+	const bool bGreen = Eval.Timing == Hoops::TimingGrade::Green;
+	bLastShotGreen = bGreen;
+
+	// Medidor congelado na soltura, com a cor do resultado.
+	Hud.ResultFill = static_cast<float>(HoldMs / FMath::Max(1.0, ShotWindows.IdealReleaseMs));
+	Hud.ResultTime = Now();
+	switch (Eval.Timing)
+	{
+	case Hoops::TimingGrade::Green: Hud.ResultColor = FLinearColor(0.20f, 1.0f, 0.35f); break;
+	case Hoops::TimingGrade::Good: Hud.ResultColor = FLinearColor::White; break;
+	case Hoops::TimingGrade::SlightlyEarly:
+	case Hoops::TimingGrade::SlightlyLate: Hud.ResultColor = FLinearColor(1.0f, 0.85f, 0.2f); break;
+	default: Hud.ResultColor = FLinearColor(1.0f, 0.3f, 0.25f); break;
+	}
+	if (bGreen)
+	{
+		Hud.GreenTime = Now();
+		PlayGreenChime();
+	}
+
+	// Segura o follow-through (braço do arremesso no alto, "pulso quebrado") enquanto as pernas aterrissam.
+	// No green segura mais, como no 2K.
+	UHoopsAnimInstance* Anim = GetHoopsAnim();
+	UAnimSequence* Shot = GetActionClip(EHoopsClip::JumpShotR);
+	if (bRigActive && Anim && Shot)
+	{
+		Anim->PlayUpperBody(Shot, HoopsDummyRig::JumpShotFollowThroughSeconds, 0.0f, 0.18f, bGreen ? GreenHoldSeconds : 0.45f, 0.35f);
+	}
+}
+
+void AHoopsPlayerCharacter::Celebrate()
+{
+	UHoopsAnimInstance* Anim = GetHoopsAnim();
+	if (!bRigActive || !Anim)
+	{
+		return;
+	}
+	const EHoopsClip Options[] = {EHoopsClip::CelebrateFlex, EHoopsClip::CelebrateShrug};
+	UAnimSequence* Clip = GetActionClip(Options[CelebrationIndex % static_cast<int32>(UE_ARRAY_COUNT(Options))]);
+	++CelebrationIndex;
+	if (Clip)
+	{
+		const float Length = static_cast<float>(Clip->GetPlayLength());
+		Anim->PlayUpperBody(Clip, 0.0f, 1.0f, 0.25f, FMath::Max(0.3f, Length - 0.3f), 0.3f);
+		LogInput(FString::Printf(TEXT("Celebracao: %s"), *Clip->GetName()));
+	}
+}
+
+void AHoopsPlayerCharacter::PlayGreenChime()
+{
+	if (GreenSoundVolume <= 0.0f)
+	{
+		return;
+	}
+	// "Ding" de duas notas (Mi e Si agudos) com decaimento rápido, sintetizado na hora.
+	constexpr int32 SampleRate = 44100;
+	constexpr float Seconds = 0.7f;
+	const int32 NumSamples = static_cast<int32>(SampleRate * Seconds);
+	TArray<int16> Samples;
+	Samples.SetNumUninitialized(NumSamples);
+	for (int32 Index = 0; Index < NumSamples; ++Index)
+	{
+		const float T = static_cast<float>(Index) / static_cast<float>(SampleRate);
+		const float Attack = FMath::Min(1.0f, T / 0.004f);
+		const float First = FMath::Sin(2.0f * UE_PI * 1318.5f * T) * FMath::Exp(-T * 7.0f);
+		const float Second = T > 0.07f ? FMath::Sin(2.0f * UE_PI * 1975.5f * (T - 0.07f)) * FMath::Exp(-(T - 0.07f) * 6.0f) : 0.0f;
+		const float Value = Attack * (0.45f * First + 0.4f * Second);
+		Samples[Index] = static_cast<int16>(FMath::Clamp(Value, -1.0f, 1.0f) * 32000.0f);
+	}
+
+	GreenChime = NewObject<USoundWaveProcedural>(this);
+	GreenChime->SetSampleRate(SampleRate);
+	GreenChime->NumChannels = 1;
+	GreenChime->Duration = Seconds;
+	GreenChime->SoundGroup = SOUNDGROUP_Default;
+	GreenChime->bLooping = false;
+	GreenChime->QueueAudio(reinterpret_cast<const uint8*>(Samples.GetData()), Samples.Num() * static_cast<int32>(sizeof(int16)));
+	UGameplayStatics::PlaySound2D(this, GreenChime, GreenSoundVolume);
 }

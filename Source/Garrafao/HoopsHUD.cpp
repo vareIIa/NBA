@@ -34,7 +34,11 @@ void AHoopsHUD::DrawHUD()
 	const float H = static_cast<float>(Canvas->SizeY);
 
 	// ---------------- Medidor de arremesso (ao lado do jogador)
-	if (Data.bShowMeter)
+	// Durante o arremesso enche até o ponto ideal (2K23). Depois da soltura fica ~1 s congelado onde você soltou,
+	// com a cor do resultado; no green pisca em verde forte e aparece "GREEN!".
+	const double SinceResult = Data.Now - Data.ResultTime;
+	const bool bShowResult = !Data.bShowMeter && SinceResult >= 0.0 && SinceResult < 1.0;
+	if (Data.bShowMeter || bShowResult)
 	{
 		const FVector Screen = Project(Data.MeterWorldAnchor);
 		const float BarW = 12.0f;
@@ -44,15 +48,31 @@ void AHoopsHUD::DrawHUD()
 
 		auto YFor = [Bottom, BarH](float Fill) { return Bottom - FMath::Clamp(Fill / MeterScale, 0.0f, 1.0f) * BarH; };
 
-		DrawRect(PanelColor, X - 3.0f, Bottom - BarH - 3.0f, BarW + 6.0f, BarH + 6.0f);
+		const bool bGreenFlash = bShowResult && Data.Now - Data.GreenTime < 1.0;
+		const float Pulse = bGreenFlash ? 0.5f + 0.5f * FMath::Cos(static_cast<float>(SinceResult) * 18.0f) : 0.0f;
+		const FLinearColor Frame = bGreenFlash ? FLinearColor(0.2f, 1.0f, 0.35f, 0.35f + 0.5f * Pulse) : PanelColor;
+		const float Grow = bGreenFlash ? 4.0f * Pulse : 0.0f;
+		DrawRect(Frame, X - 3.0f - Grow, Bottom - BarH - 3.0f - Grow, BarW + 6.0f + 2.0f * Grow, BarH + 6.0f + 2.0f * Grow);
 		// Faixa "boa" e faixa green.
 		DrawRect(GoodColor, X, YFor(Data.GoodEnd), BarW, YFor(Data.GoodStart) - YFor(Data.GoodEnd));
 		DrawRect(GreenColor, X, YFor(Data.GreenEnd), BarW, FMath::Max(2.0f, YFor(Data.GreenStart) - YFor(Data.GreenEnd)));
-		// Preenchimento (sobe até o ponto ideal, como no 2K23).
-		const float FillTop = YFor(Data.MeterFill);
-		DrawRect(FLinearColor(1.0f, 1.0f, 1.0f, 0.9f), X + 3.0f, FillTop, BarW - 6.0f, Bottom - FillTop);
+		// Preenchimento: ao vivo durante o arremesso; congelado (cor do resultado) depois da soltura.
+		const float Fill = Data.bShowMeter ? Data.MeterFill : Data.ResultFill;
+		const FLinearColor FillColor = Data.bShowMeter ? FLinearColor(1.0f, 1.0f, 1.0f, 0.9f) : Data.ResultColor;
+		const float FillTop = YFor(Fill);
+		DrawRect(FillColor, X + 3.0f, FillTop, BarW - 6.0f, Bottom - FillTop);
 		// Marca do ponto ideal.
 		DrawRect(FLinearColor::White, X - 6.0f, YFor(1.0f) - 1.0f, BarW + 12.0f, 2.0f);
+
+		if (bGreenFlash)
+		{
+			// "GREEN!" subindo e sumindo ao lado do medidor.
+			const float Rise = static_cast<float>(SinceResult) * 40.0f;
+			const float Alpha = FMath::Clamp(1.4f - static_cast<float>(SinceResult) * 1.4f, 0.0f, 1.0f);
+			const float TextScale = 1.6f + 0.25f * Pulse;
+			DrawText(TEXT("GREEN!"), FLinearColor(0.0f, 0.0f, 0.0f, 0.6f * Alpha), X + 24.0f, YFor(1.0f) - 22.0f - Rise, Large, TextScale);
+			DrawText(TEXT("GREEN!"), FLinearColor(0.25f, 1.0f, 0.4f, Alpha), X + 22.0f, YFor(1.0f) - 24.0f - Rise, Large, TextScale);
+		}
 	}
 
 	// ---------------- Feedback do arremesso (canto superior direito, como no 2K23)

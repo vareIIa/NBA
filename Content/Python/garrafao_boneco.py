@@ -25,6 +25,8 @@ CLIPS = [
     "Dribble_Back_R", "Dribble_Back_L",
     "Dribble_Side_R", "Dribble_Side_L",
     "JumpShot_R", "JumpShot_L",
+    "Cross_R2L", "Cross_L2R",
+    "Celebrate_Flex", "Celebrate_Shrug",
 ]
 
 EAL = unreal.EditorAssetLibrary

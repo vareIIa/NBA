@@ -24,6 +24,7 @@ struct FHoopsAnimLayer
 	float BlendTime = 0.2f;    // segundos para ir de 0 a 1
 	float EndTime = -1.0f;     // ações: quando começar a sair (-1 = fim do clipe)
 	bool bLooping = true;
+	bool bUpperBodyOnly = false; // camada só do tronco/braços (spine_02 para cima), por cima do resto
 };
 
 // Proxy que avalia as camadas na thread de animação: amostra cada sequência e mistura por peso.
@@ -61,6 +62,12 @@ public:
 	void PlayAction(UAnimSequence* Sequence, float StartTime, float PlayRate, float BlendIn, float EndTime = -1.0f);
 	void StopAction(float BlendOut);
 
+	// Camada só do tronco/braços (follow-through segurado, celebração) por HoldSeconds; as pernas seguem a base/ação.
+	// PlayRate 0 = congela a pose em StartTime.
+	void PlayUpperBody(UAnimSequence* Sequence, float StartTime, float PlayRate, float BlendIn, float HoldSeconds, float BlendOut);
+	void StopUpperBody(float BlendOut);
+	bool IsUpperBodyActive() const { return bUpperActive; }
+
 	bool IsActionActive() const { return bActionActive; }
 	float GetActionTime() const { return Action.Time; }
 	UAnimSequence* GetCurrentBase() const;
@@ -80,5 +87,12 @@ private:
 	UPROPERTY(Transient)
 	FHoopsAnimLayer Action;
 
+	UPROPERTY(Transient)
+	FHoopsAnimLayer Upper;
+
 	bool bActionActive = false;
+	bool bUpperActive = false;
+	float UpperElapsed = 0.0f;
+	float UpperHoldSeconds = 0.0f;
+	float UpperBlendOut = 0.3f;
 };

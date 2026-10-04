@@ -25,6 +25,10 @@ enum class EHoopsClip : uint8
 	DribbleSideL,
 	JumpShotR,
 	JumpShotL,
+	CrossR2L,
+	CrossL2R,
+	CelebrateFlex,
+	CelebrateShrug,
 	Count
 };
 
@@ -46,6 +50,12 @@ namespace HoopsDummyRig
 	constexpr float JumpShotTakeoffSeconds = 100.0f / 60.0f; // bandeja/enterrada (provisório) começam aqui
 	constexpr float JumpShotReleaseSeconds = 117.0f / 60.0f;
 	constexpr float JumpShotEndSeconds = 150.0f / 60.0f;     // depois da aterrissagem: volta para a base
+	constexpr float JumpShotFollowThroughSeconds = 123.0f / 60.0f; // pose segurada depois da soltura (green)
+
+	// Crossover (clipe Cross_R2L; o L2R é o espelho): a mão de origem solta a bola ~quadro 9, a outra recebe ~30.
+	constexpr float CrossStartSeconds = 7.0f / 60.0f;
+	constexpr float CrossCatchSeconds = 30.0f / 60.0f;
+	constexpr float CrossEndSeconds = 50.0f / 60.0f;
 
 	// Procura a malha e os clipes em Folder (Asset Registry). OutClips tem NumClips entradas (nullptr = faltando).
 	// Retorna false se não houver malha ou se faltar o drible parado / segurar a bola.

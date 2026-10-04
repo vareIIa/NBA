@@ -35,6 +35,10 @@ namespace
 		{TEXT("Dribble_Side_L"), FVector2D(-20.0, 123.0), EHoopsClip::DribbleIdleL},  // anda para a DIREITA
 		{TEXT("JumpShot_R"), FVector2D(0.0, 0.0), EHoopsClip::JumpShotR},
 		{TEXT("JumpShot_L"), FVector2D(0.0, 0.0), EHoopsClip::JumpShotR},
+		{TEXT("Cross_R2L"), FVector2D(0.0, 0.0), EHoopsClip::CrossR2L},
+		{TEXT("Cross_L2R"), FVector2D(0.0, 0.0), EHoopsClip::CrossR2L},
+		{TEXT("Celebrate_Flex"), FVector2D(0.0, 0.0), EHoopsClip::CelebrateFlex},
+		{TEXT("Celebrate_Shrug"), FVector2D(0.0, 0.0), EHoopsClip::CelebrateFlex},
 	};
 	static_assert(UE_ARRAY_COUNT(Clips) == HoopsDummyRig::NumClips, "Tabela de clipes fora de sincronia com EHoopsClip");
 
