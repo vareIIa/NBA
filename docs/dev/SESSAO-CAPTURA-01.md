@@ -3,6 +3,11 @@
 > Objetivo: gravar o material que mais pesa na **sensação do Freestyle**: andar/correr driblando, mudanças de direção, dribles básicos e arremessos (spot-up, pull-up, step-back).
 > Pipeline: câmeras comuns + **Pose2Sim + RTMPose** (open-source, uso comercial liberado). Detalhes em `docs/16-pipeline-aberto-visual-e-mocap.md`.
 > Duração: ~3 horas de quadra (1 h de montagem/calibração + 2 h de gravação).
+>
+> **Guia prático, passo a passo: [`Tools/Captura/README.md`](../../Tools/Captura/README.md)** (instalação no Windows,
+> 2–4 celulares, configuração do app, calibração com tabuleiro A3 + pontos da quadra, "pulo de sincronia",
+> roupa, metrônomo, nomes dos takes e o comando que transforma cada take em BVH do jogo). Onde este plano e o guia
+> divergirem, **vale o guia** (ele foi testado de ponta a ponta com o demo do Pose2Sim).
 
 ## 1. Pessoas
 
@@ -22,7 +27,7 @@ Todos assinam o **termo de cessão de imagem e movimento** (uso comercial, em jo
 | Câmeras (celulares ou GoPros) | 6 (mínimo 4) | **120 fps**, 1080p ou 2.7K; lente linear; **estabilização desligada** |
 | Tripés / suportes de 2–3 m | 6 | Câmeras no alto, inclinadas para o volume |
 | Power banks + cartões | 6 | Cada take gera muito vídeo a 120 fps |
-| Placa ChArUco (A1 ou maior, rígida) | 1 | Imprimir e colar em placa de espuma (gerador: `cv2.aruco` ou calib.io) |
+| Tabuleiro de calibração A3 ou A2, rígido | 1 | `python Tools/Captura/gerar_tabuleiro.py tabuleiro_A3.pdf`, imprimir a 100% e colar em placa de espuma/MDF |
 | Trena | 1 | Medir cruzamentos das linhas da quadra |
 | Luz | — | De dia ao ar livre, ou ginásio bem iluminado **sem flicker** (testar gravando a 120 fps) |
 | Bolas | 2 | Bola tamanho 7, cor contrastante com o piso |
@@ -49,13 +54,15 @@ Celular: use um app com **obturador manual** (ex.: Blackmagic Camera) em **1/960
 
 ## 4. Calibração
 
-1. **Intrínseca** (cada câmera): mostrar a placa ChArUco bem perto, girando, por ~30 s.
-2. **Extrínseca** (todas juntas): placa no chão no centro do volume por 10 s **e** medir com trena 4–6 cruzamentos de linhas da quadra (anotar as distâncias).
-3. **Sincronismo**: no começo de cada take, uma **palma forte** ou flash de LED visível em todas as câmeras. Com GoPro: QR de tempo do GoPro Labs no início da sessão.
+Detalhes e comandos no guia (`Tools/Captura/README.md` §4).
+
+1. **Intrínseca** (cada câmera, 1 vez por celular): vídeo de ~40 s do tabuleiro A3 (`gerar_tabuleiro.py`) colado em placa rígida, passando por todo o quadro. (ChArUco/caliscope é a alternativa.)
+2. **Extrínseca** (a cada sessão, tripés já travados): 5 s da quadra vazia em cada câmera **e** conferir com trena os 12 pontos da quadra do `Config_garrafao.toml` (garrafão, lance livre, linha de 3, tabela); depois clicar neles uma vez no PC.
+3. **Sincronismo**: no começo de cada take, o atleta dá o **pulo de sincronia** (aterrissa batendo forte no chão); o `rodar_pose2sim.py` acha esse som em cada vídeo e alinha as câmeras. Palma/flash ficam como reserva visual. Com GoPro: QR de tempo do GoPro Labs no início da sessão.
 
 ## 5. Lista de takes
 
-Cada take começa com o operador falando: **"Sessão 01, take NN, [nome], [lado]"** + palma.
+Cada take começa com o operador falando: **"Sessão 01, take NN, [nome], [lado]"** + o pulo de sincronia do atleta. Dribles com **metrônomo** (120 bpm = 2 quiques/s; repetir a 140–150 bpm).
 Gravar cada movimento com a **mão direita e a esquerda** (ou espelhamos depois) e em **3 velocidades** quando indicado.
 
 ### Bloco A — Locomoção com bola ("dance cards" para Motion Matching), atleta A
@@ -107,10 +114,10 @@ Gravar cada movimento com a **mão direita e a esquerda** (ou espelhamos depois)
 - [ ] Teste de flicker (gravar 5 s e conferir)
 - [ ] Calibração intrínseca de todas as câmeras
 - [ ] Calibração extrínseca (placa no chão + medidas das linhas)
-- [ ] Palma/flash em todo take
+- [ ] Pulo de sincronia (e palma/flash de reserva) em todo take
 - [ ] Planilha de takes preenchida (take, conteúdo, atleta, observações, "bom/ruim")
 - [ ] Backup dos cartões no mesmo dia (organizar por take: `S01_A03_cam1.mp4` ...)
 
 ## 7. Depois da sessão
 
-Suba os vídeos (Google Drive ou similar) e me passe o link e a planilha. Eu monto o pipeline Pose2Sim → Blender → FBX → UE e devolvo as primeiras animações para o Freestyle.
+Organize as pastas como no guia (`T<nn>_<movimento>\videos\camNN.mp4`) e rode `rodar_pose2sim.py` em cada take (guia §6): sai um BVH por take, já no esqueleto do jogo. Suba os vídeos, os BVH e a planilha (Google Drive ou similar) e me passe o link; eu recorto/loopo os clipes (`processar_clipes.py`), monto o FBX e devolvo as primeiras animações para o Freestyle.
