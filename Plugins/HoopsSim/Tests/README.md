@@ -31,6 +31,6 @@ O build usa as mesmas restrições da Unreal (sem exceções/RTTI, `-Wshadow -Wc
 | StickDoubleThrowAndSwitchback | Gestos de combo do 2K23 (e que flicks lentos não viram combo) |
 | GesturesMapToTwoKMoves | Gesto → movimento igual ao manual do 2K23 (com troca de mão) |
 | DribbleControllerCommitBufferAndRhythm | Commit, buffer de 150 ms, combo no ritmo (+15% de velocidade) |
-| ExplosionsAndEnergy | 3 Explosões por posse, energia gasta no sprint e recuperada parado |
+| EnergyIsTheOnlyLimiter | Sem Explosões: sprint e dribles gastam energia, energia baixa deixa mais lento, parado recupera mais rápido |
 | LayupAndDunkProbabilities | Bandeja livre ~91% (rating 85); enterrada livre garantida |
 | RollingBallComesToRest | Bola rolando no chão para (resistência ao rolamento) |

@@ -5,7 +5,8 @@
 #include <cstdint>
 
 // Dribles no modelo 2K23 (docs/05-gameplay-ataque.md §2): gesto do Pro Stick → movimento, com fases
-// (commit curto, janela de combo no fim, buffer de 150 ms), troca de mão, energia e Explosões (3 por posse).
+// (commit curto, janela de combo no fim, buffer de 150 ms), troca de mão e ENERGIA (stamina).
+// Sem Explosões/Adrenaline Boosts (decisão D13 do diretor): o único limitador é a barra de energia.
 // Sem animação aqui: o núcleo diz QUAL movimento, QUANDO e com que impulso; a Unreal escolhe o clipe.
 namespace Hoops
 {
@@ -46,7 +47,6 @@ namespace Hoops
 		double LateralSpeed = 0.0;    // m/s para o lado da NOVA mão (negativo = lado oposto)
 		double ForwardSpeed = 0.0;    // m/s para frente (negativo = para trás)
 		double EnergyCost = 0.02;     // fração da barra
-		bool bUsesExplosion = false;
 		double Exposure = 0.3;        // exposição da bola a roubo (0..1) durante o movimento
 	};
 
@@ -66,14 +66,16 @@ namespace Hoops
 
 	struct DribbleEnergyConfig
 	{
-		int ExplosionsPerPossession = 3;
-		double SprintDrainPerSecond = 0.035;
-		double RegenPerSecond = 0.06;
-		double ComboEnergyDiscount = 0.8;  // combo no ritmo gasta menos
-		double ComboPlayRate = 1.15;       // combo no ritmo é mais rápido
+		double SprintDrainPerSecond = 0.08;   // ~12 s de sprint esvaziam a barra
+		double RegenPerSecond = 0.10;         // parado: ~10 s para encher
+		double MovingRegenScale = 0.5;        // andando/correndo sem sprint: recupera pela metade
+		double ComboEnergyDiscount = 0.8;     // combo no ritmo gasta menos
+		double ComboPlayRate = 1.15;          // combo no ritmo é mais rápido
 		double InputBufferSeconds = 0.15;
-		double OutOfExplosionsSpeedScale = 0.82;
-		bool bInfiniteExplosions = false;  // opção do Freestyle
+		double LowEnergyThreshold = 0.40;     // abaixo disso a energia começa a pesar
+		double LowEnergyMinSpeedScale = 0.82; // velocidade com a barra vazia
+		double LowEnergyMinMovePlayRate = 0.85; // dribles mais lentos com a barra vazia
+		bool bInfiniteEnergy = false;         // opção de treino do Freestyle
 	};
 
 	struct ActiveDribbleMove
@@ -101,10 +103,7 @@ namespace Hoops
 		bool Request(DribbleMove Move, double Now);
 
 		// Avança o tempo: termina movimentos, consome buffer, gasta/regenera energia.
-		void Update(double Now, double DeltaSeconds, bool bSprinting);
-
-		// Explosão (arranque forte / toque no RT em infiltração). Retorna false se acabaram.
-		bool TryUseExplosion();
+		void Update(double Now, double DeltaSeconds, bool bSprinting, bool bMoving = false);
 
 		void ResetPossession();
 
@@ -116,8 +115,9 @@ namespace Hoops
 		void SetHand(BallHand InHand) { Hand = InHand; }
 		double GetEnergy() const { return Energy; }
 		void SetEnergy(double InEnergy) { Energy = Clamp(InEnergy, 0.0, 1.0); }
-		int GetExplosions() const { return Explosions; }
+		// Efeito da energia baixa: velocidade máxima e velocidade dos dribles.
 		double SpeedScale() const;
+		double MovePlayRateScale() const;
 		int GetComboCount() const { return ComboCount; }
 		// Último movimento terminado (para escolher o tipo de arremesso: step-back jumper, spin jumper...).
 		DribbleMove GetLastMove() const { return LastMove; }
@@ -132,7 +132,6 @@ namespace Hoops
 		double BufferedTime = -1000.0;
 		BallHand Hand = BallHand::Right;
 		double Energy = 1.0;
-		int Explosions = 3;
 		int ComboCount = 0;
 		DribbleMove LastMove = DribbleMove::None;
 		double LastMoveEndTime = -1000.0;

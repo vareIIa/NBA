@@ -53,8 +53,7 @@ Sem asset nenhum, o jogador aparece como um cilindro preto. Para ver o **Manny**
 | **RS** giro / ¼ de giro | Spin / half-spin |
 | **RS** mesma direção 2× / direção + oposta | Double cross / hesi-cross |
 | **RS** segurar baixo → soltar | Arremesso pelo Pro Stick |
-| **RT** segurar | Sprint (corre para onde vai; com RT, os dribles viram escapes) |
-| **RT** toque correndo | **Explosão** (3 por posse; no Freestyle, infinitas) |
+| **RT** segurar | Sprint (gasta **energia**; com RT, os dribles viram escapes). A barra de energia fica embaixo dos pés e no canto: abaixo de 40% o jogador fica mais lento e o arremesso piora |
 | **RT + X** ou **RT + RS cima** perto da cesta | Enterrada |
 | **X** ou **RS cima** infiltrando | Bandeja |
 | **LT** | Proteger a bola (drible mais baixo) |

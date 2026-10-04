@@ -10,7 +10,7 @@
 
 - [x] Projeto UE 5.8, Git LFS, estrutura de módulos (`12-arquitetura-tecnica.md`) — *aguardando 1ª compilação no PC do diretor*
 - [x] **Controles idênticos ao 2K23** via Enhanced Input (`02-controles.md`)
-- [ ] Movement component de basquete (aceleração, plant-and-cut, energia) — *hoje: CharacterMovement ajustado + energia/Explosões no núcleo*
+- [ ] Movement component de basquete (aceleração, plant-and-cut, energia) — *hoje: CharacterMovement ajustado + energia (stamina) no núcleo; sem Explosões (D13)*
 - [x] Solver da bola (aro, tabela, chão) + arremesso com timing/green + feedback (núcleo testado)
 - [x] Drible pelo Pro Stick do 2K23 (crossover, entre as pernas, por trás, hesitação, step-back, spin, half-spin, combos) — *sem animação própria ainda*
 - [x] Gather em movimento → dribble pull-up, step-back, fadeaway, bandejas e enterradas básicas

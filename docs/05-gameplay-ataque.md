@@ -7,9 +7,7 @@
   - **Momento**: quanto mais rápido, maior o raio de curva e mais tempo para frear → cortes bruscos em sprint custam um "plant" (pé de apoio, ~120 ms).
   - **Plant-and-cut**: mudar de direção > 90° força um passo de plantar — é aí que o defensor ganha ou perde.
   - Velocidade com bola = 85–95% da sem bola (depende de Speed With Ball).
-- **Energia** (stamina) com 2 barras:
-  - **Curta** (explosão): sprint, dribles em sequência, saltos. Recupera em segundos.
-  - **Longa** (jogo): cansaço acumulado; afeta arremesso, velocidade e reação. Recupera em pausas/banco.
+- **Energia** (stamina): **uma barra só** (decisão D13, sem Explosões). Sprint, dribles e saltos gastam; parado recupera. Afeta velocidade, dribles e arremesso (ver §2.5). No 5x5, o cansaço acumulado ao longo do jogo é um tema para depois (banco/substituições).
 
 ## 2. Sistema de drible (Pro Stick), modelo 2K23
 
@@ -39,7 +37,7 @@ Orientação **absoluta** por padrão (direções relativas ao corpo do jogador)
 ### 2.2 Ritmo, combos e cancelamentos
 
 - **Ritmo é a habilidade.** Cada drible abre uma **janela de combo** no fim da animação (≈ 120–180 ms, cresce com Ball Handle). Input dentro da janela → transição suave e mais rápida (playrate +10–20%); fora → transição normal. Isso reproduz o "aprender a velocidade dos flicks e o timing das animações de assinatura" do 2K23.
-- **Size-ups não gastam Explosão**, só energia: o jogador pode "sondar" o defensor à vontade, como no 2K23.
+- **Size-ups gastam pouca energia**: o jogador pode "sondar" o defensor, mas não infinitamente.
 - **Sair de qualquer drible para o arremesso**: todo drible tem janela de cancelamento para **pull-up**, **step-back jumper**, **spin jumper** e **hop jumper**. É o padrão "drible lateral → pull-up de 3" dos clipes do diretor (`referencias/2k23/README.md`, padrão 1).
 - **Spin → hesitação → pull-up** precisa fluir sem travar: é a sequência-assinatura do estilo do diretor.
 - **Spam** sem ritmo: energia cai rápido e a bola fica mais exposta (roubo mais fácil).
@@ -59,22 +57,25 @@ Como no 2K23, a "personalidade" vem de **pacotes** escolhidos por jogador:
 
 Pacotes de jogador baixo exigem altura ≤ 1,93 m (no 2K23: ≤ 6'4").
 
-### 2.4 Explosões (equivalente aos Adrenaline Boosts do 2K23)
+### 2.4 Sem Explosões (decisão D13)
 
-- **3 Explosões por posse**, mostradas embaixo da barra de energia.
-- Gasta 1 a cada **arranque forte**: primeiro passo explosivo, toque no RT em infiltração, escape.
-- Com as 3 gastas, velocidade e aceleração caem bastante até o fim da posse.
-- Recarregam quando o relógio de posse zera ou a posse troca. Sem bola, 1 Explosão volta depois de alguns segundos se a energia estiver ≥ 50%.
-- **Na defesa**, tentativas de roubo e de toco também gastam (lado defensivo do sistema).
-- **No Freestyle**, as Explosões podem ser **infinitas** (opção) para treinar combos.
+O 2K23 introduziu os *Adrenaline Boosts* (3 arranques por posse). Para o diretor, **foi aí que o 2K começou a piorar**: o drible fica racionado por um contador escondido. Aqui **não existe Explosão**. O único limitador é a **energia**.
 
-Por que adotar: no 2K23 isso acabou com o abuso de "speed boost" sem matar o drible fluido. O jogador escolhe **quando** explodir.
+### 2.5 Energia (stamina): o único limitador
 
-### 2.5 Energia
+| Ação | Efeito na barra |
+|---|---|
+| Sprint (RT) | −8%/s (~12 s esvaziam a barra) |
+| Drible simples (crossover, entre as pernas) | −2,5% cada |
+| Dribles fortes (spin, step-back, escapes com RT) | −4% a −5% cada |
+| Combo no ritmo | 20% mais barato |
+| Parado / sem driblar | +10%/s |
+| Andando/correndo sem sprint | +5%/s |
 
-- Energia cai mais rápido com movimentos em sequência ("não brinque com a comida").
-- Energia baixa reduz ratings e velocidade do arremesso; ficar sem Explosões pesa mais que energia baixa.
-- Estilos (badges) relacionados: *Handles for Days* (menos energia por drible), *Amped* (menos penalidade por fadiga e por **se mover muito antes do arremesso**, essencial para o estilo do diretor), *Quick First Step* (arranques melhores), *Hyperdrive* (dribles em movimento mais rápidos), *Killer Combos* (encadear size-ups), *Unpluckable*.
+Abaixo de **40%** a energia pesa: velocidade máxima cai até −18%, dribles ficam até 15% mais lentos e o arremesso perde precisão (fadiga, `03-arremessos.md §3.4`). A barra aparece **embaixo dos pés** do jogador (como no 2K) e no canto da tela, verde → amarela → vermelha.
+
+- No Freestyle há a opção **Energia infinita** (`bInfiniteEnergy`) para treinar combos, desligada por padrão.
+- Estilos (badges) relacionados: *Handles for Days* (menos energia por drible), *Amped* (menos penalidade por fadiga e por **se mover muito antes do arremesso**, essencial para o estilo do diretor), *Hyperdrive* (dribles em movimento mais rápidos), *Killer Combos* (encadear size-ups), *Unpluckable*.
 
 ### 2.6 Desequilíbrio e ankle-breaker (o momento mais divertido do 1x1)
 

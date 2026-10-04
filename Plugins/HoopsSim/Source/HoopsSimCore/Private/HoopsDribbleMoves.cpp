@@ -5,7 +5,7 @@ namespace Hoops
 	namespace
 	{
 		DribbleMoveSpec MakeSpec(double Duration, double Commit, int Switches, double Lateral, double Forward,
-			double Energy, bool bExplosion, double Exposure)
+			double Energy, double Exposure)
 		{
 			DribbleMoveSpec Spec;
 			Spec.Duration = Duration;
@@ -14,7 +14,6 @@ namespace Hoops
 			Spec.LateralSpeed = Lateral;
 			Spec.ForwardSpeed = Forward;
 			Spec.EnergyCost = Energy;
-			Spec.bUsesExplosion = bExplosion;
 			Spec.Exposure = Exposure;
 			return Spec;
 		}
@@ -25,22 +24,22 @@ namespace Hoops
 
 			SpecTable()
 			{
-				//                                                        dur   commit sw  lat   fwd   energia  expl   expos.
-				Specs[static_cast<int>(DribbleMove::None)] =               MakeSpec(0.00, 0.00, 0, 0.0,  0.0,  0.000, false, 0.2);
-				Specs[static_cast<int>(DribbleMove::Crossover)] =          MakeSpec(0.40, 0.12, 1, 2.2,  0.0,  0.020, false, 0.8);
-				Specs[static_cast<int>(DribbleMove::AttackingCrossover)] = MakeSpec(0.42, 0.15, 1, 2.6,  2.2,  0.030, true,  0.7);
-				Specs[static_cast<int>(DribbleMove::BetweenLegs)] =        MakeSpec(0.42, 0.12, 1, 1.2,  0.0,  0.020, false, 0.3);
-				Specs[static_cast<int>(DribbleMove::BehindBack)] =         MakeSpec(0.45, 0.15, 1, 1.8,  0.0,  0.025, false, 0.3);
-				Specs[static_cast<int>(DribbleMove::Hesitation)] =         MakeSpec(0.40, 0.08, 0, 0.0, -0.6,  0.015, false, 0.5);
-				Specs[static_cast<int>(DribbleMove::EscapeHesitation)] =   MakeSpec(0.42, 0.10, 0, 0.0,  3.0,  0.030, true,  0.5);
-				Specs[static_cast<int>(DribbleMove::InAndOut)] =           MakeSpec(0.38, 0.10, 0, -1.5, 0.0,  0.015, false, 0.6);
-				Specs[static_cast<int>(DribbleMove::StepBack)] =           MakeSpec(0.50, 0.20, 0, 0.0, -3.2,  0.030, false, 0.4);
-				Specs[static_cast<int>(DribbleMove::EscapeStepBack)] =     MakeSpec(0.50, 0.20, 0, 0.0, -3.6,  0.035, true,  0.4);
-				Specs[static_cast<int>(DribbleMove::Spin)] =               MakeSpec(0.60, 0.25, 1, 0.0,  2.4,  0.035, false, 0.4);
-				Specs[static_cast<int>(DribbleMove::HalfSpin)] =           MakeSpec(0.45, 0.18, 1, 0.0,  1.8,  0.025, false, 0.4);
-				Specs[static_cast<int>(DribbleMove::DoubleCross)] =        MakeSpec(0.70, 0.15, 2, 1.5,  0.0,  0.030, false, 0.8);
-				Specs[static_cast<int>(DribbleMove::HesiCross)] =          MakeSpec(0.60, 0.12, 1, 2.4,  0.0,  0.030, false, 0.7);
-				Specs[static_cast<int>(DribbleMove::Retreat)] =            MakeSpec(0.45, 0.10, 0, 0.0, -2.0,  0.015, false, 0.3);
+				//                                                        dur   commit sw  lat   fwd   energia  expos.
+				Specs[static_cast<int>(DribbleMove::None)] =               MakeSpec(0.00, 0.00, 0, 0.0,  0.0,  0.000, 0.2);
+				Specs[static_cast<int>(DribbleMove::Crossover)] =          MakeSpec(0.40, 0.12, 1, 2.2,  0.0,  0.025, 0.8);
+				Specs[static_cast<int>(DribbleMove::AttackingCrossover)] = MakeSpec(0.42, 0.15, 1, 2.6,  2.2,  0.045, 0.7);
+				Specs[static_cast<int>(DribbleMove::BetweenLegs)] =        MakeSpec(0.42, 0.12, 1, 1.2,  0.0,  0.025, 0.3);
+				Specs[static_cast<int>(DribbleMove::BehindBack)] =         MakeSpec(0.45, 0.15, 1, 1.8,  0.0,  0.030, 0.3);
+				Specs[static_cast<int>(DribbleMove::Hesitation)] =         MakeSpec(0.40, 0.08, 0, 0.0, -0.6,  0.015, 0.5);
+				Specs[static_cast<int>(DribbleMove::EscapeHesitation)] =   MakeSpec(0.42, 0.10, 0, 0.0,  3.0,  0.045, 0.5);
+				Specs[static_cast<int>(DribbleMove::InAndOut)] =           MakeSpec(0.38, 0.10, 0, -1.5, 0.0,  0.020, 0.6);
+				Specs[static_cast<int>(DribbleMove::StepBack)] =           MakeSpec(0.50, 0.20, 0, 0.0, -3.2,  0.040, 0.4);
+				Specs[static_cast<int>(DribbleMove::EscapeStepBack)] =     MakeSpec(0.50, 0.20, 0, 0.0, -3.6,  0.050, 0.4);
+				Specs[static_cast<int>(DribbleMove::Spin)] =               MakeSpec(0.60, 0.25, 1, 0.0,  2.4,  0.045, 0.4);
+				Specs[static_cast<int>(DribbleMove::HalfSpin)] =           MakeSpec(0.45, 0.18, 1, 0.0,  1.8,  0.030, 0.4);
+				Specs[static_cast<int>(DribbleMove::DoubleCross)] =        MakeSpec(0.70, 0.15, 2, 1.5,  0.0,  0.040, 0.8);
+				Specs[static_cast<int>(DribbleMove::HesiCross)] =          MakeSpec(0.60, 0.12, 1, 2.4,  0.0,  0.040, 0.7);
+				Specs[static_cast<int>(DribbleMove::Retreat)] =            MakeSpec(0.45, 0.10, 0, 0.0, -2.0,  0.015, 0.3);
 			}
 		};
 
@@ -126,7 +125,6 @@ namespace Hoops
 
 	DribbleController::DribbleController(const DribbleEnergyConfig& InConfig)
 		: Config(InConfig)
-		, Explosions(InConfig.ExplosionsPerPossession)
 	{
 	}
 
@@ -146,14 +144,13 @@ namespace Hoops
 		Active.Move = Move;
 		Active.StartTime = Now;
 		Active.bInRhythm = bInRhythm;
-		Active.PlayRate = bInRhythm ? Config.ComboPlayRate : 1.0;
+		Active.PlayRate = (bInRhythm ? Config.ComboPlayRate : 1.0) * MovePlayRateScale();
 		Active.HandAtStart = Hand;
 
 		ComboCount = bInRhythm ? ComboCount + 1 : 1;
-		Energy = Clamp(Energy - Spec.EnergyCost * (bInRhythm ? Config.ComboEnergyDiscount : 1.0), 0.0, 1.0);
-		if (Spec.bUsesExplosion)
+		if (!Config.bInfiniteEnergy)
 		{
-			TryUseExplosion();
+			Energy = Clamp(Energy - Spec.EnergyCost * (bInRhythm ? Config.ComboEnergyDiscount : 1.0), 0.0, 1.0);
 		}
 		if (Spec.HandSwitches % 2 == 1)
 		{
@@ -193,7 +190,7 @@ namespace Hoops
 		return true;
 	}
 
-	void DribbleController::Update(double Now, double DeltaSeconds, bool bSprinting)
+	void DribbleController::Update(double Now, double DeltaSeconds, bool bSprinting, bool bMoving)
 	{
 		if (Active.Move != DribbleMove::None && Now >= Active.EndTime())
 		{
@@ -216,33 +213,23 @@ namespace Hoops
 			}
 		}
 
-		if (bSprinting)
+		if (Config.bInfiniteEnergy)
+		{
+			Energy = 1.0;
+		}
+		else if (bSprinting)
 		{
 			Energy = Clamp(Energy - Config.SprintDrainPerSecond * DeltaSeconds, 0.0, 1.0);
 		}
 		else if (!Active.IsActive(Now))
 		{
-			Energy = Clamp(Energy + Config.RegenPerSecond * DeltaSeconds, 0.0, 1.0);
+			const double Regen = Config.RegenPerSecond * (bMoving ? Config.MovingRegenScale : 1.0);
+			Energy = Clamp(Energy + Regen * DeltaSeconds, 0.0, 1.0);
 		}
-	}
-
-	bool DribbleController::TryUseExplosion()
-	{
-		if (Config.bInfiniteExplosions)
-		{
-			return true;
-		}
-		if (Explosions <= 0)
-		{
-			return false;
-		}
-		--Explosions;
-		return true;
 	}
 
 	void DribbleController::ResetPossession()
 	{
-		Explosions = Config.ExplosionsPerPossession;
 		Active = ActiveDribbleMove();
 		Buffered = DribbleMove::None;
 		ComboCount = 0;
@@ -250,16 +237,19 @@ namespace Hoops
 
 	double DribbleController::SpeedScale() const
 	{
-		double Scale = 1.0;
-		if (!Config.bInfiniteExplosions && Explosions <= 0)
+		if (Energy >= Config.LowEnergyThreshold || Config.LowEnergyThreshold <= 0.0)
 		{
-			Scale *= Config.OutOfExplosionsSpeedScale;
+			return 1.0;
 		}
-		// Energia baixa pesa menos que ficar sem Explosões (igual ao 2K23).
-		if (Energy < 0.4)
+		return Lerp(Config.LowEnergyMinSpeedScale, 1.0, Energy / Config.LowEnergyThreshold);
+	}
+
+	double DribbleController::MovePlayRateScale() const
+	{
+		if (Energy >= Config.LowEnergyThreshold || Config.LowEnergyThreshold <= 0.0)
 		{
-			Scale *= 0.92 + 0.08 * (Energy / 0.4);
+			return 1.0;
 		}
-		return Scale;
+		return Lerp(Config.LowEnergyMinMovePlayRate, 1.0, Energy / Config.LowEnergyThreshold);
 	}
 }

@@ -44,7 +44,6 @@ struct FHoopsHudData
 
 	// Jogador.
 	float Energy = 1.0f;
-	int32 Explosions = 3;
 	FString CurrentMove;
 	int32 ComboCount = 0;
 	bool bBallInRightHand = true;
@@ -114,9 +113,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Hoops|Configuracoes", meta = (ClampMin = "0", ClampMax = "2"))
 	int32 JumperReleaseSpeed = 1;
 
-	// Freestyle: Explosões infinitas para treinar combos.
+	// Treino: energia infinita (desligado por padrão: a stamina é o único limitador do drible e do sprint).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Freestyle")
-	bool bInfiniteExplosions = true;
+	bool bInfiniteEnergy = false;
 
 	// Caminhos do manequim (pacote "Third Person" da Epic). Se não existir, usa um corpo placeholder.
 	UPROPERTY(EditDefaultsOnly, Category = "Hoops|Visual")

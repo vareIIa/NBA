@@ -131,7 +131,7 @@ void AHoopsPlayerCharacter::BeginPlay()
 
 	Random = Hoops::Rng(static_cast<uint64>(FPlatformTime::Cycles64()));
 	Hoops::DribbleEnergyConfig EnergyConfig;
-	EnergyConfig.bInfiniteExplosions = bInfiniteExplosions;
+	EnergyConfig.bInfiniteEnergy = bInfiniteEnergy;
 	Dribble = Hoops::DribbleController(EnergyConfig);
 
 	HoopsMeshUtil::SetColor(this, PlaceholderBody, FLinearColor(0.08f, 0.08f, 0.09f));
@@ -427,18 +427,6 @@ void AHoopsPlayerCharacter::OnSprintPressed(const FInputActionValue& Value)
 {
 	bSprintHeld = true;
 	LogInput(TEXT("RT (sprint)"));
-	// Toque no RT em movimento com a bola = Explosão (Adrenaline Boost do 2K23).
-	if (bHasBall && ShotPhase == EShotPhase::None && MoveInput.Size() > 0.5f && Dribble.TryUseExplosion())
-	{
-		const FVector Fwd = CameraForwardFlat();
-		const FVector Right = FVector::CrossProduct(FVector::UpVector, Fwd);
-		const FVector Dir = (Fwd * MoveInput.Y + Right * MoveInput.X).GetSafeNormal2D();
-		UCharacterMovementComponent* Movement = GetCharacterMovement();
-		FVector Burst = Dir * FMath::Max(Movement->Velocity.Size2D(), 650.0);
-		Burst.Z = Movement->Velocity.Z;
-		Movement->Velocity = Burst;
-		LogInput(FString::Printf(TEXT("EXPLOSAO (restam %d)"), Dribble.GetExplosions()));
-	}
 }
 
 void AHoopsPlayerCharacter::OnSprintReleased(const FInputActionValue& Value) { bSprintHeld = false; }
@@ -531,7 +519,7 @@ void AHoopsPlayerCharacter::Tick(float DeltaSeconds)
 	}
 
 	const bool bMoving = GetVelocity().Size2D() > 50.0;
-	Dribble.Update(Now(), DeltaSeconds, bSprintHeld && bMoving);
+	Dribble.Update(Now(), DeltaSeconds, bSprintHeld && bMoving, bMoving);
 
 	UpdateProStick();
 	UpdateMovement(DeltaSeconds);
@@ -1180,7 +1168,6 @@ void AHoopsPlayerCharacter::ShowFeedback(const Hoops::ShotEvaluation& Eval, cons
 void AHoopsPlayerCharacter::UpdateHud()
 {
 	Hud.Energy = static_cast<float>(Dribble.GetEnergy());
-	Hud.Explosions = Dribble.GetExplosions();
 	Hud.ComboCount = Dribble.GetComboCount();
 	Hud.bBallInRightHand = Dribble.GetHand() == Hoops::BallHand::Right;
 	Hud.CurrentMove = Dribble.IsMoveActive(Now()) ? Ansi(Hoops::DribbleMoveLabel(Dribble.GetActive().Move)) : FString();

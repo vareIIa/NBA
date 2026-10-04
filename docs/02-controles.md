@@ -17,7 +17,7 @@ Configuração **Orientação do Pro Stick**: **Absoluta** (padrão) ou **Relati
 | Xbox | PS | Ação | Notas / conf. |
 |---|---|---|---|
 | LS | LS | Mover | H |
-| RT (segurar) | R2 | Sprint | **Toque** no RT em infiltração = explosão de velocidade (gasta 1 **Explosão**, ver `05 §2.4`) · toque na quadra de defesa = drible de saída. M/H |
+| RT (segurar) | R2 | Sprint | Gasta **energia** (stamina). Com RT segurado, os dribles viram escapes/crossovers de ataque. **Sem Explosões/Adrenaline Boosts** (decisão D13) |
 | LT | L2 | Post-up / proteger a bola / parada brusca | H |
 | **X** segurar → soltar | □ | **Arremesso** | Soltar no ponto de soltura = **green**. H |
 | RS segurar **para baixo** → soltar | RS | Arremesso pelo Pro Stick | Só para baixo arremessa. H |

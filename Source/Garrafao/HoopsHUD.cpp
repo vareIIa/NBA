@@ -76,24 +76,32 @@ void AHoopsHUD::DrawHUD()
 	const FString TimeLabel = Data.TimeScale < 0.99f ? FString::Printf(TEXT("   |   CAMERA LENTA %.0f%%"), Data.TimeScale * 100.0f) : FString();
 	DrawText(FString::Printf(TEXT("Defensor: %s%s"), *Data.DummyLabel, *TimeLabel), DimText, 32.0f, 70.0f, Small, 1.0f);
 
-	// ---------------- Energia, Explosões e drible (embaixo à esquerda)
-	const float BaseY = H - 110.0f;
-	DrawRect(PanelColor, 20.0f, BaseY, 360.0f, 90.0f);
+	// ---------------- Energia (stamina) e drible (embaixo à esquerda)
+	// Sem Explosões (D13): a barra de energia é o único limitador. Verde > 60%, amarelo > 40%, vermelho abaixo.
+	const FLinearColor EnergyColor = Data.Energy > 0.6f ? FLinearColor(0.25f, 0.9f, 0.35f, 1.0f)
+		: (Data.Energy > 0.4f ? FLinearColor(1.0f, 0.85f, 0.2f, 1.0f) : FLinearColor(1.0f, 0.3f, 0.25f, 1.0f));
+	const float BaseY = H - 90.0f;
+	DrawRect(PanelColor, 20.0f, BaseY, 360.0f, 70.0f);
 	DrawText(TEXT("ENERGIA"), DimText, 32.0f, BaseY + 8.0f, Small, 1.0f);
 	DrawRect(FLinearColor(0.15f, 0.15f, 0.15f, 1.0f), 110.0f, BaseY + 10.0f, 250.0f, 12.0f);
-	DrawRect(FLinearColor(0.25f, 0.75f, 1.0f, 1.0f), 110.0f, BaseY + 10.0f, 250.0f * Data.Energy, 12.0f);
-	DrawText(TEXT("EXPLOSOES"), DimText, 32.0f, BaseY + 32.0f, Small, 1.0f);
-	for (int32 Index = 0; Index < 3; ++Index)
-	{
-		const FLinearColor Pip = Index < Data.Explosions ? FLinearColor(1.0f, 0.55f, 0.1f, 1.0f) : FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
-		DrawRect(Pip, 130.0f + Index * 34.0f, BaseY + 34.0f, 26.0f, 10.0f);
-	}
+	DrawRect(EnergyColor, 110.0f, BaseY + 10.0f, 250.0f * Data.Energy, 12.0f);
 	DrawText(FString::Printf(TEXT("Mao: %s   Combo: %d   %s"),
 		Data.bBallInRightHand ? TEXT("direita") : TEXT("esquerda"), Data.ComboCount, *Data.CurrentMove),
-		FLinearColor::White, 32.0f, BaseY + 58.0f, Small, 1.0f);
+		FLinearColor::White, 32.0f, BaseY + 38.0f, Small, 1.0f);
+
+	// Barra de energia embaixo dos pés do jogador (como no 2K).
+	const FVector FeetScreen = Project(Data.PlayerWorldLocation - FVector(0.0, 0.0, Data.HalfHeight));
+	if (FeetScreen.Z > 0.0)
+	{
+		const float BarWidth = 70.0f;
+		const float X = static_cast<float>(FeetScreen.X) - BarWidth * 0.5f;
+		const float Y = static_cast<float>(FeetScreen.Y) + 12.0f;
+		DrawRect(FLinearColor(0.0f, 0.0f, 0.0f, 0.6f), X - 2.0f, Y - 2.0f, BarWidth + 4.0f, 8.0f);
+		DrawRect(EnergyColor, X, Y, BarWidth * Data.Energy, 4.0f);
+	}
 
 	// ---------------- Dica de controles (embaixo à direita)
-	const FString Hint = TEXT("X arremesso | RS dribles (segurar baixo = arremesso) | RT sprint/explosao | RT+RS cima = enterrada | D-pad: bola / reset / spots | Menu: defensor | L3: camera lenta | View: laboratorio");
+	const FString Hint = TEXT("X arremesso | RS dribles (segurar baixo = arremesso) | RT sprint | RT+RS cima = enterrada | D-pad: bola / reset / spots | Menu: defensor | L3: camera lenta | View: laboratorio");
 	float HintW = 0.0f;
 	float HintH = 0.0f;
 	GetTextSize(Hint, HintW, HintH, Small, 1.0f);

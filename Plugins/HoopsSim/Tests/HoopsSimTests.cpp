@@ -597,28 +597,41 @@ HOOPS_TEST(DribbleControllerCommitBufferAndRhythm)
 	EXPECT_TRUE(Late.GetActive().Move == DribbleMove::Spin);
 }
 
-HOOPS_TEST(ExplosionsAndEnergy)
+HOOPS_TEST(EnergyIsTheOnlyLimiter)
 {
+	// Sem Explosões (decisão D13): sprint e dribles gastam energia; energia baixa deixa mais lento.
 	DribbleController Controller;
-	EXPECT_TRUE(Controller.GetExplosions() == 3);
-	EXPECT_TRUE(Controller.Request(DribbleMove::EscapeHesitation, 0.0));
-	EXPECT_TRUE(Controller.GetExplosions() == 2);
-	EXPECT_TRUE(Controller.TryUseExplosion());
-	EXPECT_TRUE(Controller.TryUseExplosion());
-	EXPECT_TRUE(!Controller.TryUseExplosion());
-	EXPECT_TRUE(Controller.SpeedScale() < 0.9); // sem Explosões = bem mais lento
-	Controller.ResetPossession();
-	EXPECT_TRUE(Controller.GetExplosions() == 3);
+	EXPECT_NEAR(Controller.GetEnergy(), 1.0, 1e-9);
+	EXPECT_NEAR(Controller.SpeedScale(), 1.0, 1e-9);
 
-	// Sprint gasta, parado recupera.
-	const double Before = Controller.GetEnergy();
-	Controller.Update(5.0, 2.0, true);
-	EXPECT_TRUE(Controller.GetEnergy() < Before);
-	const double Tired = Controller.GetEnergy();
-	Controller.Update(9.0, 2.0, false);
-	EXPECT_TRUE(Controller.GetEnergy() > Tired);
+	Controller.Update(5.0, 5.0, true, true); // 5 s de sprint
+	EXPECT_NEAR(Controller.GetEnergy(), 0.6, 1e-6);
+
+	const double BeforeMove = Controller.GetEnergy();
+	EXPECT_TRUE(Controller.Request(DribbleMove::Spin, 6.0));
+	EXPECT_TRUE(Controller.GetEnergy() < BeforeMove);
+
+	Controller.SetEnergy(0.1);
+	EXPECT_TRUE(Controller.SpeedScale() < 0.9);
+	EXPECT_TRUE(Controller.MovePlayRateScale() < 0.95);
+
+	// Parado recupera mais rápido que andando.
+	DribbleController Standing;
+	Standing.SetEnergy(0.2);
+	Standing.Update(10.0, 2.0, false, false);
+	DribbleController Walking;
+	Walking.SetEnergy(0.2);
+	Walking.Update(10.0, 2.0, false, true);
+	EXPECT_TRUE(Standing.GetEnergy() > Walking.GetEnergy());
+	EXPECT_TRUE(Walking.GetEnergy() > 0.2);
+
+	DribbleEnergyConfig Training;
+	Training.bInfiniteEnergy = true;
+	DribbleController Infinite(Training);
+	Infinite.Update(5.0, 5.0, true, true);
+	Infinite.Request(DribbleMove::Spin, 5.5);
+	EXPECT_NEAR(Infinite.GetEnergy(), 1.0, 1e-9);
 }
-
 
 HOOPS_TEST(LayupAndDunkProbabilities)
 {
