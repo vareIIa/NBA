@@ -154,12 +154,12 @@ public:
 	bool bInfiniteEnergy = false;
 
 	// --- Movimento com a bola ---
-	// Com o analógico abaixo disso (ou segurando LT), o jogador encara a cesta e anda de frente/lado/costas
-	// (size-up). Acima, corre na direção do analógico, virando o corpo (como no 2K).
-	UPROPERTY(EditAnywhere, Category = "Hoops|Movimento", meta = (ClampMin = "0.2", ClampMax = "1.0"))
-	float StrafeStickThreshold = 0.7f;
+	// Analógico abaixo disso = size-up no lugar (ajustes pequenos encarando a cesta). Acima, o jogador anda/corre
+	// virando o corpo para onde vai; recuando (retreat dribble) ou com LT, continua encarando a cesta.
+	UPROPERTY(EditAnywhere, Category = "Hoops|Movimento", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float StrafeStickThreshold = 0.35f;
 
-	// Velocidade máxima (cm/s) no size-up, encarando a cesta.
+	// Velocidade máxima (cm/s) encarando a cesta (size-up, retreat dribble, LT).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Movimento", meta = (ClampMin = "100", ClampMax = "500"))
 	float StrafeSpeedCm = 260.0f;
 
@@ -187,6 +187,15 @@ public:
 	// Velocidade do drible parado (o mocap é lento: 1 quique a cada 0,85 s).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao", meta = (ClampMin = "0.5", ClampMax = "2.5"))
 	float DribbleIdlePlayRate = 0.9f; // o clipe já tem 2 quiques por loop: ~2,1 quiques/s, ritmo do 2K23 (docs/17 §4.1)
+
+	// Postura atlética do drible (2K: baixo, base larga): quanto o quadril desce parado (cm). Andando desce 75%,
+	// correndo 45%; sem a bola e arremessando, nada. 0 desliga.
+	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao", meta = (ClampMin = "0", ClampMax = "30"))
+	float DribbleCrouchCm = 12.0f;
+
+	// Inclina o tronco nas acelerações e cortes (e para a frente correndo).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao")
+	bool bBodyLean = true;
 
 	// Centro da bola em relação à palma no drible (cm; X = frente do jogador, Y = para fora, Z = cima).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao")
@@ -330,6 +339,9 @@ private:
 	bool bRigActive = false;
 	float MeshYawOffset = 0.0f;   // yaw base do corpo visual (boneco calibrado / manequim -90 / cilindro 0)
 	float MeshScale = 1.0f;
+	float MeshForwardYaw = 0.0f;  // frente do boneco no espaço da malha (medida pelos pés)
+	FVector PrevLocalVelocity = FVector::ZeroVector;
+	FVector SmoothedLocalAccel = FVector::ZeroVector;
 	EHoopsClip BaseClip = EHoopsClip::HoldIdle;
 
 	// Bola na mão animada: na mão (sobe e desce com ela) ou em voo (quique até a mão que vai receber).

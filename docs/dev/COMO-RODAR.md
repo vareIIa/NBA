@@ -50,6 +50,8 @@ O boneco é um "manequim de teste" (partes rígidas, cores de pele/uniforme/tên
 
 Ajustes no painel Details do jogador durante o Play (categoria *Hoops*): `BodyHeightCm` (altura), `MeshYawAdjust` (se ele aparecer de lado/de costas), `DribbleIdlePlayRate` (velocidade do drible parado), `DribbleBallOffset`/`ShotBallOffset` (onde a bola fica na mão), cores.
 
+**Postura atlética**: com a bola o jogador fica **mais baixo** (quadril desce, joelhos dobram por IK e os pés ficam plantados) e **inclina o corpo** nas acelerações e cortes. Ajustes: `DribbleCrouchCm` (0 desliga) e `bBodyLean`. O quique da bola agora é calculado **preso ao corpo** (como a mão): frear, virar ou levar o impulso de um drible não faz mais a bola "fugir".
+
 **Drible no ritmo do 2K23**: o braço do drible parado/andando/correndo agora faz ~2,1–2,5 quiques/s (o mocap original fazia ~1–1,5; ver `docs/17-park-green-e-feel.md` §4.1).
 
 **Green (estilo 2K Park)** — sequência de ~2,5 s, medida nos seus vídeos do 2K23 (`docs/17`):
@@ -71,7 +73,7 @@ Se o boneco não estiver importado, o jogo usa o **Manny** do pacote Third Perso
 
 | Botão | Ação no Freestyle |
 |---|---|
-| **LS** | Mover. Com a bola: **analógico pela metade** = size-up encarando a cesta (anda de frente, de lado, de costas); **analógico todo** = corre virando o corpo |
+| **LS** | Mover. Com a bola, como no 2K23: parado ou com o analógico só um pouco = **size-up encarando a cesta**; andando para o lado ou para a frente o jogador **vira o corpo** para onde vai (drible lateral de perfil); **recuando** (retreat dribble) continua encarando a cesta |
 | **X** segurar → soltar | Arremesso (solte no topo do medidor = **GREEN**). Toque rápido = pump fake |
 | **RS** toque cima / esquerda / baixo-esquerda / direita / baixo | Crossover / entre as pernas / por trás / hesitação / step-back |
 | **RS** giro / ¼ de giro | Spin / half-spin |

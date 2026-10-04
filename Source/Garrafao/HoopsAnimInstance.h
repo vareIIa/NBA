@@ -27,6 +27,16 @@ struct FHoopsAnimLayer
 	bool bUpperBodyOnly = false; // camada só do tronco/braços (spine_02 para cima), por cima do resto
 };
 
+// Postura procedural por cima da animação: abaixa o quadril (joelhos dobram por IK, pés ficam plantados) e inclina
+// o tronco (para a frente correndo, para dentro nos cortes). É o que deixa o drible "baixo e atlético" do 2K.
+struct FHoopsStance
+{
+	float CrouchCm = 0.0f;        // quanto o quadril desce (cm no espaço da malha)
+	float LeanForwardDeg = 0.0f;  // + inclina para a frente
+	float LeanRightDeg = 0.0f;    // + inclina para a direita
+	FVector MeshForward = FVector::ForwardVector; // frente do boneco no espaço da malha
+};
+
 // Proxy que avalia as camadas na thread de animação: amostra cada sequência e mistura por peso.
 // É um "anim graph em código": sem Animation Blueprint, para o projeto não depender de assets binários.
 USTRUCT()
@@ -39,12 +49,19 @@ public:
 	explicit FHoopsAnimInstanceProxy(UAnimInstance* InAnimInstance) : FAnimInstanceProxy(InAnimInstance) {}
 
 	// Chamado na game thread (fim do NativeUpdateAnimation), antes da avaliação deste frame.
-	void SetLayers(TArray<FHoopsAnimLayer>&& InLayers) { EvalLayers = MoveTemp(InLayers); }
+	void SetLayers(TArray<FHoopsAnimLayer>&& InLayers, const FHoopsStance& InStance)
+	{
+		EvalLayers = MoveTemp(InLayers);
+		Stance = InStance;
+	}
 
 	virtual bool Evaluate(FPoseContext& Output) override;
 
 private:
+	void ApplyStance(FPoseContext& Output) const;
+
 	TArray<FHoopsAnimLayer> EvalLayers;
+	FHoopsStance Stance;
 };
 
 // AnimInstance nativa do jogador (usada com o boneco SK_HoopsDummy). O personagem decide QUAL animação e
@@ -71,6 +88,9 @@ public:
 	void PlayUpperBody(UAnimSequence* Sequence, float StartTime, float PlayRate, float BlendIn, float HoldSeconds, float BlendOut);
 	void StopUpperBody(float BlendOut);
 	bool IsUpperBodyActive() const { return bUpperActive; }
+
+	// Postura alvo (o personagem chama todo frame); suavizada aqui.
+	void SetStanceTarget(float CrouchCm, float LeanForwardDeg, float LeanRightDeg, const FVector& MeshForward);
 
 	bool IsActionActive() const { return bActionActive; }
 	float GetActionTime() const { return Action.Time; }
@@ -105,4 +125,7 @@ private:
 	float UpperElapsed = 0.0f;
 	float UpperHoldSeconds = 0.0f;
 	float UpperBlendOut = 0.3f;
+
+	FHoopsStance Stance;
+	FHoopsStance StanceTarget;
 };

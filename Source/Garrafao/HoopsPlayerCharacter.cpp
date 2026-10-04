@@ -622,9 +622,16 @@ void AHoopsPlayerCharacter::UpdateMovement(float DeltaSeconds)
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 
-	// Size-up (encarando a cesta): com a bola, analógico pela metade ou LT. Analógico todo: corre virando o corpo.
+	// Como no 2K23 (referencias/2k23): parado/size-up e recuando (retreat dribble) o jogador encara a cesta; andando
+	// para o lado ou para a frente ele VIRA o corpo para onde vai (de perfil no drible lateral). LT = protege
+	// encarando a cesta.
 	const bool bShooting = ShotPhase != EShotPhase::None;
-	const bool bStrafe = bHasBall && !bSprintHeld && (bLeftTriggerHeld || MoveInput.Size() < StrafeStickThreshold);
+	const FVector CamFwdFlat = CameraForwardFlat();
+	const FVector Wish = (CamFwdFlat * MoveInput.Y + FVector::CrossProduct(FVector::UpVector, CamFwdFlat) * MoveInput.X).GetSafeNormal2D();
+	const FVector ToHoop = Hoop ? (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D() : GetActorForwardVector();
+	const bool bRetreat = !Wish.IsNearlyZero() && FVector::DotProduct(Wish, ToHoop) < -0.64f; // > ~130° da cesta
+	const bool bSizeUp = Wish.IsNearlyZero() || MoveInput.Size() < StrafeStickThreshold;
+	const bool bStrafe = bHasBall && !bSprintHeld && (bLeftTriggerHeld || bRetreat || bSizeUp);
 	// Durante um drible (crossover, hesitação...) o limite do size-up não segura o impulso do movimento.
 	const bool bMoveBurst = Dribble.IsMoveActive(Now());
 	const float BaseSpeed = bSprintHeld ? SprintSpeedCm : ((bStrafe && !bMoveBurst) ? StrafeSpeedCm : JogSpeedCm);
@@ -1408,6 +1415,7 @@ bool AHoopsPlayerCharacter::TryLoadDummyRig()
 
 	// Frente medida pelos pés -> +X do ator; altura -> BodyHeightCm; pés no fundo do capsule.
 	MeshScale = BodyHeightCm / Measure.Height;
+	MeshForwardYaw = Measure.ForwardYaw;
 	MeshYawOffset = -Measure.ForwardYaw + MeshYawAdjust;
 
 	USkeletalMeshComponent* Body = GetMesh();
@@ -1557,6 +1565,27 @@ void AHoopsPlayerCharacter::UpdateBodyAnimation(float DeltaSeconds)
 	const bool bKeepPhase = IsHandPair(Clip, BaseClip);
 	Anim->SetBase(GetClip(Clip), Rate, bKeepPhase ? 0.15f : 0.22f, bKeepPhase);
 	BaseClip = Clip;
+
+	// Postura atlética + inclinação pela aceleração (no referencial do corpo).
+	if (DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+	{
+		const FVector Accel = (Local - PrevLocalVelocity) / DeltaSeconds;
+		SmoothedLocalAccel = FMath::Lerp(SmoothedLocalAccel, Accel, FMath::Min(1.0f, DeltaSeconds * 10.0f));
+	}
+	PrevLocalVelocity = Local;
+	float Crouch = 0.0f;
+	if (bDribbling)
+	{
+		Crouch = DribbleCrouchCm * (IsIdleClip(Clip) ? 1.0f : (IsRunClip(Clip) ? 0.45f : 0.75f));
+	}
+	float LeanForward = 0.0f;
+	float LeanRight = 0.0f;
+	if (bBodyLean && ShotPhase == EShotPhase::None)
+	{
+		LeanForward = FMath::Clamp(Speed / 600.0f * 6.0f + static_cast<float>(SmoothedLocalAccel.X) / 1500.0f * 5.0f, -6.0f, 12.0f);
+		LeanRight = FMath::Clamp(static_cast<float>(SmoothedLocalAccel.Y) / 1500.0f * 9.0f, -12.0f, 12.0f);
+	}
+	Anim->SetStanceTarget(Crouch / FMath::Max(0.1f, MeshScale), LeanForward, LeanRight, FRotator(0.0, MeshForwardYaw, 0.0).Vector());
 }
 
 void AHoopsPlayerCharacter::PlayShotAction(float StartSeconds, float SecondsToRelease)
@@ -1664,16 +1693,19 @@ void AHoopsPlayerCharacter::TrackHandStroke(Hoops::BallHand Hand, const FVector&
 
 void AHoopsPlayerCharacter::BeginBallFlight(const FVector& Start, Hoops::BallHand ToHand, double Seconds)
 {
-	const FVector Velocity2D(GetVelocity().X, GetVelocity().Y, 0.0);
+	// O quique é calculado no referencial do jogador (como a mão): se ele freia, vira ou leva o impulso de um
+	// drible no meio do voo, a bola vai junto e nunca "foge" para onde ele estaria (como no 2K, a bola é do corpo).
+	const FTransform Body = GetActorTransform();
+	FVector LocalVelocity = Body.InverseTransformVector(FVector(GetVelocity().X, GetVelocity().Y, 0.0));
+	LocalVelocity = LocalVelocity.GetClampedToMaxSize(500.0); // só para o quique cair um pouco à frente correndo
 	// Recepção prevista: o topo do curso da mesma mão (medido no ciclo anterior) ou, trocando de mão, um pouco
 	// acima da outra mão agora. O fim do voo encosta na mão animada de qualquer jeito.
 	const bool bSameHand = Carry == EBallCarry::Hand && ToHand == CarryHand && bHasTopRelative;
-	FVector End = bSameHand ? GetActorTransform().TransformPosition(LastTopRelative) : HandBallPoint(ToHand) + FVector(0.0, 0.0, 10.0 * MeshScale);
-	End += Velocity2D * Seconds;
-	const double FloorZ = (GetActorLocation().Z - CapsuleHalfHeightCm) / 100.0;
+	const FVector EndLocal = bSameHand ? LastTopRelative : Body.InverseTransformPosition(HandBallPoint(ToHand) + FVector(0.0, 0.0, 10.0 * MeshScale));
+	const double FloorZ = -CapsuleHalfHeightCm / 100.0; // chão no referencial do capsule (o ator fica no centro dele)
 
-	FlightArc = Hoops::MakeDribbleArc(HoopsUnits::ToSim(Start), HoopsUnits::ToSim(End), HoopsUnits::ToSim(Velocity2D),
-		Seconds, AHoopsBall::RadiusCm / 100.0, FloorZ);
+	FlightArc = Hoops::MakeDribbleArc(HoopsUnits::ToSim(Body.InverseTransformPosition(Start)), HoopsUnits::ToSim(EndLocal),
+		HoopsUnits::ToSim(LocalVelocity), Seconds, AHoopsBall::RadiusCm / 100.0, FloorZ);
 	Carry = EBallCarry::Flight;
 	FlightHand = ToHand;
 	FlightStart = Now();
@@ -1725,7 +1757,7 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 			const FVector Live = HandBallPoint(FlightHand);
 			TrackHandStroke(FlightHand, Live, DeltaSeconds);
 			const double Elapsed = T - FlightStart;
-			Target = HoopsUnits::ToUnreal(FlightArc.Evaluate(Elapsed));
+			Target = GetActorTransform().TransformPosition(HoopsUnits::ToUnreal(FlightArc.Evaluate(Elapsed)));
 			// No fim do voo, encosta na mão animada (a previsão do ponto de recepção nunca é exata).
 			const double SteerFrom = FlightSeconds * 0.6;
 			if (Elapsed > SteerFrom)

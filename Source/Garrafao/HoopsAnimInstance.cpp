@@ -3,6 +3,7 @@
 #include "Animation/AnimNodeBase.h"
 #include "Animation/AnimSequence.h"
 #include "AnimationRuntime.h"
+#include "TwoBoneIK.h"
 
 namespace
 {
@@ -136,6 +137,14 @@ void UHoopsAnimInstance::StopUpperBody(float BlendOut)
 	}
 }
 
+void UHoopsAnimInstance::SetStanceTarget(float CrouchCm, float LeanForwardDeg, float LeanRightDeg, const FVector& MeshForward)
+{
+	StanceTarget.CrouchCm = CrouchCm;
+	StanceTarget.LeanForwardDeg = LeanForwardDeg;
+	StanceTarget.LeanRightDeg = LeanRightDeg;
+	StanceTarget.MeshForward = MeshForward.GetSafeNormal2D();
+}
+
 void UHoopsAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
@@ -200,10 +209,16 @@ void UHoopsAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		}
 	}
 
+	// Postura: segue o alvo suavemente (sem trancos ao trocar de drible/corrida).
+	Stance.CrouchCm = FMath::FInterpTo(Stance.CrouchCm, StanceTarget.CrouchCm, DeltaSeconds, 8.0f);
+	Stance.LeanForwardDeg = FMath::FInterpTo(Stance.LeanForwardDeg, StanceTarget.LeanForwardDeg, DeltaSeconds, 6.0f);
+	Stance.LeanRightDeg = FMath::FInterpTo(Stance.LeanRightDeg, StanceTarget.LeanRightDeg, DeltaSeconds, 6.0f);
+	Stance.MeshForward = StanceTarget.MeshForward.IsNearlyZero() ? FVector::ForwardVector : StanceTarget.MeshForward;
+
 	// Entrega as camadas deste frame ao proxy (a avaliação roda depois, possivelmente em outra thread).
 	TArray<FHoopsAnimLayer> Layers;
 	GetEvaluationLayers(Layers);
-	GetProxyOnGameThread<FHoopsAnimInstanceProxy>().SetLayers(MoveTemp(Layers));
+	GetProxyOnGameThread<FHoopsAnimInstanceProxy>().SetLayers(MoveTemp(Layers), Stance);
 }
 
 void UHoopsAnimInstance::GetEvaluationLayers(TArray<FHoopsAnimLayer>& OutLayers) const
@@ -347,5 +362,89 @@ bool FHoopsAnimInstanceProxy::Evaluate(FPoseContext& Output)
 			}
 		}
 	}
+
+	// 3) Postura atlética (quadril baixo + IK das pernas + inclinação do tronco).
+	ApplyStance(Output);
 	return true;
+}
+
+void FHoopsAnimInstanceProxy::ApplyStance(FPoseContext& Output) const
+{
+	if (Stance.CrouchCm < 0.1f && FMath::Abs(Stance.LeanForwardDeg) < 0.1f && FMath::Abs(Stance.LeanRightDeg) < 0.1f)
+	{
+		return;
+	}
+	const FBoneContainer& Bones = Output.Pose.GetBoneContainer();
+	const auto FindBone = [&Bones](const TCHAR* Name)
+	{
+		const int32 MeshIndex = Bones.GetReferenceSkeleton().FindBoneIndex(FName(Name));
+		return MeshIndex == INDEX_NONE ? FCompactPoseBoneIndex(INDEX_NONE) : Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(MeshIndex));
+	};
+	const FCompactPoseBoneIndex Pelvis = FindBone(TEXT("pelvis"));
+	const FCompactPoseBoneIndex Spine = FindBone(TEXT("spine_01"));
+	const FCompactPoseBoneIndex Legs[2][3] = {
+		{FindBone(TEXT("thigh_l")), FindBone(TEXT("calf_l")), FindBone(TEXT("foot_l"))},
+		{FindBone(TEXT("thigh_r")), FindBone(TEXT("calf_r")), FindBone(TEXT("foot_r"))},
+	};
+	if (!Pelvis.IsValid() || !Spine.IsValid())
+	{
+		return;
+	}
+	for (const auto& Leg : Legs)
+	{
+		if (!Leg[0].IsValid() || !Leg[1].IsValid() || !Leg[2].IsValid())
+		{
+			return;
+		}
+	}
+
+	FCSPose<FCompactPose> CSPose;
+	CSPose.InitPose(Output.Pose);
+	const FVector Up = FVector::UpVector;
+	const FVector Forward = Stance.MeshForward;
+	const FVector Right = FVector::CrossProduct(Up, Forward);
+
+	// Onde os pés estavam (ficam plantados).
+	const FTransform FeetBefore[2] = {CSPose.GetComponentSpaceTransform(Legs[0][2]), CSPose.GetComponentSpaceTransform(Legs[1][2])};
+
+	// Quadril desce.
+	if (Stance.CrouchCm >= 0.1f)
+	{
+		FTransform PelvisCS = CSPose.GetComponentSpaceTransform(Pelvis);
+		PelvisCS.AddToTranslation(FVector(0.0, 0.0, -Stance.CrouchCm));
+		const FBoneTransform PelvisChange[] = {FBoneTransform(Pelvis, PelvisCS)};
+		CSPose.SafeSetCSBoneTransforms(MakeArrayView(PelvisChange));
+	}
+
+	// Tronco inclina (gira o spine_01 em torno de si, no espaço da malha; braços e cabeça vão junto).
+	if (FMath::Abs(Stance.LeanForwardDeg) >= 0.1f || FMath::Abs(Stance.LeanRightDeg) >= 0.1f)
+	{
+		// Girar em torno de Right com ângulo positivo leva o "cima" para a frente; em torno de Forward, para a esquerda.
+		const FQuat Lean = FQuat(Right, FMath::DegreesToRadians(static_cast<double>(Stance.LeanForwardDeg))) *
+			FQuat(Forward, FMath::DegreesToRadians(-static_cast<double>(Stance.LeanRightDeg)));
+		FTransform SpineCS = CSPose.GetComponentSpaceTransform(Spine);
+		SpineCS.SetRotation(Lean * SpineCS.GetRotation());
+		const FBoneTransform SpineChange[] = {FBoneTransform(Spine, SpineCS)};
+		CSPose.SafeSetCSBoneTransforms(MakeArrayView(SpineChange));
+	}
+
+	// IK das pernas: com o quadril mais baixo, os joelhos dobram para os pés voltarem ao lugar.
+	if (Stance.CrouchCm >= 0.1f)
+	{
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			FTransform Thigh = CSPose.GetComponentSpaceTransform(Legs[Side][0]);
+			FTransform Calf = CSPose.GetComponentSpaceTransform(Legs[Side][1]);
+			FTransform Foot = CSPose.GetComponentSpaceTransform(Legs[Side][2]);
+			// Joelho aponta para a frente e um pouco para fora (base larga).
+			const FVector KneeTarget = Calf.GetLocation() + Forward * 60.0 + Right * (Side == 0 ? -15.0 : 15.0);
+			AnimationCore::SolveTwoBoneIK(Thigh, Calf, Foot, KneeTarget, FeetBefore[Side].GetLocation(), false, 1.0, 1.0);
+			Foot.SetRotation(FeetBefore[Side].GetRotation());
+			const FBoneTransform LegChange[] = {
+				FBoneTransform(Legs[Side][0], Thigh), FBoneTransform(Legs[Side][1], Calf), FBoneTransform(Legs[Side][2], Foot)};
+			CSPose.SafeSetCSBoneTransforms(MakeArrayView(LegChange));
+		}
+	}
+
+	FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(CSPose, Output.Pose);
 }

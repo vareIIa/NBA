@@ -18,5 +18,8 @@ public class Garrafao : ModuleRules
 
 		// Busca do boneco animado importado (HoopsDummyRig).
 		PrivateDependencyModuleNames.Add("AssetRegistry");
+
+		// IK das pernas na postura atlética do boneco (AnimationCore::SolveTwoBoneIK).
+		PrivateDependencyModuleNames.Add("AnimationCore");
 	}
 }
