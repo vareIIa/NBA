@@ -129,9 +129,15 @@ public:
 	float GreenHoldSeconds = 1.1f;
 
 	// Celebra sozinho quando um green cai (alterna as celebrações). Com ou sem isso, o D-pad celebra por ~2,5 s
-	// depois de uma cesta: cima = flex, direita = shrug, esquerda = segura a pose do arremesso.
+	// depois de uma cesta: cima = bíceps (de novo: braços para o alto), direita = ombros (de novo: toca aqui),
+	// baixo = arco e flecha, esquerda = segura a pose do arremesso.
 	UPROPERTY(EditAnywhere, Category = "Hoops|Green")
 	bool bAutoCelebrate = true;
+
+	// Depois de um green, parado e sem a bola: ~1,3 s depois da soltura o jogador gira 180° e fica de costas para a
+	// cesta, com o braço ainda no alto (docs/17 §1.1). Qualquer comando cancela.
+	UPROPERTY(EditAnywhere, Category = "Hoops|Green")
+	bool bTurnBackAfterGreen = true;
 
 	// Feedback do green na hora da soltura (padrão) ou só quando a bola chega ao aro (como no 2K23).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Green")
@@ -192,6 +198,15 @@ public:
 	// Velocidade do drible parado (o mocap é lento: 1 quique a cada 0,85 s).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao", meta = (ClampMin = "0.5", ClampMax = "2.5"))
 	float DribbleIdlePlayRate = 0.9f; // o clipe já tem 2 quiques por loop: ~2,1 quiques/s, ritmo do 2K23 (docs/17 §4.1)
+
+	// Velocidade do drible baixo do LT (proteger, 06_13: 2 quiques por loop de 0,77 s). 1,15 = ~3 quiques/s (docs/17 §4.1).
+	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao", meta = (ClampMin = "0.5", ClampMax = "2.0"))
+	float DribbleLowPlayRate = 1.15f;
+
+	// Clipe do jump shot: 0 = clássico (06_15, soltura baixa), 1 = alto (124_05, braço todo estendido). O timing do green
+	// é o mesmo nos dois (a mão chega ao topo no tempo ideal). Sem o clipe alto importado, usa o clássico.
+	UPROPERTY(EditAnywhere, Category = "Hoops|Animacao", meta = (ClampMin = "0", ClampMax = "1"))
+	int32 JumpShotStyle = 1;
 
 	// Postura atlética do drible (2K: baixo, base larga): quanto o quadril desce parado (cm). Andando desce 75%,
 	// correndo 45%; sem a bola e arremessando, nada. 0 desliga.
@@ -288,7 +303,9 @@ private:
 	UHoopsAnimInstance* GetHoopsAnim() const;
 	UAnimSequence* GetClip(EHoopsClip Clip) const;
 	void UpdateBodyAnimation(float DeltaSeconds);
-	void PlayShotAction(float StartSeconds, float SecondsToRelease);
+	HoopsDummyRig::FJumpShotTiming JumperTiming() const; // clipe do jump shot em uso (JumpShotStyle, se importado)
+	void PlayShotAction(const HoopsDummyRig::FJumpShotTiming& Timing, float StartSeconds, float SecondsToRelease);
+	void UpdateTurnBack(); // vira e volta depois do green (gira o ator pela curva do mocap)
 	UAnimSequence* GetActionClip(EHoopsClip Clip) const; // sem cair para a base: nullptr se não houver
 	void PlayGreenChime();
 	void OnShotReleased(const Hoops::ShotEvaluation& Eval, double HoldMs);
@@ -387,6 +404,24 @@ private:
 	FVector PullUpCarryDir = FVector::ZeroVector; // sentido do embalo no gather (mundo, 2D)
 	float CurrentBaseRateAbs = 1.0f;         // playrate do loop de base (ajusta o detector do empurrão)
 	int32 CelebrationIndex = 0;
+	// D-pad: apertar a mesma direção de novo depois da mesma cesta passa para a próxima celebração do slot.
+	int32 DpadCelebrationSlot = -1;
+	int32 DpadCelebrationPresses = 0;
+	double DpadCelebrationMake = -100.0;
+	// Bandeja com a esquerda (lado esquerdo do aro): a bola vai na mão esquerda (ShotBallPoint).
+	bool bShotLeftHand = false;
+	// Bandeja/enterrada com o clipe: o capsule fica no chão no gather e decola no quadro da decolagem do clipe.
+	bool bFinishLaunchPending = false;
+	double FinishLaunchTime = 0.0;
+	double FinishApexDelay = 0.0;  // decolagem -> ápice do clipe (s, já com o playrate): define a subida do capsule
+	double FinishForwardCm = 0.0;  // velocidade para o aro (cm/s)
+	// Vira e volta depois do green.
+	double ShotReleaseTime = -100.0;
+	bool bTurnBackPending = false;
+	bool bTurnBackActive = false;
+	double TurnBackStart = 0.0;    // começo do giro (s, relógio do jogo)
+	double TurnBackDuration = 1.0;
+	double TurnBackStartYaw = 0.0;
 
 	// Transição suave da bola (recepção, gather, pump fake).
 	FVector BallBlendFrom = FVector::ZeroVector;

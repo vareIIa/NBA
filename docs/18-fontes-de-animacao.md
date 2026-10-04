@@ -115,15 +115,15 @@ Fonte: [mocap.cs.cmu.edu](http://mocap.cs.cmu.edu/) (busca por sujeito: `search.
 | 102_29 | Pivoting | Pivô (triple threat) |
 | 102_22–28 | Deslizes defensivos | 1x1 (depois) |
 | 102_10 | RunningNoBall | Indica que os outros trials do 102 são com bola *(não confirmado)* |
-| **06_13** | Low, fast free style dribble, **dribble through legs** | Drible baixo e rápido, **entre as pernas** |
+| **06_13** | Low, fast free style dribble, **dribble through legs** | Drible baixo e rápido, **entre as pernas** (no jogo: LT e entre as pernas; sem por trás das costas limpo) |
 | 06_12, 06_14 | Crossover; crossover + shoot | Crossover (já em uso) |
-| **124_05 / 124_06** | Basketball Jump Shot / Lay Up | Jump shot, **bandeja** |
-| 124_03, 124_04, 124_11 | Shoot; Free Throw; 2 Foot Jump | Lance livre; impulsão com 2 pés (enterrada/rebote) |
+| **124_05 / 124_06** | Basketball Jump Shot / Lay Up | Jump shot, **bandeja** (no jogo: JumpShot2, bandeja e enterrada de duas mãos) |
+| 124_03, 124_04, 124_11 | Shoot; Free Throw; 2 Foot Jump | Lance livre; 124_11 é salto em distância com os braços baixos (não serve para enterrada) |
 | 86_14 | Bouncing, shooting, dribble, two-handed dribble | Variações |
-| 15_12 | (take longo) dribble, **lay-up**, pass | Segunda bandeja (recortar) |
-| **141_21** / 141_22 / 141_24 / 141_28 | Shrug / High Five / Around the world high five low / Slap hands | Comemorações (o shrug já está em uso) |
+| 15_12 | (take longo) dribble, **lay-up**, pass | Conferido: a "bandeja" é mímica parada (pés no chão), não serve |
+| **141_21** / 141_22 / 141_24 / 141_28 | Shrug / High Five / Around the world high five low / Slap hands | Comemorações (shrug e toca aqui, 141_22, no jogo) |
 | **79_94** / 79_69 / 80_43 | Flexing / Very happy / Happy | Comemorações (o flexing já está em uso) |
-| 142_06 / 142_09 / 142_20 | Elated / Joy / Singing in the rain jump (andares estilizados) | Voltar comemorando |
+| 142_06 / 142_09 / 142_20 | Elated / Joy / Singing in the rain jump (andares estilizados) | Voltar comemorando (142_09 "braços para o alto" no jogo; 142_06 só os braços não leem como gesto) |
 | 26_02, 27_02 … 41_11 | "Basketball signals" | Sinais de árbitro (não serve para o jogador) |
 
 ### 1.5 Outros datasets de mocap

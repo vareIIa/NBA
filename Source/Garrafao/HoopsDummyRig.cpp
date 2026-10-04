@@ -46,6 +46,21 @@ namespace
 		{TEXT("Spin_L2R"), FVector2D(0.0, 0.0), EHoopsClip::SpinL2R},
 		{TEXT("Hesitation_R"), FVector2D(0.0, 0.0), EHoopsClip::HesitationR},
 		{TEXT("Hesitation_L"), FVector2D(0.0, 0.0), EHoopsClip::HesitationL},
+		// Segunda leva. Sem substituto (sem eles o jogo usa o caminho antigo: arremesso como bandeja, crossover...), menos
+		// o drible baixo, que cai no drible parado.
+		{TEXT("Layup_R"), FVector2D(0.0, 0.0), EHoopsClip::LayupR},
+		{TEXT("Layup_L"), FVector2D(0.0, 0.0), EHoopsClip::LayupL},
+		{TEXT("Dunk"), FVector2D(0.0, 0.0), EHoopsClip::Dunk},
+		{TEXT("Dribble_Low_R"), FVector2D(0.0, 0.0), EHoopsClip::DribbleIdleR},
+		{TEXT("Dribble_Low_L"), FVector2D(0.0, 0.0), EHoopsClip::DribbleIdleL},
+		{TEXT("BetweenLegs_R2L"), FVector2D(0.0, 0.0), EHoopsClip::BetweenLegsR2L},
+		{TEXT("BetweenLegs_L2R"), FVector2D(0.0, 0.0), EHoopsClip::BetweenLegsL2R},
+		{TEXT("JumpShot2_R"), FVector2D(0.0, 0.0), EHoopsClip::JumpShot2R},
+		{TEXT("JumpShot2_L"), FVector2D(0.0, 0.0), EHoopsClip::JumpShot2L},
+		{TEXT("Celebrate_Bow"), FVector2D(0.0, 0.0), EHoopsClip::CelebrateBow},
+		{TEXT("Celebrate_ArmsUp"), FVector2D(0.0, 0.0), EHoopsClip::CelebrateArmsUp},
+		{TEXT("Celebrate_HighFive"), FVector2D(0.0, 0.0), EHoopsClip::CelebrateHighFive},
+		{TEXT("TurnBack"), FVector2D(0.0, 0.0), EHoopsClip::TurnBack},
 	};
 	static_assert(UE_ARRAY_COUNT(Clips) == HoopsDummyRig::NumClips, "Tabela de clipes fora de sincronia com EHoopsClip");
 
@@ -66,6 +81,14 @@ namespace
 			}
 		}
 		return Best;
+	}
+
+	// Curva medida no mocap (Samples pontos iguais de 0 a 1): Alpha 0..1 -> progresso interpolado.
+	float CurveAlpha(const float* Table, int32 Samples, float Alpha)
+	{
+		const float Position = FMath::Clamp(Alpha, 0.0f, 1.0f) * static_cast<float>(Samples - 1);
+		const int32 Index = FMath::Min(static_cast<int32>(Position), Samples - 2); // Position >= 0: corta = arredonda para baixo
+		return FMath::Lerp(Table[Index], Table[Index + 1], Position - static_cast<float>(Index));
 	}
 
 	bool RefComponentSpace(const FReferenceSkeleton& Ref, FName Bone, FVector& OutLocation)
@@ -109,9 +132,12 @@ namespace HoopsDummyRig
 
 	float SpinTurnAlpha(float CoreAlpha)
 	{
-		const float Position = FMath::Clamp(CoreAlpha, 0.0f, 1.0f) * static_cast<float>(SpinTurnSamples - 1);
-		const int32 Index = FMath::Min(static_cast<int32>(Position), SpinTurnSamples - 2); // Position >= 0: corta = arredonda para baixo
-		return FMath::Lerp(SpinTurnProgress[Index], SpinTurnProgress[Index + 1], Position - static_cast<float>(Index));
+		return CurveAlpha(SpinTurnProgress, SpinTurnSamples, CoreAlpha);
+	}
+
+	float TurnBackAlpha(float CoreAlpha)
+	{
+		return CurveAlpha(TurnBackProgress, TurnBackSamples, CoreAlpha);
 	}
 
 	bool FindAssets(const FString& Folder, USkeletalMesh*& OutMesh, TArray<UAnimSequence*>& OutClips)

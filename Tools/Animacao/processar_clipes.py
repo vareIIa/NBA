@@ -184,6 +184,101 @@ def unturn(clip, unit, amount=1.0, sigma=4.0, unroll=True):
     return np.degrees(turn)
 
 
+def remove_drift(clip, sigma=8.0, anchor=0):
+    """Tira o caminho horizontal da raiz (média gaussiana de sigma quadros): quem anda é o capsule do jogo e no clipe
+    fica só o balanço do quadril. Mais justo que o in_place em ações com velocidade variável (corrida -> salto).
+    anchor: quadro que fica em (0, 0) (o início da ação no jogo). Guarda a velocidade média tirada (como o in_place)."""
+    disp = (clip.root_pos[-1] - clip.root_pos[0]) / 100.0
+    seconds = max(1e-6, (clip.count - 1) / FPS)
+    in_place.last_velocity = (disp[0] / seconds, disp[2] / seconds)
+    for k in (0, 2):
+        clip.root_pos[:, k] -= smooth(clip.root_pos[:, k], sigma)
+    clip.root_pos[:, [0, 2]] -= clip.root_pos[anchor, [0, 2]]
+    return clip
+
+
+def soften_flight(clip, takeoff, apex, landing, keep):
+    """Tira (1 - keep) do arco da pelve no voo (decolagem -> ápice -> aterrissagem, duas meias-parábolas que valem 0
+    nas pontas): o resto do pulo é do capsule, lançado no quadro da decolagem com o ápice no ápice do clipe. Assim os
+    pés saem e voltam ao chão junto com o capsule. Retorna a altura do arco medido (cm)."""
+    y = clip.root_pos[:, 1]
+    line = np.interp(np.arange(takeoff, landing + 1), [takeoff, landing], [y[takeoff], y[landing]])
+    rise = float(y[apex] - line[apex - takeoff])
+    for i in range(takeoff, landing + 1):
+        if i <= apex:
+            s = (i - takeoff) / float(max(1, apex - takeoff))
+            arc = 1.0 - (1.0 - s) ** 2
+        else:
+            s = (i - apex) / float(max(1, landing - apex))
+            arc = 1.0 - s * s
+        clip.root_pos[i, 1] -= (1.0 - keep) * rise * arc
+    return rise
+
+
+def window_weight(i, a, b, ramp):
+    """1 dentro de [a, b), rampa linear de `ramp` quadros nas duas pontas, 0 fora."""
+    if a <= i < b:
+        return 1.0
+    if i < a:
+        return max(0.0, 1.0 - (a - i) / float(ramp + 1))
+    return max(0.0, 1.0 - (i - b + 1) / float(ramp + 1))
+
+
+def rot_z(angle):
+    c, s = math.cos(angle), math.sin(angle)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+
+def copy_arm(clip, src_side, dst_side, frames, ramp, inward_deg=0.0):
+    """Braço dst = espelho do braço src (S·R·S, como no mirror) no trecho frames = (a, b), entrando e saindo em `ramp`
+    quadros (slerp). O tronco fica simétrico no trecho (tira a inclinação lateral e a torção, mantém a flexão), senão o
+    braço espelhado sai mais baixo que o outro. inward_deg fecha os dois braços para a linha do corpo (gira o úmero em
+    torno do eixo frente-trás no ombro), para as mãos se encontrarem na bola. Ex.: a enterrada de duas mãos sai da
+    bandeja de uma mão (124_06). src_side "r": o braço direito fica do lado -X (frente = +Z)."""
+    a, b = frames
+    names = ("clavicle", "humerus", "radius", "wrist", "hand", "fingers", "thumb")
+    inward = math.radians(inward_deg) * (1.0 if src_side == "l" else -1.0)
+    for i in range(max(0, a - ramp), min(clip.count, b + ramp)):
+        w = window_weight(i, a, b, ramp)
+        for name in ("lowerback", "upperback", "thorax", "lowerneck", "upperneck", "head"):
+            rot = clip.local[name][i]
+            symmetric = slerp(mat_to_quat(rot), mat_to_quat(MIRROR @ rot @ MIRROR), 0.5)
+            clip.local[name][i] = quat_to_mat(slerp(mat_to_quat(rot), symmetric, w))
+        humerus = clip.local[src_side + "humerus"]
+        humerus[i] = rot_z(inward * w) @ humerus[i]
+        for name in names:
+            src, dst = clip.local[src_side + name], clip.local[dst_side + name]
+            target = MIRROR @ src[i] @ MIRROR
+            dst[i] = quat_to_mat(slerp(mat_to_quat(dst[i]), mat_to_quat(target), w))
+    return clip
+
+
+def splice(first, second, blend):
+    """Junta dois trechos do mesmo clipe (corta uma pausa longa): os últimos `blend` quadros de first viram uma mistura
+    com os primeiros de second. Raiz e ossos por slerp; a posição da raiz segue a de first."""
+    out = first.copy()
+    n = first.count
+    for t in range(blend):
+        w = (t + 1) / float(blend + 1)
+        i = n - blend + t
+        out.root_rot[i] = quat_to_mat(slerp(mat_to_quat(first.root_rot[i]), mat_to_quat(second.root_rot[t]), w))
+        out.root_pos[i, 1] = (1 - w) * first.root_pos[i, 1] + w * second.root_pos[t, 1]
+        for name in out.local:
+            out.local[name][i] = quat_to_mat(slerp(mat_to_quat(first.local[name][i]), mat_to_quat(second.local[name][t]), w))
+    rest = second.copy(blend, second.count)
+    rest.root_pos[:, [0, 2]] += out.root_pos[-1, [0, 2]] - second.root_pos[blend - 1, [0, 2]]
+    out.root_pos = np.concatenate([out.root_pos, rest.root_pos])
+    out.root_rot = np.concatenate([out.root_rot, rest.root_rot])
+    out.local = {k: np.concatenate([v, rest.local[k]]) for k, v in out.local.items()}
+    return out
+
+
+def turn_progress(turn_degrees, start, end, samples=9):
+    """Progresso (0..1) do giro medido entre start e end, em samples pontos iguais (para o jogo girar o ator/malha)."""
+    values = np.interp(np.linspace(start, end, samples), np.arange(len(turn_degrees)), turn_degrees)
+    return (values - values[0]) / (values[-1] - values[0]), float(values[-1] - values[0])
+
+
 def offsets_to_body(clip, turn_degrees):
     """Depois do in_place de um clipe des-girado sem unroll (spin): a sobra do caminho da pelve está no referencial do
     MUNDO; passa para o do corpo (que o jogo gira), para a pelve ficar no mesmo lugar em relação aos pés."""
@@ -426,6 +521,113 @@ def dribble_pushes(clip, unit, bone, travel_cm=10.0):
 
 # ----------------------------------------------------------------------------- receita
 
+def segunda_leva(cmu, emit, bones06, unit):
+    """Segunda leva da CMU: bandeja e enterrada (124_06), drible baixo do LT e entre as pernas (06_13), jump shot alto
+    (124_05), comemorações (79_86, 142_09, 141_22) e o "vira e volta" depois do green (69_39). Todos passados para o
+    esqueleto do 06. Quadros-chave = quadros do CLIPE a 60 fps (o jogo usa esses: HoopsDummyRig.h)."""
+
+    def load_other(subj, trial):
+        src, src_unit = load_clip(os.path.join(cmu, subj + ".asf"), os.path.join(cmu, "{}_{}.amc".format(subj, trial)))
+        return retarget(src, src_unit, bones06, unit)
+
+    def key(name, start, **frames):
+        print("{}: ".format(name) + ", ".join("{} {}".format(k, v - start) for k, v in frames.items()))
+
+    # Bandeja: 124_06 ("Basketball Lay Up"). Dois passos com drible, plant de dois pés, decolagem ~185, ápice e soltura
+    # (mão direita no topo) 205, aterrissagem 226. O giro de ~90° no ar sai do clipe (quem mira é o capsule) e o caminho
+    # horizontal também (o capsule voa para o aro). Do arco da pelve fica 30%: o resto é o pulo do capsule, lançado na
+    # decolagem com o ápice na soltura (BeginFinish). O jogo começa no gather (178: bola no peito, quadril no mais baixo).
+    clip = load_other("124", "06")
+    unturn(clip, unit)
+    a, b = 160, 248
+    layup = clip.copy(a, b)
+    align_heading(layup, unit, frames=(185 - a, 210 - a))
+    remove_drift(layup, sigma=6.0, anchor=178 - a)
+    dunk = layup.copy()
+    rise = soften_flight(layup, 185 - a, 205 - a, 226 - a, keep=0.3)
+    emit("Layup_R", layup, unit, "124_06 quadros {}-{} (arco do voo {:.0f} cm, fica 30%)".format(a, b - 1, rise))
+    emit("Layup_L", mirror(layup), unit, "espelho")
+    key("Layup", a, gather=178, decolagem=185, apice=205, soltura=205, aterrissagem=226, fim=242)
+
+    # Enterrada de duas mãos: o mesmo salto de dois pés (a CMU não tem enterrada; 124_11 "2 Foot Jump" é salto em
+    # distância com os braços baixos, 13_39/118_01 sem braços acima da cabeça). O braço esquerdo vira o espelho do
+    # direito no voo (as duas mãos sobem juntas acima do aro e descem na "martelada"). Soltura 209 (mãos já descendo).
+    copy_arm(dunk, "r", "l", (188 - a, 222 - a), ramp=6, inward_deg=15.0)
+    rise = soften_flight(dunk, 185 - a, 205 - a, 226 - a, keep=0.45)
+    emit("Dunk", dunk, unit, "124_06 quadros {}-{}, braço esquerdo = espelho do direito no voo (arco {:.0f} cm, fica 45%)".format(a, b - 1, rise))
+    key("Dunk", a, gather=178, decolagem=185, apice=205, soltura=209, aterrissagem=226, fim=242)
+
+    # Jump shot alto: 124_05 ("Basketball Jump Shot"). Arremesso de um tempo: bola na cintura (gather 168), quadril no
+    # mais baixo 181, decolagem ~191, soltura 205 com o braço todo estendido (dedos ~50 cm acima da cabeça; no 06_15,
+    # ~12), ápice 206, mão de apoio sai primeiro e o braço do arremesso fica no alto até ~222, aterrissagem 222. O corpo
+    # gira ~57° do gather à soltura: sai do clipe (quem mira é o capsule). dip -> soltura = 37 quadros, como no 06_15.
+    clip = load_other("124", "05")
+    unturn(clip, unit)
+    a, b = 150, 262
+    shot2 = clip.copy(a, b)
+    align_heading(shot2, unit, frames=(181 - a, 210 - a))
+    remove_drift(shot2, sigma=8.0, anchor=168 - a)
+    emit("JumpShot2_R", shot2, unit, "124_05 quadros {}-{} (one-shot)".format(a, b - 1))
+    emit("JumpShot2_L", mirror(shot2), unit, "espelho")
+    key("JumpShot2", a, dip=168, decolagem=191, soltura=205, follow_through=211, aterrissagem=222, fim=238)
+
+    # Drible baixo e rápido (LT, proteger): 06_13 ("low, fast free style dribble"). Base escalonada e funda (pé esquerdo à
+    # frente, quadril ~83 cm, tronco sobre a bola), a direita dribla baixo ao lado do corpo (mão 47-75 cm) e o braço
+    # esquerdo fica à frente como escudo. Já é rápido no mocap: 2 quiques por loop de 0,77 s (~2,6/s), sem acelerar.
+    clip, _ = load_clip(os.path.join(cmu, "06.asf"), os.path.join(cmu, "06_13.amc"))
+    seg = clip.copy(1740, 1830)
+    d, i, j = best_loop(seg, (5, 40), 40, 50, window=(-3, 0, 3))
+    low = in_place(align_heading(make_loop(seg, i, j, 10), unit))
+    emit("Dribble_Low_R", low, unit, "06_13 loop {}-{} (dist {:.2f})".format(i + 1740, j + 1740, d))
+    emit("Dribble_Low_L", mirror(low), unit, "espelho")
+
+    # Entre as pernas (esquerda -> direita): 06_13, quase parado (0,2-0,5 m/s) e baixo (quadril ~82 cm). Pé direito à
+    # frente, a esquerda empurra a bola entre os pés (mão ~47 cm, na linha do corpo) e a direita recebe subindo pela
+    # frente. Os outros entre-as-pernas do take (f544, f770, f1685) acontecem girando 75-100°: no lugar, o pé plantado
+    # desliza. 60% do giro (~25°) sai do clipe; a frente é medida no início (emenda com a base).
+    seg = clip.copy(2330, clip.count)
+    unturn(seg, unit, amount=0.6)
+    a, b = 2376, 2432
+    btl = seg.copy(a - 2330, b - 2330)
+    align_heading(btl, unit, frames=(2386 - a, 2396 - a))
+    remove_drift(btl, sigma=8.0, anchor=2388 - a)
+    emit("BetweenLegs_L2R", btl, unit, "06_13 quadros {}-{} (ação)".format(a, b - 1))
+    emit("BetweenLegs_R2L", mirror(btl), unit, "espelho")
+    key("BetweenLegs", a, inicio=2388, solta=2399, recebe=2416, fim=2424)
+
+    # Comemorações (o jogo toca só o tronco/braços). Arco e flecha (79_86): encaixa a flecha, puxa a corda até a orelha
+    # (o braço esquerdo aponta o arco) e solta; a mira de ~1 s foi encurtada (138-191 + 248-289, emenda de 8 quadros).
+    clip = load_other("79", "86")
+    bow = splice(clip.copy(138, 192), clip.copy(248, 290), 8)
+    align_heading(bow, unit, frames=(10, 45))
+    emit("Celebrate_Bow", in_place(bow), unit, "79_86 quadros 138-191 + 248-289 (retarget, só tronco no jogo)")
+    # Braços para o alto (142_09 "Joy"): os dois braços sobem em V, balançam e descem.
+    clip = load_other("142", "09")
+    arms = clip.copy(745, 841)
+    align_heading(arms, unit)
+    emit("Celebrate_ArmsUp", in_place(arms), unit, "142_09 quadros 745-840 (retarget, só tronco no jogo)")
+    # Toca aqui (141_22 "High Five"): a direita sobe acima da cabeça e bate para a frente.
+    clip = load_other("141", "22")
+    five = clip.copy(25, 96)
+    align_heading(five, unit)
+    emit("Celebrate_HighFive", in_place(five), unit, "141_22 quadros 25-95 (retarget, só tronco no jogo)")
+
+    # Vira e volta depois do green (docs/17 §1.1, gesto #3): 69_39 ("walk backward, turn in place"). Últimos passos de
+    # costas, para e gira ~172° no lugar para a ESQUERDA (anti-horário visto de cima). O giro sai do clipe e o jogo gira
+    # o ATOR pela curva medida (HoopsDummyRig::TurnBackProgress); o 69_34 gira andando de costas em arco (pé desliza).
+    clip = load_other("69", "39")
+    seg = clip.copy(180, 420)
+    turn = unturn(seg, unit, unroll=False)
+    a, b = 238, 359
+    back = in_place(align_heading(seg.copy(a - 180, b - 180), unit, frames=(0, 12)))
+    offsets_to_body(back, turn[a - 180:b - 180])
+    emit("TurnBack", back, unit, "69_39 quadros {}-{} (ação; o jogo gira o ator)".format(a, b - 1))
+    key("TurnBack", a, inicio=242, giro_inicio=252, giro_fim=350, fim=356)
+    progress, total = turn_progress(turn, 252 - 180, 350 - 180)
+    print("TurnBack: giro de {:.0f}° (positivo = anti-horário visto de cima); progresso: {}".format(
+        total, ", ".join("{:.3f}f".format(p + 0.0) for p in progress)))
+
+
 def main():
     cmu, out = sys.argv[1], sys.argv[2]
     os.makedirs(out, exist_ok=True)
@@ -571,6 +773,8 @@ def main():
     hesitation = in_place(align_heading(clip.copy(26, 64), unit, frames=(26, 36)))
     emit("Hesitation_R", hesitation, unit, "102_18 quadros 26-63 (ação; início 31, empurrão 52, fim 60)")
     emit("Hesitation_L", mirror(hesitation), unit, "espelho")
+
+    segunda_leva(cmu, emit, bones06, unit)
 
     for name, count, note in results:
         print("{:16s} {:4d} quadros ({:.2f} s)  {}".format(name, count, count / FPS, note))

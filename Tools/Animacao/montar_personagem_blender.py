@@ -32,6 +32,12 @@ CLIPS = [
     "EscapeCross_R2L", "EscapeCross_L2R",
     "Spin_R2L", "Spin_L2R",
     "Hesitation_R", "Hesitation_L",
+    "Layup_R", "Layup_L", "Dunk",
+    "Dribble_Low_R", "Dribble_Low_L",
+    "BetweenLegs_R2L", "BetweenLegs_L2R",
+    "JumpShot2_R", "JumpShot2_L",
+    "Celebrate_Bow", "Celebrate_ArmsUp", "Celebrate_HighFive",
+    "TurnBack",
 ]
 
 RENAME = {
