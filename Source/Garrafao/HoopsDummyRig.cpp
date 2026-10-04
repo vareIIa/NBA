@@ -39,6 +39,13 @@ namespace
 		{TEXT("Cross_L2R"), FVector2D(0.0, 0.0), EHoopsClip::CrossL2R}, // sem substituto: o R2L iria para o lado errado
 		{TEXT("Celebrate_Flex"), FVector2D(0.0, 0.0), EHoopsClip::CelebrateFlex},
 		{TEXT("Celebrate_Shrug"), FVector2D(0.0, 0.0), EHoopsClip::CelebrateFlex},
+		// Sem substituto: os tempos são de cada clipe (sem eles, o jogo usa o Cross_* / o giro procedural / nada).
+		{TEXT("EscapeCross_R2L"), FVector2D(0.0, 0.0), EHoopsClip::EscapeCrossR2L},
+		{TEXT("EscapeCross_L2R"), FVector2D(0.0, 0.0), EHoopsClip::EscapeCrossL2R},
+		{TEXT("Spin_R2L"), FVector2D(0.0, 0.0), EHoopsClip::SpinR2L},
+		{TEXT("Spin_L2R"), FVector2D(0.0, 0.0), EHoopsClip::SpinL2R},
+		{TEXT("Hesitation_R"), FVector2D(0.0, 0.0), EHoopsClip::HesitationR},
+		{TEXT("Hesitation_L"), FVector2D(0.0, 0.0), EHoopsClip::HesitationL},
 	};
 	static_assert(UE_ARRAY_COUNT(Clips) == HoopsDummyRig::NumClips, "Tabela de clipes fora de sincronia com EHoopsClip");
 
@@ -98,6 +105,13 @@ namespace HoopsDummyRig
 	{
 		const int32 Index = static_cast<int32>(Clip);
 		return Index >= 0 && Index < NumClips ? Clips[Index].Fallback : EHoopsClip::HoldIdle;
+	}
+
+	float SpinTurnAlpha(float CoreAlpha)
+	{
+		const float Position = FMath::Clamp(CoreAlpha, 0.0f, 1.0f) * static_cast<float>(SpinTurnSamples - 1);
+		const int32 Index = FMath::Min(static_cast<int32>(Position), SpinTurnSamples - 2); // Position >= 0: corta = arredonda para baixo
+		return FMath::Lerp(SpinTurnProgress[Index], SpinTurnProgress[Index + 1], Position - static_cast<float>(Index));
 	}
 
 	bool FindAssets(const FString& Folder, USkeletalMesh*& OutMesh, TArray<UAnimSequence*>& OutClips)

@@ -29,6 +29,12 @@ enum class EHoopsClip : uint8
 	CrossL2R,
 	CelebrateFlex,
 	CelebrateShrug,
+	EscapeCrossR2L,
+	EscapeCrossL2R,
+	SpinR2L,
+	SpinL2R,
+	HesitationR,
+	HesitationL,
 	Count
 };
 
@@ -56,6 +62,33 @@ namespace HoopsDummyRig
 	constexpr float CrossStartSeconds = 7.0f / 60.0f;
 	constexpr float CrossCatchSeconds = 30.0f / 60.0f;
 	constexpr float CrossEndSeconds = 50.0f / 60.0f;
+
+	// Clipes do sujeito 102 da CMU (quadros do clipe a 60 fps; o _L / L2R é o espelho). Nos que trocam de mão, a bola
+	// sai no início da ação e a outra mão recebe no Catch, como no crossover.
+
+	// Escape/attacking crossover (EscapeCross_R2L, 102_14): crossover em corrida que planta baixo e sai acelerando para
+	// o outro lado. O corte foi tirado do clipe (quem vira é o capsule). Topo da mão 6, soltura ~16, recebe 30, fim 42.
+	constexpr float EscapeCrossStartSeconds = 6.0f / 60.0f;
+	constexpr float EscapeCrossCatchSeconds = 30.0f / 60.0f;
+	constexpr float EscapeCrossEndSeconds = 42.0f / 60.0f;
+
+	// Spin (Spin_R2L = bola na direita, giro horário visto de cima; 102_11). O giro foi tirado do clipe (o corpo fica
+	// de frente) e o jogo gira a malha pela curva medida, de SpinStart a SpinEnd. Topo da mão direita 6 (a bola sai),
+	// empurrão até ~16, a esquerda recebe 43 e empurra ~55, fim 68.
+	constexpr float SpinStartSeconds = 6.0f / 60.0f;
+	constexpr float SpinCatchSeconds = 43.0f / 60.0f;
+	constexpr float SpinEndSeconds = 68.0f / 60.0f;
+	constexpr float SpinMeasuredDegrees = 211.0f; // giro do mocap entre SpinStart e SpinEnd (o jogo gira 360 / 180)
+	// Progresso do giro (0..1) em 8 trechos iguais de SpinStart a SpinEnd: rápido no começo, assenta no fim.
+	constexpr int32 SpinTurnSamples = 9;
+	constexpr float SpinTurnProgress[SpinTurnSamples] = {0.0f, 0.230f, 0.431f, 0.578f, 0.682f, 0.779f, 0.873f, 0.956f, 1.0f};
+	float SpinTurnAlpha(float CoreAlpha); // CoreAlpha 0..1 do miolo -> progresso do giro (interpolado)
+
+	// Hesitação (Hesitation_R, 102_18): bola na cintura, finta baixa e arranque com o drible da mesma mão.
+	// Início 5, empurrão ~26, fim 34; o miolo é tocado na duração do movimento.
+	constexpr float HesitationStartSeconds = 5.0f / 60.0f;
+	constexpr float HesitationPushSeconds = 26.0f / 60.0f;
+	constexpr float HesitationEndSeconds = 34.0f / 60.0f;
 
 	// Procura a malha e os clipes em Folder (Asset Registry). OutClips tem NumClips entradas (nullptr = faltando).
 	// Retorna false se não houver malha ou se faltar o drible parado / segurar a bola.

@@ -389,6 +389,8 @@ private:
 	double SpinVisualStart = -100.0;
 	double SpinVisualDuration = 0.0;
 	float SpinVisualDegrees = 0.0f;
+	bool bSpinVisualCurve = false;   // boneco com o clipe do spin: gira pela curva do mocap (HoopsDummyRig::SpinTurnAlpha)
+	bool bSpinVisualReturns = false; // half-spin do boneco: vai até SpinVisualDegrees e volta
 
 	// Arremesso.
 	enum class EShotPhase : uint8 { None, Jumper, Finish };
