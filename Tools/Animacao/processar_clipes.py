@@ -154,6 +154,44 @@ def align_heading(clip, unit, target_yaw=0.0, frames=None):
     return clip
 
 
+def smooth(values, sigma):
+    """Média gaussiana (sigma em quadros); nas bordas repete o primeiro/último valor."""
+    radius = max(1, int(3 * sigma))
+    kernel = np.exp(-0.5 * (np.arange(-radius, radius + 1) / sigma) ** 2)
+    kernel /= kernel.sum()
+    padded = np.concatenate([np.full(radius, values[0]), values, np.full(radius, values[-1])])
+    return np.convolve(padded, kernel, mode="valid")
+
+
+def unturn(clip, unit, amount=1.0, sigma=4.0, unroll=True):
+    """Tira do clipe o giro do corpo (spin, corte em corrida): cada quadro gira em torno do eixo vertical para a frente
+    SUAVIZADA ficar igual à do quadro 0 (o balanço dos quadris de cada passada continua no clipe). Quem gira é o jogo
+    (malha no spin, capsule no corte), então o giro nunca soma duas vezes. amount < 1 deixa parte do giro no clipe.
+    unroll: o caminho da raiz gira junto (corte: o capsule vira para a nova direção); sem unroll fica o caminho do
+    mundo (spin: o capsule anda reto e só a malha gira em volta dele).
+    Aplicar no trial inteiro (antes de recortar), para a suavização não distorcer as bordas do trecho.
+    Retorna o giro tirado por quadro (graus, 0 no quadro 0; negativo = horário visto de cima)."""
+    turn = smooth(np.unwrap([facing_yaw(clip, unit, i) for i in range(clip.count)]), sigma)
+    turn = (turn - turn[0]) * amount
+    velocity = np.diff(clip.root_pos, axis=0)
+    path = clip.root_pos.copy()
+    for i in range(clip.count):
+        r = rot_y(-turn[i])
+        clip.root_rot[i] = r @ clip.root_rot[i]
+        if i > 0 and unroll:
+            path[i] = path[i - 1] + r @ velocity[i - 1]
+    clip.root_pos = path
+    return np.degrees(turn)
+
+
+def offsets_to_body(clip, turn_degrees):
+    """Depois do in_place de um clipe des-girado sem unroll (spin): a sobra do caminho da pelve está no referencial do
+    MUNDO; passa para o do corpo (que o jogo gira), para a pelve ficar no mesmo lugar em relação aos pés."""
+    for i, degrees in enumerate(turn_degrees):
+        clip.root_pos[i] = rot_y(-math.radians(degrees)) @ clip.root_pos[i]
+    return clip
+
+
 NATIVE = {}
 
 
@@ -494,6 +532,45 @@ def main():
     shot.root_pos[:, [0, 2]] -= shot.root_pos[80, [0, 2]]
     emit("JumpShot_R", shot, unit, "06_15 quadros 55-fim (one-shot; dip 80, soltura 117)")
     emit("JumpShot_L", mirror(shot), unit, "espelho")
+
+    # Movimentos do Pro Stick com o sujeito 102 (basquete atlético, baixo e explosivo), passados para o esqueleto do 06.
+    # Quadros-chave abaixo = quadros do trial a 60 fps (o jogo usa os do clipe: HoopsDummyRig.h).
+    def load102(trial):
+        src, src_unit = load_clip(os.path.join(cmu, "102.asf"), os.path.join(cmu, "102_{}.amc".format(trial)))
+        return retarget(src, src_unit, bones06, unit)
+
+    # Escape/attacking crossover: 102_14 ("GoLeft"). Corre driblando com a direita, planta baixo, cruza a bola na
+    # frente e sai acelerando (1,8 -> 3,9 m/s) num corte de ~40° para a esquerda. O corte sai do clipe (unturn): quem
+    # vira para a nova direção é o capsule. Topo da mão direita 26 (início), soltura ~36, a esquerda recebe ~50, fim 62.
+    clip = load102("14")
+    unturn(clip, unit)
+    escape = in_place(align_heading(clip.copy(20, 66), unit))
+    emit("EscapeCross_R2L", escape, unit, "102_14 quadros 20-65 (ação; início 26, recebe 50, fim 62)")
+    emit("EscapeCross_L2R", mirror(escape), unit, "espelho")
+
+    # Spin com a bola na direita: 102_11 ("OffensiveMoveSpinLeft"), giro horário visto de cima (~290° no trial). O giro
+    # sai do clipe (o corpo fica de frente) e o jogo gira a malha pela curva medida (HoopsDummyRig::SpinTurnProgress).
+    # Topo da mão direita 15 (início: a bola sai), empurrão até ~25, a esquerda recebe ~52 e empurra em 64, fim 77.
+    clip = load102("11")
+    turn = unturn(clip, unit, unroll=False)
+    spin = in_place(align_heading(clip.copy(9, 84), unit))
+    offsets_to_body(spin, turn[9:84])
+    emit("Spin_R2L", spin, unit, "102_11 quadros 9-83 (ação; início 15, recebe 52, fim 77)")
+    emit("Spin_L2R", mirror(spin), unit, "espelho")
+    start, end = 15, 77
+    samples = np.interp(np.linspace(start, end, 9), np.arange(len(turn)), turn)
+    progress = (samples - samples[0]) / (samples[-1] - samples[0])
+    print("Spin: giro de {:.0f}° entre os quadros {} e {}; progresso (HoopsDummyRig::SpinTurnProgress): {}".format(
+        samples[-1] - samples[0], start, end, ", ".join("{:.3f}f".format(p + 0.0) for p in progress)))
+
+    # Hesitação: 102_18 ("FeintLeftMoveRight"). Bola na cintura, finta para a esquerda, carrega baixo e arranca para a
+    # direita com o primeiro drible da direita. 40% do giro fica no clipe e a frente é medida no fim: começa ~22° virado
+    # para o lado da mão livre (a finta) e termina de frente, emendando no loop de base. Início 31, empurrão 52, fim 60.
+    clip = load102("18")
+    unturn(clip, unit, amount=0.6)
+    hesitation = in_place(align_heading(clip.copy(26, 64), unit, frames=(26, 36)))
+    emit("Hesitation_R", hesitation, unit, "102_18 quadros 26-63 (ação; início 31, empurrão 52, fim 60)")
+    emit("Hesitation_L", mirror(hesitation), unit, "espelho")
 
     for name, count, note in results:
         print("{:16s} {:4d} quadros ({:.2f} s)  {}".format(name, count, count / FPS, note))
