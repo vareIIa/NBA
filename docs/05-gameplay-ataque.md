@@ -40,6 +40,7 @@ Orientação **absoluta** por padrão (direções relativas ao corpo do jogador)
 - **Size-ups gastam pouca energia**: o jogador pode "sondar" o defensor, mas não infinitamente.
 - **Sair de qualquer drible para o arremesso**: todo drible tem janela de cancelamento para **pull-up**, **step-back jumper**, **spin jumper** e **hop jumper**. É o padrão "drible lateral → pull-up de 3" dos clipes do diretor (`referencias/2k23/README.md`, padrão 1).
 - **Spin → hesitação → pull-up** precisa fluir sem travar: é a sequência-assinatura do estilo do diretor.
+- **Cancelar antes do 1º quique** (misdirection), **arranque na saída** do movimento e **pull-up sem frear**: números em §2.7.
 - **Spam** sem ritmo: energia cai rápido e a bola fica mais exposta (roubo mais fácil).
 - Quantidade de movimentos encadeados por ciclo depende de Ball Handle (3 a 6).
 
@@ -69,6 +70,7 @@ O 2K23 introduziu os *Adrenaline Boosts* (3 arranques por posse). Para o diretor
 | Drible simples (crossover, entre as pernas) | −2,5% cada |
 | Dribles fortes (spin, step-back, escapes com RT) | −4% a −5% cada |
 | Combo no ritmo | 20% mais barato |
+| Arranque na saída do movimento (§2.7) | −1,2% por m/s de arranque (crossover −1,7%, escape −2,2%) |
 | Parado / sem driblar | +10%/s |
 | Andando/correndo sem sprint | +5%/s |
 
@@ -89,6 +91,45 @@ chance_desequilibrio = σ( (BallHandle − LateralQuickness_def)·0.04
 ```
 
 Resultados por intensidade: **tropeço leve** (perde 1 passo) → **desequilíbrio** (perde 2–3 passos) → **ankle-breaker** (queda; raro, exige ≥ 2 movimentos encadeados + compromisso alto). O ankle-breaker dispara replay automático opcional.
+
+### 2.7 Misdirection, arranque de saída e pull-up sem frear (números do protótipo)
+
+Itens **P0-8** e **P0-9** de `17-park-green-e-feel.md §6.1`, no núcleo (`HoopsDribbleMoves`, `ComputeGatherCarry` em `HoopsShotModel`) e ligados no `AHoopsPlayerCharacter`. Tudo tunável em `DribbleEnergyConfig` / `GatherCarryTuning`.
+
+**Misdirection: cancelar antes do 1º quique**
+- Janela = o **commit** do movimento, que acaba no 1º quique (`CommitSeconds × MisdirectionWindowScale`, padrão 1,0, dividido pelo playrate): de 0,08 s (hesitação) a 0,25 s (spin); crossover 0,12 s.
+- Na janela, o gesto é lido a partir da mão do **início** do movimento (a bola ainda não trocou de mão). Se o novo movimento leva a bola para o **lado oposto** (termina na outra mão: crossover → hesitação, escape, in-and-out, step-back...), ele **substitui** o atual na hora: a mão volta e o novo começa do zero, sem esperar o fim.
+- Combo do Pro Stick (double throw, switchback) na janela substitui o movimento que o toque acabou de começar: dois toques para cima = double cross, e não crossover + crossover.
+- Para o **mesmo lado**, nada muda: buffer de 150 ms e sai no fim do commit. **Uma** misdirection por movimento (a troca não pode ser trocada de novo).
+- A troca herda o **ritmo** do movimento trocado (combo no ritmo continua +15% e não conta duas vezes) e **paga a energia dos dois** (o fingido e o real).
+- RT não é obrigatório; `bMisdirectionNeedsSprint` liga a variante do 2K26 (só com RT).
+
+**Arranque de saída (speedboost / cross launch)**
+
+| Movimento | Arranque (m/s extras) |
+|---|---|
+| Crossover de ataque, escape de hesitação | 1,8 |
+| Hesi-cross | 1,7 |
+| Double cross | 1,5 |
+| Crossover, in-and-out | 1,4 |
+| Por trás, spin | 1,3 |
+| Hesitação | 1,2 |
+| Entre as pernas | 1,1 |
+| Half-spin | 1,0 |
+| Escape de step-back | 0,9 |
+| Step-back, retreat | 0,6 |
+
+- Dispara quando o movimento **termina sem encadear** e o LS aponta (≥ 50%) até **0,20 s** depois do fim; direção = LS, um por movimento. Encadear outro drible passa a saída para o último da sequência.
+- Perfil: velocidade extra **cheia por 0,15 s**, depois cai a zero em **0,30 s** (≈ 2 passos). Ganho ≈ 0,3 × arranque: 0,42 m no crossover, 0,54 m no escape de hesitação.
+- **Cross launch** (movimento com troca de mão, LS para o lado da nova mão ou em frente) e **speedboost** (sem troca, LS para o lado da bola ou em frente) valem 100% (`CrossLaunchScale`/`SpeedboostScale` = 1,0, ganchos para o pacote de estilo de drible, §2.3). **Contra o movimento** (LS para trás ou para o lado da mão livre): 50%.
+- Custo: **1,2% da barra por m/s**. Abaixo de **40%** de energia o arranque cai em linha reta até **40%** do valor com a barra vazia. **Sem contador** (D13): arranques seguidos só enfraquecem porque a energia cai; encher a barra devolve o arranque cheio.
+- Na Unreal: a velocidade vira para a direção do LS (mantém o que já ia nesse sentido + o arranque) e o `MaxWalkSpeed` sobe junto enquanto o arranque dura (também solta o limite do size-up).
+
+**Pull-up sem frear**
+- Antes: o gather cortava a velocidade para 35% (pull-up) e o atrito do chão parava o corpo em ~0,1 s.
+- Agora: o pull-up (saindo do drible ou em movimento) mantém **85%** da velocidade no gather e desacelera em linha reta no **plant** (até 0,30 s, nunca mais que **0,6 m**) até a **deriva do salto**: 12% da entrada, no máximo 0,75 m/s (pouso 10–30 cm à frente). Correndo com bola (4,4 m/s): 3,7 → 0,53 m/s em 0,28 s; em sprint (6,7 m/s) o plant encurta para 0,19 s.
+- Step-back mantém 85% (o embalo para trás do próprio movimento) e fadeaway 35%; nenhum dos dois deriva para frente, e a deriva para trás depois do commit (1,6 m/s) continua. Spot-up: 10%.
+- O último quique vira o gather: gather → soltura ideal 0,56 s (velocidade normal), o ≈ 0,6 s do clipe do diretor. A janela continua travada no gather.
 
 ## 3. Drive e finalização
 
