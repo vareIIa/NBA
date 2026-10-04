@@ -9,13 +9,13 @@
 #include "HoopsSimCore/HoopsProStick.h"
 #include "HoopsSimCore/HoopsRandom.h"
 #include "HoopsSimCore/HoopsShotModel.h"
+#include "HoopsAudio.h"
 #include "HoopsDummyRig.h"
 
 #include "HoopsPlayerCharacter.generated.h"
 
 class AHoopsBall;
 class UAnimSequence;
-class USoundWaveProcedural;
 class UHoopsAnimInstance;
 class USkeletalMesh;
 class AHoopsDummyDefender;
@@ -140,6 +140,11 @@ public:
 	// Som do green (sintetizado, sem asset).
 	UPROPERTY(EditAnywhere, Category = "Hoops|Green", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float GreenSoundVolume = 0.8f;
+
+	// --- Som da quadra (sintetizado em código: HoopsAudio) ---
+	// Volume geral, mudo e volume por categoria (quique, rede, aro/tabela, tênis). Dá para mexer durante o Play.
+	UPROPERTY(EditAnywhere, Category = "Hoops|Audio")
+	FHoopsAudioMix AudioMix;
 
 	// Multiplicador da janela green (1 = padrão do jogo). Dá para mexer durante o Play no painel Details do jogador.
 	UPROPERTY(EditAnywhere, Category = "Hoops|Configuracoes", meta = (ClampMin = "0.5", ClampMax = "3.0"))
@@ -435,7 +440,4 @@ private:
 	double LastBPressTime = -10.0;
 
 	FHoopsHudData Hud;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USoundWaveProcedural> GreenChime; // mantém o som vivo enquanto toca
 };

@@ -64,6 +64,8 @@ Ajustes no painel Details do jogador durante o Play (categoria *Hoops*): `BodyHe
 
 Dribles com mocap próprio (CMU 102, atlético e baixo): **crossover de ataque/escape** (RT + cima, ou qualquer troca de mão já correndo: planta, cruza e sai acelerando), **spin/half-spin** (o corpo gira pela curva medida no mocap) e **hesitação / in-and-out** (finta baixa e arranque); crossover parado, entre as pernas e por trás usam o crossover do 06_14; step-back, retreat e double cross ainda sem clipe (`Art/Characters/HoopsDummy/preview_moves.png`).
 
+**Som da quadra** (tudo sintetizado em código, sem arquivos de áudio): **quique** da bola no taco em cada toque no chão (drible e bola solta, mais forte quanto mais rápido o impacto), **rede** na cesta (abafada se a bola tocou o aro antes), **aro**, **tabela**, **chiado do tênis** no gather, nos cortes do drible e na aterrissagem, e o "ding" do green. Cada som tem 2–4 variações sorteadas, com um pouco de variação de pitch e volume. Ajustes no jogador durante o Play em *Hoops|Audio → AudioMix*: `bMute`, `MasterVolume`, volume por categoria (`BallVolume`, `NetVolume`, `RimVolume`, `ShoesVolume`) e `DistanceFalloff`. Para ouvir sem a Unreal (Linux/Mac/WSL): `g++ -O2 -std=c++17 -I Source/Garrafao Tools/Audio/ouvir_sons.cpp Source/Garrafao/HoopsAudioSynth.cpp -o ouvir_sons && ./ouvir_sons` gera os WAVs em `/tmp/garrafao-sons`, incluindo `sequencia_park.wav` (uma posse inteira: drible, gather, ding, rede, aro).
+
 ### Manequim da Epic (alternativa)
 
 Se o boneco não estiver importado, o jogo usa o **Manny** do pacote Third Person, se existir:

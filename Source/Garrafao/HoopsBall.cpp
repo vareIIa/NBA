@@ -3,6 +3,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "HoopsAudio.h"
 #include "HoopsMeshUtil.h"
 #include "HoopsUnits.h"
 #include "UObject/ConstructorHelpers.h"
@@ -87,11 +88,13 @@ void AHoopsBall::Tick(float DeltaSeconds)
 	SecondsSinceLaunch += DeltaSeconds;
 	Accumulator += DeltaSeconds;
 	const double TickSeconds = Sim->TickSeconds();
+	FHoopsBallContactAudio ContactAudio; // batidas deste frame (o som sai no fim do frame)
 	int32 Guard = 0;
 	while (Accumulator >= TickSeconds && Guard < 32)
 	{
 		Previous = Current;
 		const Hoops::BallTickEvents Events = Sim->Tick(Current);
+		ContactAudio.Add(Events, Previous, Current, TickSeconds, Sim->GetConfig().Gravity);
 		if (Events.Scored)
 		{
 			bScoredSinceLaunch = true;
@@ -109,6 +112,7 @@ void AHoopsBall::Tick(float DeltaSeconds)
 	const double Alpha = FMath::Clamp(Accumulator / TickSeconds, 0.0, 1.0);
 	const Hoops::Vec3 Pos = Hoops::LerpVec(Previous.Position, Current.Position, Alpha);
 	SetActorLocation(HoopsUnits::ToUnreal(Pos));
+	ContactAudio.Play(this, GetActorLocation()); // chão, aro, tabela e rede
 
 	// Giro visual da bola.
 	const FVector Omega = HoopsUnits::DirToUnreal(Current.AngularVelocity);
