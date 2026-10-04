@@ -15,7 +15,6 @@ import unreal
 
 DEST = "/Game/Hoops/Characters/Dummy"
 FBX_RELATIVE = os.path.join("Art", "Characters", "HoopsDummy", "SK_HoopsDummy.fbx")
-MESH_NAME = "SK_HoopsDummy"
 
 CLIPS = [
     "Hold_Idle", "Walk", "Run",
@@ -40,8 +39,13 @@ def warn(msg):
     unreal.log_warning("[Garrafao] " + msg)
 
 
+def project_dir():
+    """Pasta do projeto como caminho absoluto (project_dir() pode vir relativo à pasta dos binários)."""
+    return unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir())
+
+
 def fbx_path():
-    path = os.path.abspath(os.path.join(unreal.Paths.project_dir(), FBX_RELATIVE))
+    path = os.path.abspath(os.path.join(project_dir(), FBX_RELATIVE))
     if not os.path.isfile(path):
         raise RuntimeError("FBX nao encontrado: {} (rode 'git lfs pull' na pasta do projeto)".format(path))
     if os.path.getsize(path) < 10000:
@@ -70,7 +74,6 @@ def import_fbx(path, with_options):
     task = unreal.AssetImportTask()
     task.set_editor_property("filename", path)
     task.set_editor_property("destination_path", DEST)
-    task.set_editor_property("destination_name", MESH_NAME)
     task.set_editor_property("automated", True)
     task.set_editor_property("replace_existing", True)
     task.set_editor_property("save", True)
@@ -126,7 +129,7 @@ MARKER = os.path.join("Saved", "Garrafao", "boneco_importado.txt")
 
 
 def marker_path():
-    return os.path.abspath(os.path.join(unreal.Paths.project_dir(), MARKER))
+    return os.path.abspath(os.path.join(project_dir(), MARKER))
 
 
 def file_hash(path):
@@ -142,6 +145,20 @@ def imported_state():
     by_class = assets_by_class()
     clips = [name for name, _ in by_class.get("AnimSequence", []) if name.startswith("A_Hoops_")]
     return bool(by_class.get("SkeletalMesh")), len(clips)
+
+
+def mark_solid_material_for_skeletal_mesh():
+    """O jogo pinta o boneco com M_HoopsSolid (Tools/Editor/setup_quadra_realista.py). Material usado em malha com
+    esqueleto precisa da flag, senão o jogo empacotado cai no material padrão."""
+    path = "/Game/Hoops/Materials/M_HoopsSolid"
+    if not EAL.does_asset_exist(path):
+        return
+    material = EAL.load_asset(path)
+    if material and not material.get_editor_property("used_with_skeletal_mesh"):
+        material.set_editor_property("used_with_skeletal_mesh", True)
+        unreal.MaterialEditingLibrary.recompile_material(material)
+        EAL.save_loaded_asset(material)
+        log("M_HoopsSolid marcado para malha com esqueleto.")
 
 
 def precisa_importar():
@@ -171,7 +188,8 @@ def importar(forcar=False):
         imported = import_fbx(path, with_options=True)
     except Exception as error:  # noqa: BLE001 (mostra o erro e tenta sem as opções clássicas)
         warn("Importacao com opcoes classicas falhou ({}); tentando com o padrao da engine.".format(error))
-    if not assets_by_class().get("SkeletalMesh"):
+    by_class = assets_by_class()
+    if not by_class.get("SkeletalMesh") or not by_class.get("AnimSequence"):
         imported = import_fbx(path, with_options=False)
     log("Importados: {}".format(len(imported)))
 
@@ -180,6 +198,7 @@ def importar(forcar=False):
         raise RuntimeError("Nenhuma SkeletalMesh em {}: veja o Output Log.".format(DEST))
 
     renamed = rename_clips()
+    mark_solid_material_for_skeletal_mesh()
     missing = [clip for clip in CLIPS if clip not in renamed]
     EAL.save_directory(DEST, only_if_is_dirty=True, recursive=True)
 

@@ -224,6 +224,8 @@ def build_solid_material():
     metallic.set_editor_property("default_value", 0.0)
     MEL.connect_material_property(metallic, "", unreal.MaterialProperty.MP_METALLIC)
 
+    # Também pinta o jogador animado (malha com esqueleto): sem a flag, o jogo empacotado usa o material padrão.
+    material.set_editor_property("used_with_skeletal_mesh", True)
     MEL.recompile_material(material)
     EAL.save_loaded_asset(material)
     log("Criado " + MATERIAL_DIR + "/M_HoopsSolid")

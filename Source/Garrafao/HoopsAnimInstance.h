@@ -62,6 +62,10 @@ public:
 	void PlayAction(UAnimSequence* Sequence, float StartTime, float PlayRate, float BlendIn, float EndTime = -1.0f);
 	void StopAction(float BlendOut);
 
+	// Segura a ação num quadro (ex.: mão no topo do arremesso) até ReleaseActionHold (soltura de verdade).
+	void HoldActionAt(float ClipSeconds) { ActionHoldTime = ClipSeconds; }
+	void ReleaseActionHold() { ActionHoldTime = -1.0f; }
+
 	// Camada só do tronco/braços (follow-through segurado, celebração) por HoldSeconds; as pernas seguem a base/ação.
 	// PlayRate 0 = congela a pose em StartTime.
 	void PlayUpperBody(UAnimSequence* Sequence, float StartTime, float PlayRate, float BlendIn, float HoldSeconds, float BlendOut);
@@ -90,7 +94,13 @@ private:
 	UPROPERTY(Transient)
 	FHoopsAnimLayer Upper;
 
+	// Ação anterior saindo por crossfade quando outra começa por cima (ex.: crossover -> arremesso).
+	UPROPERTY(Transient)
+	FHoopsAnimLayer FadingAction;
+
 	bool bActionActive = false;
+	bool bFadingActive = false;
+	float ActionHoldTime = -1.0f;
 	bool bUpperActive = false;
 	float UpperElapsed = 0.0f;
 	float UpperHoldSeconds = 0.0f;

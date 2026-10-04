@@ -350,6 +350,8 @@ private:
 	double SwitchFlightSeconds = 0.3;
 	// Green: último arremesso foi green (celebra se cair) e qual celebração vem a seguir.
 	bool bLastShotGreen = false;
+	FVector ShotDrift = FVector::ZeroVector; // embalo horizontal do arremesso com o boneco (fadeaway, step-back)
+	float CurrentBaseRateAbs = 1.0f;         // playrate do loop de base (ajusta o detector do empurrão)
 	int32 CelebrationIndex = 0;
 
 	// Transição suave da bola (recepção, gather, pump fake).

@@ -36,7 +36,7 @@ namespace
 		{TEXT("JumpShot_R"), FVector2D(0.0, 0.0), EHoopsClip::JumpShotR},
 		{TEXT("JumpShot_L"), FVector2D(0.0, 0.0), EHoopsClip::JumpShotR},
 		{TEXT("Cross_R2L"), FVector2D(0.0, 0.0), EHoopsClip::CrossR2L},
-		{TEXT("Cross_L2R"), FVector2D(0.0, 0.0), EHoopsClip::CrossR2L},
+		{TEXT("Cross_L2R"), FVector2D(0.0, 0.0), EHoopsClip::CrossL2R}, // sem substituto: o R2L iria para o lado errado
 		{TEXT("Celebrate_Flex"), FVector2D(0.0, 0.0), EHoopsClip::CelebrateFlex},
 		{TEXT("Celebrate_Shrug"), FVector2D(0.0, 0.0), EHoopsClip::CelebrateFlex},
 	};
@@ -170,10 +170,13 @@ namespace HoopsDummyRig
 			return false;
 		}
 		const FReferenceSkeleton& Ref = Mesh->GetRefSkeleton();
-		FVector FootL, BallL, FootR, BallR, HandL, HandR;
+		FVector FootL, BallL, FootR, BallR, HandL, HandR, PalmL, PalmR, FingersL, FingersR;
 		if (!RefComponentSpace(Ref, TEXT("foot_l"), FootL) || !RefComponentSpace(Ref, TEXT("ball_l"), BallL) ||
 			!RefComponentSpace(Ref, TEXT("foot_r"), FootR) || !RefComponentSpace(Ref, TEXT("ball_r"), BallR) ||
-			!RefComponentSpace(Ref, TEXT("hand_l"), HandL) || !RefComponentSpace(Ref, TEXT("hand_r"), HandR))
+			!RefComponentSpace(Ref, TEXT("hand_l"), HandL) || !RefComponentSpace(Ref, TEXT("hand_r"), HandR) ||
+			// A bola é posicionada pela palma e pelos dedos: sem eles, ela iria para a origem do mundo.
+			!RefComponentSpace(Ref, TEXT("palm_l"), PalmL) || !RefComponentSpace(Ref, TEXT("palm_r"), PalmR) ||
+			!RefComponentSpace(Ref, TEXT("fingers_l"), FingersL) || !RefComponentSpace(Ref, TEXT("fingers_r"), FingersR))
 		{
 			return false;
 		}

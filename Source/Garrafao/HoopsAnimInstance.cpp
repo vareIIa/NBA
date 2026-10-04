@@ -71,6 +71,16 @@ void UHoopsAnimInstance::PlayAction(UAnimSequence* Sequence, float StartTime, fl
 	{
 		return;
 	}
+	// A ação que estava tocando sai por crossfade em vez de ser trocada de uma vez.
+	if (bActionActive && Action.Weight > 0.01f)
+	{
+		FadingAction = Action;
+		FadingAction.TargetWeight = 0.0f;
+		FadingAction.BlendTime = FMath::Max(0.05f, BlendIn);
+		bFadingActive = true;
+		Action.Weight = 0.0f;
+	}
+	ActionHoldTime = -1.0f;
 	Action.Sequence = Sequence;
 	Action.Time = FMath::Clamp(StartTime, 0.0f, SequenceLength(Sequence));
 	Action.PlayRate = PlayRate;
@@ -149,7 +159,12 @@ void UHoopsAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	{
 		const float Length = SequenceLength(Action.Sequence);
 		const float End = Action.EndTime > 0.0f ? FMath::Min(Action.EndTime, Length) : Length;
-		Action.Time = FMath::Min(Action.Time + DeltaSeconds * Action.PlayRate, Length);
+		float NextTime = Action.Time + DeltaSeconds * Action.PlayRate;
+		if (ActionHoldTime >= 0.0f)
+		{
+			NextTime = FMath::Min(NextTime, ActionHoldTime); // segurando (ex.: mão no topo até soltar o X)
+		}
+		Action.Time = FMath::Min(NextTime, Length);
 		if (Action.Time >= End - Action.BlendTime * Action.PlayRate && Action.TargetWeight > 0.0f)
 		{
 			Action.TargetWeight = 0.0f; // sai sozinho no fim
@@ -159,6 +174,13 @@ void UHoopsAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		{
 			bActionActive = false;
 		}
+	}
+
+	if (bFadingActive)
+	{
+		FadingAction.Time = FMath::Min(FadingAction.Time + DeltaSeconds * FadingAction.PlayRate, SequenceLength(FadingAction.Sequence));
+		FadingAction.Weight = StepWeight(FadingAction.Weight, 0.0f, FadingAction.BlendTime, DeltaSeconds);
+		bFadingActive = FadingAction.Weight > 0.001f;
 	}
 
 	if (bUpperActive)
@@ -187,7 +209,9 @@ void UHoopsAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 void UHoopsAnimInstance::GetEvaluationLayers(TArray<FHoopsAnimLayer>& OutLayers) const
 {
 	OutLayers.Reset();
-	const float ActionWeight = bActionActive ? Action.Weight : 0.0f;
+	const float CurrentWeight = bActionActive ? Action.Weight : 0.0f;
+	const float FadingWeight = bFadingActive ? FadingAction.Weight : 0.0f;
+	const float ActionWeight = FMath::Min(1.0f, CurrentWeight + FadingWeight);
 
 	float BaseSum = 0.0f;
 	for (const FHoopsAnimLayer& Layer : Bases)
@@ -203,10 +227,13 @@ void UHoopsAnimInstance::GetEvaluationLayers(TArray<FHoopsAnimLayer>& OutLayers)
 		FHoopsAnimLayer& Copy = OutLayers.Add_GetRef(Layer);
 		Copy.Weight = (Layer.Weight / BaseSum) * (1.0f - ActionWeight);
 	}
-	if (ActionWeight > 0.001f)
+	if (FadingWeight > 0.001f)
 	{
-		FHoopsAnimLayer& Copy = OutLayers.Add_GetRef(Action);
-		Copy.Weight = ActionWeight;
+		OutLayers.Add(FadingAction);
+	}
+	if (CurrentWeight > 0.001f)
+	{
+		OutLayers.Add(Action);
 	}
 	if (bUpperActive && Upper.Weight > 0.001f)
 	{

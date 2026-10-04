@@ -760,7 +760,7 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move)
 		// Com o boneco, a troca acontece no Tick da bola (LateUpdateHeldBall), a partir da mão animada.
 		bSwitchRequested = Spec.HandSwitches > 0;
 		bDoubleCrossPending = bDoubleSwitch;
-		SwitchFlightSeconds = Duration * (bDoubleSwitch ? 0.4 : 0.6);
+		SwitchFlightSeconds = FMath::Clamp(Duration * (bDoubleSwitch ? 0.4 : 0.6), 0.18, 0.6);
 
 		// Troca de mão simples (crossover, entre as pernas, por trás): toca o crossover do mocap, com a mão que
 		// recebe chegando junto com a bola. (Spin/half-spin giram o corpo; double cross ainda sem clipe.)
@@ -941,12 +941,18 @@ void AHoopsPlayerCharacter::BeginShot(bool bFromProStick)
 	}
 	GatherTime = Now();
 	bJumpCommitted = false;
+	ShotDrift = FVector::ZeroVector;
 	bShotFromProStick = bFromProStick;
 	ShotPhase = EShotPhase::Jumper;
 	if (bRigActive)
 	{
 		// A mão chega ao topo (soltura do clipe) exatamente no tempo ideal = centro da janela green.
 		PlayShotAction(HoopsDummyRig::JumpShotDipSeconds, static_cast<float>(ShotWindows.IdealReleaseMs / 1000.0));
+		if (UHoopsAnimInstance* Anim = GetHoopsAnim())
+		{
+			// Soltura atrasada: a mão espera no topo até o X ser solto (não sai do follow-through/aterrissagem).
+			Anim->HoldActionAt(HoopsDummyRig::JumpShotReleaseSeconds);
+		}
 	}
 
 	// Momentum: pull-up mantém um pouco do deslocamento; spot-up para.
@@ -967,6 +973,7 @@ void AHoopsPlayerCharacter::CancelShotAsPumpFake()
 	{
 		if (UHoopsAnimInstance* Anim = GetHoopsAnim())
 		{
+			Anim->ReleaseActionHold();
 			Anim->StopAction(0.15f);
 		}
 		ResetBallCarry(Dribble.GetHand(), 0.18);
@@ -1002,14 +1009,20 @@ void AHoopsPlayerCharacter::UpdateShot(float DeltaSeconds)
 		}
 		if (bRigActive)
 		{
-			// O pulo está na animação; o capsule só leva o embalo horizontal.
-			UCharacterMovementComponent* Movement = GetCharacterMovement();
-			Movement->Velocity = FVector(Horizontal.X, Horizontal.Y, Movement->Velocity.Z);
+			// O pulo está na animação; o capsule só leva o embalo horizontal (aplicado como input a cada frame,
+			// senão o atrito do chão mata o drift do fadeaway/step-back na hora).
+			ShotDrift = FVector(Horizontal.X, Horizontal.Y, 0.0);
 		}
 		else
 		{
 			LaunchCharacter(FVector(Horizontal.X, Horizontal.Y, JumpZ), true, true);
 		}
+	}
+
+	if (bRigActive && bJumpCommitted && !ShotDrift.IsNearlyZero())
+	{
+		const float MaxSpeed = FMath::Max(1.0f, GetCharacterMovement()->MaxWalkSpeed);
+		AddMovementInput(ShotDrift.GetSafeNormal2D(), FMath::Min(1.0f, static_cast<float>(ShotDrift.Size2D()) / MaxSpeed));
 	}
 
 	// Segurou demais: soltura automática (muito tarde).
@@ -1049,6 +1062,10 @@ void AHoopsPlayerCharacter::ReleaseShot()
 		++Hud.Greens;
 	}
 	ShowFeedback(Eval, ShotContext);
+	if (UHoopsAnimInstance* Anim = bRigActive ? GetHoopsAnim() : nullptr)
+	{
+		Anim->ReleaseActionHold();
+	}
 	OnShotReleased(Eval, HoldMs);
 
 	Hud.LabLines.Reset();
@@ -1332,8 +1349,8 @@ namespace
 bool AHoopsPlayerCharacter::TryLoadDummyRig()
 {
 	USkeletalMesh* MeshAsset = nullptr;
-	TArray<UAnimSequence*> Clips;
-	if (!HoopsDummyRig::FindAssets(DummyAssetFolder, MeshAsset, Clips))
+	TArray<UAnimSequence*> FoundClips;
+	if (!HoopsDummyRig::FindAssets(DummyAssetFolder, MeshAsset, FoundClips))
 	{
 		Hud.BodyStatus = MeshAsset
 			? TEXT("Boneco animado: faltam animacoes (feche e abra o editor ou rode Tools/Editor/importar_personagem.py)")
@@ -1355,7 +1372,7 @@ bool AHoopsPlayerCharacter::TryLoadDummyRig()
 
 	DummyMesh = MeshAsset;
 	DummyClips.Reset();
-	for (UAnimSequence* Clip : Clips)
+	for (UAnimSequence* Clip : FoundClips)
 	{
 		DummyClips.Add(Clip);
 	}
@@ -1374,8 +1391,9 @@ bool AHoopsPlayerCharacter::TryLoadDummyRig()
 	Body->SetAnimInstanceClass(UHoopsAnimInstance::StaticClass());
 	Body->SetVisibility(true);
 
-	// Cores por slot de material (Pele / Uniforme / Tenis, nomes do FBX).
-	const TArray<FName> Slots = Body->GetMaterialSlotNames();
+	// Cores por slot de material (Pele / Uniforme / Tenis, nomes do FBX). Só com o M_HoopsSolid do projeto (marcado
+	// para malha com esqueleto); sem ele, ficam os materiais importados do FBX, que já têm essas cores.
+	const TArray<FName> Slots = HoopsMeshUtil::GetProjectMaterial(TEXT("M_HoopsSolid")) ? Body->GetMaterialSlotNames() : TArray<FName>();
 	for (int32 Index = 0; Index < Slots.Num(); ++Index)
 	{
 		const FString Slot = Slots[Index].ToString();
@@ -1453,9 +1471,16 @@ void AHoopsPlayerCharacter::UpdateBodyAnimation(float DeltaSeconds)
 	// Histerese: não fica piscando entre parado/andar/correr perto dos limites.
 	const float IdleThreshold = IsIdleClip(BaseClip) ? 45.0f : 30.0f;
 	const float RunThreshold = IsRunClip(BaseClip) ? 190.0f : 230.0f;
-	const auto RateFor = [Speed](EHoopsClip Clip, float MaxRate)
+	// Faixas de direção com histerese (diagonal não fica trocando de clipe a cada frame).
+	const bool bWasForward = BaseClip == EHoopsClip::DribbleWalkR || BaseClip == EHoopsClip::DribbleWalkL ||
+		BaseClip == EHoopsClip::DribbleRunR || BaseClip == EHoopsClip::DribbleRunL;
+	const bool bWasBack = BaseClip == EHoopsClip::DribbleBackR || BaseClip == EHoopsClip::DribbleBackL;
+	const float ForwardLimit = bWasForward ? 65.0f : 45.0f;
+	const float BackLimit = bWasBack ? 115.0f : 135.0f;
+	// A passada do boneco cresce com a escala: a velocidade nativa também.
+	const auto RateFor = [Speed, Scale = MeshScale](EHoopsClip Clip, float MaxRate)
 	{
-		const float Native = static_cast<float>(HoopsDummyRig::NativeVelocity(Clip).Size());
+		const float Native = static_cast<float>(HoopsDummyRig::NativeVelocity(Clip).Size()) * Scale;
 		return Native > 1.0f ? FMath::Clamp(Speed / Native, 0.6f, MaxRate) : 1.0f;
 	};
 
@@ -1476,12 +1501,12 @@ void AHoopsPlayerCharacter::UpdateBodyAnimation(float DeltaSeconds)
 			Clip = bRun ? EHoopsClip::Run : EHoopsClip::Walk;
 			Rate = RateFor(Clip, 1.8f);
 		}
-		else if (AbsAngle <= 55.0f)
+		else if (AbsAngle <= ForwardLimit)
 		{
 			Clip = bRun ? (bRight ? EHoopsClip::DribbleRunR : EHoopsClip::DribbleRunL) : (bRight ? EHoopsClip::DribbleWalkR : EHoopsClip::DribbleWalkL);
 			Rate = RateFor(Clip, 1.8f);
 		}
-		else if (AbsAngle >= 125.0f)
+		else if (AbsAngle >= BackLimit)
 		{
 			Clip = bRight ? EHoopsClip::DribbleBackR : EHoopsClip::DribbleBackL;
 			Rate = RateFor(Clip, 2.0f);
@@ -1499,6 +1524,7 @@ void AHoopsPlayerCharacter::UpdateBodyAnimation(float DeltaSeconds)
 		Rate *= static_cast<float>(Dribble.MovePlayRateScale()); // cansado: drible mais lento (docs/05 §2.5)
 	}
 
+	CurrentBaseRateAbs = FMath::Abs(Rate);
 	const bool bKeepPhase = IsHandPair(Clip, BaseClip);
 	Anim->SetBase(GetClip(Clip), Rate, bKeepPhase ? 0.15f : 0.22f, bKeepPhase);
 	BaseClip = Clip;
@@ -1513,6 +1539,7 @@ void AHoopsPlayerCharacter::PlayShotAction(float StartSeconds, float SecondsToRe
 	{
 		return;
 	}
+	Anim->StopUpperBody(0.12f); // sai do follow-through/celebração anterior
 	// A mão chega ao topo (quadro de soltura do clipe) em SecondsToRelease.
 	const float Rate = (HoopsDummyRig::JumpShotReleaseSeconds - StartSeconds) / FMath::Max(0.15f, SecondsToRelease);
 	Anim->PlayAction(Shot, StartSeconds, Rate, 0.12f, HoopsDummyRig::JumpShotEndSeconds);
@@ -1552,6 +1579,10 @@ FVector AHoopsPlayerCharacter::ShotBallPoint() const
 
 void AHoopsPlayerCharacter::ResetBallCarry(Hoops::BallHand Hand, double BlendSeconds)
 {
+	if (UHoopsAnimInstance* Anim = GetHoopsAnim())
+	{
+		Anim->StopUpperBody(FMath::Max(0.1f, static_cast<float>(BlendSeconds))); // mãos de volta para a bola
+	}
 	Carry = EBallCarry::Hand;
 	CarryHand = Hand;
 	FlightHand = Hand;
@@ -1572,6 +1603,7 @@ void AHoopsPlayerCharacter::TrackHandStroke(Hoops::BallHand Hand, const FVector&
 	if (!bHandTrackValid || Hand != TrackedHand)
 	{
 		bHandTrackValid = true;
+		bHasTopRelative = Hand == TrackedHand && bHasTopRelative; // o topo guardado era da outra mão
 		TrackedHand = Hand;
 		HandPrevZ = RelZ;
 		HandVz = 0.0f;
@@ -1697,7 +1729,9 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 			Target = HandBallPoint(CarryHand);
 			TrackHandStroke(CarryHand, Target, DeltaSeconds);
 			const float Drop = StrokeTopZ - HandPrevZ;
-			const bool bPush = Drop > 7.0f * MeshScale && StrokePeakVz < -70.0f && HandVz > StrokePeakVz * 0.55f && T - CarryStart > 0.1;
+			// Limiar de velocidade acompanha o playrate (clipe lento ou de lado ao contrário desce devagar).
+			const float PushSpeed = -70.0f * FMath::Clamp(CurrentBaseRateAbs, 0.4f, 1.0f);
+			const bool bPush = Drop > 7.0f * MeshScale && StrokePeakVz < PushSpeed && HandVz > StrokePeakVz * 0.55f && T - CarryStart > 0.1;
 			const bool bStuck = T - CarryStart > FMath::Max(1.2, PushPeriod * 2.0); // segurança: nunca fica presa na mão
 			if (bPush || bStuck)
 			{
