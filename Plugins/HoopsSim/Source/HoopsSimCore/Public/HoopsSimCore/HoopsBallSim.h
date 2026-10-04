@@ -23,6 +23,7 @@ namespace Hoops
 		SurfaceSpec Board = Surfaces::Backboard;
 		double FloorZ = 0.0;
 		double RestSpeed = 0.15; // abaixo disso, quiques no chão param (evita "tremer")
+		double RollingDamping = 0.9; // 1/s: bola rolando no chão perde velocidade
 	};
 
 	// O que aconteceu durante um tick.

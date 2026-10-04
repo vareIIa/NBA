@@ -1,0 +1,124 @@
+#include "HoopsHUD.h"
+
+#include "Engine/Canvas.h"
+#include "Engine/Engine.h"
+#include "Engine/Font.h"
+#include "HoopsPlayerCharacter.h"
+
+namespace
+{
+	const FLinearColor PanelColor(0.0f, 0.0f, 0.0f, 0.55f);
+	const FLinearColor GreenColor(0.20f, 1.0f, 0.35f, 1.0f);
+	const FLinearColor GoodColor(1.0f, 0.85f, 0.2f, 0.85f);
+	const FLinearColor DimText(0.8f, 0.8f, 0.8f, 1.0f);
+
+	// Escala do medidor: a barra cheia vale 1,3 (o ponto ideal fica em 1/1,3 da altura).
+	constexpr float MeterScale = 1.3f;
+}
+
+void AHoopsHUD::DrawHUD()
+{
+	Super::DrawHUD();
+
+	const AHoopsPlayerCharacter* HoopsPlayer = Cast<AHoopsPlayerCharacter>(GetOwningPawn());
+	if (!HoopsPlayer || !Canvas)
+	{
+		return;
+	}
+	const FHoopsHudData& Data = HoopsPlayer->GetHudData();
+
+	UFont* Small = GEngine->GetSmallFont();
+	UFont* Medium = GEngine->GetMediumFont();
+	UFont* Large = GEngine->GetLargeFont();
+	const float W = static_cast<float>(Canvas->SizeX);
+	const float H = static_cast<float>(Canvas->SizeY);
+
+	// ---------------- Medidor de arremesso (ao lado do jogador)
+	if (Data.bShowMeter)
+	{
+		const FVector Screen = Project(Data.MeterWorldAnchor);
+		const float BarW = 12.0f;
+		const float BarH = 150.0f;
+		const float X = static_cast<float>(Screen.X);
+		const float Bottom = static_cast<float>(Screen.Y) + BarH * 0.5f;
+
+		auto YFor = [Bottom, BarH](float Fill) { return Bottom - FMath::Clamp(Fill / MeterScale, 0.0f, 1.0f) * BarH; };
+
+		DrawRect(PanelColor, X - 3.0f, Bottom - BarH - 3.0f, BarW + 6.0f, BarH + 6.0f);
+		// Faixa "boa" e faixa green.
+		DrawRect(GoodColor, X, YFor(Data.GoodEnd), BarW, YFor(Data.GoodStart) - YFor(Data.GoodEnd));
+		DrawRect(GreenColor, X, YFor(Data.GreenEnd), BarW, FMath::Max(2.0f, YFor(Data.GreenStart) - YFor(Data.GreenEnd)));
+		// Preenchimento (sobe até o ponto ideal, como no 2K23).
+		const float FillTop = YFor(Data.MeterFill);
+		DrawRect(FLinearColor(1.0f, 1.0f, 1.0f, 0.9f), X + 3.0f, FillTop, BarW - 6.0f, Bottom - FillTop);
+		// Marca do ponto ideal.
+		DrawRect(FLinearColor::White, X - 6.0f, YFor(1.0f) - 1.0f, BarW + 12.0f, 2.0f);
+	}
+
+	// ---------------- Feedback do arremesso (canto superior direito, como no 2K23)
+	if (Data.bShowFeedback)
+	{
+		const float PanelW = 430.0f;
+		const float X = W - PanelW - 30.0f;
+		const float Y = 30.0f;
+		DrawRect(PanelColor, X, Y, PanelW, 92.0f);
+		DrawText(Data.FeedbackTiming, Data.FeedbackColor, X + 14.0f, Y + 8.0f, Large, 1.0f);
+		DrawText(Data.FeedbackCoverage, FLinearColor::White, X + 14.0f, Y + 44.0f, Medium, 1.0f);
+		DrawText(Data.FeedbackDetail, DimText, X + 14.0f, Y + 68.0f, Small, 1.0f);
+	}
+
+	// ---------------- Sessão (topo esquerdo)
+	const float Pct = Data.Attempts > 0 ? 100.0f * static_cast<float>(Data.Makes) / static_cast<float>(Data.Attempts) : 0.0f;
+	DrawRect(PanelColor, 20.0f, 20.0f, 520.0f, 54.0f);
+	DrawText(FString::Printf(TEXT("FREESTYLE  |  %s"), *Data.SpotName), FLinearColor::White, 32.0f, 26.0f, Medium, 1.0f);
+	DrawText(FString::Printf(TEXT("Cestas %d/%d (%.0f%%)   Greens %d   Sequencia %d (melhor %d)"),
+		Data.Makes, Data.Attempts, Pct, Data.Greens, Data.Streak, Data.BestStreak), DimText, 32.0f, 50.0f, Small, 1.0f);
+
+	// ---------------- Energia, Explosões e drible (embaixo à esquerda)
+	const float BaseY = H - 110.0f;
+	DrawRect(PanelColor, 20.0f, BaseY, 360.0f, 90.0f);
+	DrawText(TEXT("ENERGIA"), DimText, 32.0f, BaseY + 8.0f, Small, 1.0f);
+	DrawRect(FLinearColor(0.15f, 0.15f, 0.15f, 1.0f), 110.0f, BaseY + 10.0f, 250.0f, 12.0f);
+	DrawRect(FLinearColor(0.25f, 0.75f, 1.0f, 1.0f), 110.0f, BaseY + 10.0f, 250.0f * Data.Energy, 12.0f);
+	DrawText(TEXT("EXPLOSOES"), DimText, 32.0f, BaseY + 32.0f, Small, 1.0f);
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		const FLinearColor Pip = Index < Data.Explosions ? FLinearColor(1.0f, 0.55f, 0.1f, 1.0f) : FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
+		DrawRect(Pip, 130.0f + Index * 34.0f, BaseY + 34.0f, 26.0f, 10.0f);
+	}
+	DrawText(FString::Printf(TEXT("Mao: %s   Combo: %d   %s"),
+		Data.bBallInRightHand ? TEXT("direita") : TEXT("esquerda"), Data.ComboCount, *Data.CurrentMove),
+		FLinearColor::White, 32.0f, BaseY + 58.0f, Small, 1.0f);
+
+	// ---------------- Dica de controles (embaixo à direita)
+	const FString Hint = TEXT("X arremesso | RS dribles (segurar baixo = arremesso) | RT sprint/explosao | RT+RS cima = enterrada | D-pad: bola / reset / spots | View: laboratorio");
+	float HintW = 0.0f;
+	float HintH = 0.0f;
+	GetTextSize(Hint, HintW, HintH, Small, 1.0f);
+	DrawText(Hint, DimText, W - HintW - 24.0f, H - 34.0f, Small, 1.0f);
+
+	// ---------------- Laboratório (overlay ligável com View/Tab)
+	if (Data.bLabOverlay)
+	{
+		const float X = 20.0f;
+		const float Y = 90.0f;
+		const int32 Lines = Data.InputHistory.Num() + Data.LabLines.Num() + 3;
+		DrawRect(PanelColor, X, Y, 560.0f, 20.0f * static_cast<float>(Lines) + 16.0f);
+		float LineY = Y + 8.0f;
+		DrawText(TEXT("LABORATORIO - inputs (mais recente primeiro)"), GreenColor, X + 12.0f, LineY, Small, 1.0f);
+		LineY += 20.0f;
+		for (const FString& Line : Data.InputHistory)
+		{
+			DrawText(Line, FLinearColor::White, X + 12.0f, LineY, Small, 1.0f);
+			LineY += 20.0f;
+		}
+		LineY += 10.0f;
+		DrawText(TEXT("Ultimo arremesso"), GreenColor, X + 12.0f, LineY, Small, 1.0f);
+		LineY += 20.0f;
+		for (const FString& Line : Data.LabLines)
+		{
+			DrawText(Line, DimText, X + 12.0f, LineY, Small, 1.0f);
+			LineY += 20.0f;
+		}
+	}
+}

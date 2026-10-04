@@ -34,6 +34,9 @@ namespace Hoops
 		const RatingPoint MidRangeTable[] = {{40.0, 0.28}, {60.0, 0.38}, {75.0, 0.45}, {85.0, 0.50}, {99.0, 0.56}};
 		const RatingPoint CloseTable[] = {{40.0, 0.40}, {60.0, 0.48}, {75.0, 0.55}, {85.0, 0.60}, {99.0, 0.66}};
 		const RatingPoint FreeThrowTable[] = {{40.0, 0.50}, {60.0, 0.62}, {75.0, 0.72}, {85.0, 0.80}, {99.0, 0.88}};
+		// Bandeja/enterrada livres (sem contato): quase sempre entram, como no 2K23.
+		const RatingPoint LayupTable[] = {{40.0, 0.70}, {60.0, 0.80}, {75.0, 0.87}, {85.0, 0.91}, {99.0, 0.96}};
+		const RatingPoint DunkTable[] = {{40.0, 0.88}, {60.0, 0.93}, {75.0, 0.96}, {85.0, 0.97}, {99.0, 0.99}};
 		const RatingPoint PerfectWindowTable[] = {{50.0, 18.0}, {70.0, 24.0}, {85.0, 30.0}, {99.0, 45.0}};
 
 		constexpr int TableSize = 5;
@@ -50,6 +53,8 @@ namespace Hoops
 			case ShotType::Hook: return 0.85;
 			case ShotType::Heave: return 0.25;
 			case ShotType::FreeThrow: return 1.0;
+			case ShotType::Layup: return 1.0;
+			case ShotType::Dunk: return 1.0;
 			}
 			return 1.0;
 		}
@@ -66,6 +71,8 @@ namespace Hoops
 			case ShotType::Hook: return 0.85;
 			case ShotType::Heave: return 0.30;
 			case ShotType::FreeThrow: return 1.30;
+			case ShotType::Layup: return 1.60;
+			case ShotType::Dunk: return 1.80;
 			}
 			return 1.0;
 		}
@@ -93,6 +100,14 @@ namespace Hoops
 		if (Context.Type == ShotType::FreeThrow)
 		{
 			Base = InterpolateTable(FreeThrowTable, TableSize, Context.Rating);
+		}
+		else if (Context.Type == ShotType::Layup)
+		{
+			Base = InterpolateTable(LayupTable, TableSize, Context.Rating);
+		}
+		else if (Context.Type == ShotType::Dunk)
+		{
+			Base = InterpolateTable(DunkTable, TableSize, Context.Rating);
 		}
 		else if (Context.bIsThree)
 		{
@@ -308,6 +323,8 @@ namespace Hoops
 		case ShotType::Hook: return "Hook";
 		case ShotType::Heave: return "Heave";
 		case ShotType::FreeThrow: return "Lance livre";
+		case ShotType::Layup: return "Bandeja";
+		case ShotType::Dunk: return "Enterrada";
 		}
 		return "?";
 	}

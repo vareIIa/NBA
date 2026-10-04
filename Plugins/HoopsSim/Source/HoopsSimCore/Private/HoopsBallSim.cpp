@@ -67,6 +67,14 @@ namespace Hoops
 			Events.HitRim = true;
 		}
 		const double FloorImpact = CollideFloor(State);
+		// Rolando no chão: resistência ao rolamento.
+		if (State.Velocity.Z == 0.0 && State.Position.Z <= Config.FloorZ + Config.Ball.Radius + 1e-6)
+		{
+			const double Keep = 1.0 - Config.RollingDamping * Dt;
+			const double Factor = Keep > 0.0 ? Keep : 0.0;
+			State.Velocity.X *= Factor;
+			State.Velocity.Y *= Factor;
+		}
 		if (FloorImpact > 0.0)
 		{
 			Events.HitFloor = true;

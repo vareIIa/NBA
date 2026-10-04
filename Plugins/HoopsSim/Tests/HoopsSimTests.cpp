@@ -614,6 +614,41 @@ HOOPS_TEST(ExplosionsAndEnergy)
 	EXPECT_TRUE(Controller.GetEnergy() > Tired);
 }
 
+
+HOOPS_TEST(LayupAndDunkProbabilities)
+{
+	const ShotModel Model;
+	ShotContext Layup;
+	Layup.Rating = 85.0;
+	Layup.DistanceMeters = 1.0;
+	Layup.bIsThree = false;
+	Layup.Type = ShotType::Layup;
+	const TimingWindows Windows = Model.ComputeWindows(Layup);
+	EXPECT_NEAR(Windows.PerfectHalfMs, 48.0, 1e-9);
+	const ShotEvaluation Good = Model.Evaluate(Layup, Windows, Windows.IdealReleaseMs + Windows.PerfectHalfMs + 1.0, 0.0);
+	EXPECT_NEAR(Good.Probability, 0.91, 0.005);
+
+	ShotContext Dunk = Layup;
+	Dunk.Type = ShotType::Dunk;
+	const ShotEvaluation DunkOpen = Model.Evaluate(Dunk, Model.ComputeWindows(Dunk), Model.ComputeWindows(Dunk).IdealReleaseMs, 0.0);
+	EXPECT_TRUE(DunkOpen.bGuaranteed);
+}
+
+HOOPS_TEST(RollingBallComesToRest)
+{
+	HoopSpec FarHoop = HoopSpec::FromRimFloorPoint(Vec3(100.0, 0.0, 0.0), Vec3(1.0, 0.0, 0.0));
+	BallSim Sim(BallSimConfig(), FarHoop);
+	BallState State;
+	State.Position = Vec3(0.0, 0.0, Sim.GetConfig().Ball.Radius);
+	State.Velocity = Vec3(4.0, 0.0, 0.0);
+	for (int Tick = 0; Tick < 120 * 8; ++Tick)
+	{
+		Sim.Tick(State);
+	}
+	EXPECT_TRUE(State.Velocity.Length2D() < 0.05);
+	EXPECT_NEAR(State.Position.Z, Sim.GetConfig().Ball.Radius, 1e-6);
+}
+
 int main()
 {
 	int Index = 0;

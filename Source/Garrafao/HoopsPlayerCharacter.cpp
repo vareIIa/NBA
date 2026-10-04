@@ -1,0 +1,1102 @@
+#include "HoopsPlayerCharacter.h"
+
+#include "Animation/AnimInstance.h"
+#include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/LocalPlayer.h"
+#include "Engine/SkeletalMesh.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Garrafao.h"
+#include "HoopsBall.h"
+#include "HoopsFreestyleGameMode.h"
+#include "HoopsHoop.h"
+#include "HoopsMeshUtil.h"
+#include "HoopsSimCore/HoopsShotSolver.h"
+#include "HoopsUnits.h"
+#include "InputAction.h"
+#include "InputActionValue.h"
+#include "InputMappingContext.h"
+#include "InputModifiers.h"
+#include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	constexpr float CapsuleRadiusCm = 38.0f;
+	constexpr float CapsuleHalfHeightCm = 98.0f;  // jogador de ~1,96 m
+	constexpr float HandHeightCm = 80.0f;          // centro da bola na mão, acima do chão
+	constexpr float JogSpeedCm = 470.0f;
+	constexpr float SprintSpeedCm = 720.0f;
+	constexpr float WithBallSpeedScale = 0.93f;
+	constexpr double CatchRadiusCm = 85.0;
+	constexpr double LayupReleaseSeconds = 0.42;
+	constexpr double DunkReleaseSeconds = 0.48;
+
+	struct FFreestyleSpot
+	{
+		const TCHAR* Name;
+		double DistanceM;
+		double AngleDeg; // 0 = topo; positivo = lado direito de quem olha para a cesta (eixo +Y local)
+	};
+
+	const FFreestyleSpot Spots[] = {
+		{TEXT("Topo (3)"), 7.6, 0.0},
+		{TEXT("Ala direita (3)"), 7.5, 45.0},
+		{TEXT("Canto direito (3)"), 6.95, 86.0},
+		{TEXT("Ala esquerda (3)"), 7.5, -45.0},
+		{TEXT("Canto esquerdo (3)"), 6.95, -86.0},
+		{TEXT("Cotovelo direito"), 4.6, 32.0},
+		{TEXT("Cotovelo esquerdo"), 4.6, -32.0},
+		{TEXT("Linha de lance livre"), 4.19, 0.0},
+		{TEXT("Logo (longe)"), 9.5, 0.0},
+	};
+	constexpr int32 NumSpots = static_cast<int32>(UE_ARRAY_COUNT(Spots));
+
+	FString Ansi(const char* Text) { return FString(ANSI_TO_TCHAR(Text)); }
+}
+
+AHoopsPlayerCharacter::AHoopsPlayerCharacter()
+{
+	PrimaryActorTick.bCanEverTick = true;
+
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+
+	GetCapsuleComponent()->InitCapsuleSize(CapsuleRadiusCm, CapsuleHalfHeightCm);
+
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	Movement->bOrientRotationToMovement = true;
+	Movement->RotationRate = FRotator(0.0f, 900.0f, 0.0f);
+	Movement->MaxWalkSpeed = JogSpeedCm;
+	Movement->MaxAcceleration = 2600.0f;
+	Movement->BrakingDecelerationWalking = 2800.0f;
+	Movement->GroundFriction = 9.0f;
+	Movement->JumpZVelocity = 430.0f;
+	Movement->AirControl = 0.15f;
+
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(RootComponent);
+	CameraBoom->SetUsingAbsoluteRotation(true);
+	CameraBoom->TargetArmLength = 1050.0f;
+	CameraBoom->bDoCollisionTest = false;
+	CameraBoom->bUsePawnControlRotation = false;
+	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->CameraLagSpeed = 6.0f;
+	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 60.0f));
+
+	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+	Camera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+	Camera->bUsePawnControlRotation = false;
+	Camera->SetFieldOfView(55.0f);
+
+	// Corpo placeholder (cilindro) enquanto não houver manequim/MetaHuman.
+	PlaceholderBody = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PlaceholderBody"));
+	PlaceholderBody->SetupAttachment(RootComponent);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMesh.Succeeded())
+	{
+		PlaceholderBody->SetStaticMesh(CylinderMesh.Object);
+	}
+	PlaceholderBody->SetRelativeScale3D(FVector(0.55f, 0.40f, 1.94f));
+	PlaceholderBody->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	MannequinMeshPaths = {
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"),
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny"),
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple.SKM_Quinn_Simple"),
+	};
+	MannequinAnimClassPaths = {
+		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed.ABP_Unarmed_C"),
+		TEXT("/Game/Characters/Mannequins/Animations/ABP_Manny.ABP_Manny_C"),
+		TEXT("/Game/Characters/Mannequins/Animations/ABP_Quinn.ABP_Quinn_C"),
+	};
+}
+
+// ============================================================================ Setup
+
+void AHoopsPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	Random = Hoops::Rng(static_cast<uint64>(FPlatformTime::Cycles64()));
+	Hoops::DribbleEnergyConfig EnergyConfig;
+	EnergyConfig.bInfiniteExplosions = bInfiniteExplosions;
+	Dribble = Hoops::DribbleController(EnergyConfig);
+
+	HoopsMeshUtil::SetColor(this, PlaceholderBody, FLinearColor(0.08f, 0.08f, 0.09f));
+	TryLoadMannequin();
+	EnsureWorldRefs();
+	ResetToSpot(0);
+}
+
+void AHoopsPlayerCharacter::TryLoadMannequin()
+{
+	const ELoadFlags Quiet = static_cast<ELoadFlags>(LOAD_NoWarn | LOAD_Quiet);
+	USkeletalMesh* MeshAsset = nullptr;
+	for (const FString& Path : MannequinMeshPaths)
+	{
+		MeshAsset = LoadObject<USkeletalMesh>(nullptr, *Path, nullptr, Quiet);
+		if (MeshAsset)
+		{
+			break;
+		}
+	}
+	if (!MeshAsset)
+	{
+		UE_LOG(LogHoops, Log, TEXT("Manequim nao encontrado: usando corpo placeholder. (Adicione o pacote Third Person para ver o Manny.)"));
+		return;
+	}
+
+	GetMesh()->SetSkeletalMeshAsset(MeshAsset);
+	GetMesh()->SetRelativeLocationAndRotation(FVector(0.0f, 0.0f, -CapsuleHalfHeightCm), FRotator(0.0f, -90.0f, 0.0f));
+	for (const FString& Path : MannequinAnimClassPaths)
+	{
+		if (UClass* AnimClass = LoadClass<UAnimInstance>(nullptr, *Path, nullptr, Quiet))
+		{
+			GetMesh()->SetAnimInstanceClass(AnimClass);
+			break;
+		}
+	}
+	PlaceholderBody->SetVisibility(false);
+}
+
+void AHoopsPlayerCharacter::EnsureWorldRefs()
+{
+	if (Ball && Hoop)
+	{
+		return;
+	}
+	AHoopsHoop* FoundHoop = nullptr;
+	AHoopsBall* FoundBall = nullptr;
+	AHoopsFreestyleGameMode::EnsureEnvironment(GetWorld(), FoundHoop, FoundBall);
+	Hoop = FoundHoop;
+	Ball = FoundBall;
+	if (Ball)
+	{
+		Ball->AddTickPrerequisiteActor(this); // a bola se move depois do jogador no mesmo frame
+	}
+}
+
+void AHoopsPlayerCharacter::EnsureInputConfig()
+{
+	if (MappingContext)
+	{
+		return;
+	}
+
+	MappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Hoops2K"));
+
+	auto MakeAction = [this](const TCHAR* Name, EInputActionValueType Type) -> UInputAction*
+	{
+		UInputAction* Action = NewObject<UInputAction>(this, Name);
+		Action->ValueType = Type;
+		Actions.Add(FName(Name), Action);
+		return Action;
+	};
+	auto MapKey = [this](UInputAction* Action, const FKey& Key, bool bSwizzle = false, bool bNegate = false)
+	{
+		FEnhancedActionKeyMapping& Mapping = MappingContext->MapKey(Action, Key);
+		if (bSwizzle)
+		{
+			Mapping.Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(MappingContext));
+		}
+		if (bNegate)
+		{
+			Mapping.Modifiers.Add(NewObject<UInputModifierNegate>(MappingContext));
+		}
+	};
+
+	// Mapa do NBA 2K23 (Xbox) — docs/02-controles.md. Teclado é provisório.
+	UInputAction* Move = MakeAction(TEXT("IA_Move"), EInputActionValueType::Axis2D);
+	MapKey(Move, EKeys::Gamepad_Left2D);
+	MapKey(Move, EKeys::W, true);
+	MapKey(Move, EKeys::S, true, true);
+	MapKey(Move, EKeys::A, false, true);
+	MapKey(Move, EKeys::D);
+
+	UInputAction* ProStickAction = MakeAction(TEXT("IA_ProStick"), EInputActionValueType::Axis2D);
+	MapKey(ProStickAction, EKeys::Gamepad_Right2D);
+	MapKey(ProStickAction, EKeys::Up, true);
+	MapKey(ProStickAction, EKeys::Down, true, true);
+	MapKey(ProStickAction, EKeys::Left, false, true);
+	MapKey(ProStickAction, EKeys::Right);
+
+	struct FButton { const TCHAR* Name; FKey Pad; FKey Key; };
+	const FButton Buttons[] = {
+		{TEXT("IA_Shoot"), EKeys::Gamepad_FaceButton_Left, EKeys::SpaceBar},       // X
+		{TEXT("IA_Pass"), EKeys::Gamepad_FaceButton_Bottom, EKeys::E},             // A
+		{TEXT("IA_BouncePass"), EKeys::Gamepad_FaceButton_Right, EKeys::Q},        // B
+		{TEXT("IA_Lob"), EKeys::Gamepad_FaceButton_Top, EKeys::R},                 // Y (Y Y = alley-oop)
+		{TEXT("IA_Sprint"), EKeys::Gamepad_RightTrigger, EKeys::LeftShift},        // RT
+		{TEXT("IA_LeftTrigger"), EKeys::Gamepad_LeftTrigger, EKeys::LeftControl},  // LT
+		{TEXT("IA_IconPass"), EKeys::Gamepad_RightShoulder, EKeys::F},             // RB
+		{TEXT("IA_PlayCall"), EKeys::Gamepad_LeftShoulder, EKeys::C},              // LB
+		{TEXT("IA_RequestBall"), EKeys::Gamepad_DPad_Up, EKeys::G},                // Freestyle
+		{TEXT("IA_ResetSpot"), EKeys::Gamepad_DPad_Down, EKeys::BackSpace},
+		{TEXT("IA_PrevSpot"), EKeys::Gamepad_DPad_Left, EKeys::One},
+		{TEXT("IA_NextSpot"), EKeys::Gamepad_DPad_Right, EKeys::Two},
+		{TEXT("IA_ToggleLab"), EKeys::Gamepad_Special_Left, EKeys::Tab},           // View
+	};
+	for (const FButton& Button : Buttons)
+	{
+		UInputAction* Action = MakeAction(Button.Name, EInputActionValueType::Boolean);
+		MapKey(Action, Button.Pad);
+		MapKey(Action, Button.Key);
+	}
+}
+
+void AHoopsPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
+	EnsureInputConfig();
+
+	UEnhancedInputComponent* Input = Cast<UEnhancedInputComponent>(PlayerInputComponent);
+	if (!Input)
+	{
+		UE_LOG(LogHoops, Error, TEXT("Enhanced Input nao esta ativo (Config/DefaultInput.ini)."));
+		return;
+	}
+
+	auto Get = [this](const TCHAR* Name) -> UInputAction* { return Actions.FindRef(FName(Name)); };
+
+	Input->BindAction(Get(TEXT("IA_Move")), ETriggerEvent::Triggered, this, &AHoopsPlayerCharacter::OnMove);
+	Input->BindAction(Get(TEXT("IA_Move")), ETriggerEvent::Completed, this, &AHoopsPlayerCharacter::OnMoveReleased);
+	Input->BindAction(Get(TEXT("IA_ProStick")), ETriggerEvent::Triggered, this, &AHoopsPlayerCharacter::OnProStick);
+	Input->BindAction(Get(TEXT("IA_ProStick")), ETriggerEvent::Completed, this, &AHoopsPlayerCharacter::OnProStickReleased);
+	Input->BindAction(Get(TEXT("IA_Shoot")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnShootPressed);
+	Input->BindAction(Get(TEXT("IA_Shoot")), ETriggerEvent::Completed, this, &AHoopsPlayerCharacter::OnShootReleased);
+	Input->BindAction(Get(TEXT("IA_Sprint")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnSprintPressed);
+	Input->BindAction(Get(TEXT("IA_Sprint")), ETriggerEvent::Completed, this, &AHoopsPlayerCharacter::OnSprintReleased);
+	Input->BindAction(Get(TEXT("IA_LeftTrigger")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnLeftTriggerPressed);
+	Input->BindAction(Get(TEXT("IA_LeftTrigger")), ETriggerEvent::Completed, this, &AHoopsPlayerCharacter::OnLeftTriggerReleased);
+	Input->BindAction(Get(TEXT("IA_Pass")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnPassPressed);
+	Input->BindAction(Get(TEXT("IA_BouncePass")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnBouncePassPressed);
+	Input->BindAction(Get(TEXT("IA_Lob")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnLobPressed);
+	Input->BindAction(Get(TEXT("IA_IconPass")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnIconPassPressed);
+	Input->BindAction(Get(TEXT("IA_PlayCall")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnPlayCallPressed);
+	Input->BindAction(Get(TEXT("IA_RequestBall")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnRequestBall);
+	Input->BindAction(Get(TEXT("IA_ResetSpot")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnResetSpot);
+	Input->BindAction(Get(TEXT("IA_PrevSpot")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnPrevSpot);
+	Input->BindAction(Get(TEXT("IA_NextSpot")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnNextSpot);
+	Input->BindAction(Get(TEXT("IA_ToggleLab")), ETriggerEvent::Started, this, &AHoopsPlayerCharacter::OnToggleLab);
+}
+
+void AHoopsPlayerCharacter::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+	EnsureInputConfig();
+
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		{
+			Subsystem->ClearAllMappings();
+			Subsystem->AddMappingContext(MappingContext, 0);
+		}
+	}
+}
+
+void AHoopsPlayerCharacter::ResetToSpot(int32 SpotIndex)
+{
+	EnsureWorldRefs();
+	if (!Hoop || !Ball)
+	{
+		return;
+	}
+
+	CurrentSpot = ((SpotIndex % NumSpots) + NumSpots) % NumSpots;
+	const FFreestyleSpot& Spot = Spots[CurrentSpot];
+	const FVector Forward = HoopForward();
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Forward);
+	const double Rad = FMath::DegreesToRadians(Spot.AngleDeg);
+	const FVector Offset = (Forward * FMath::Cos(Rad) + Right * FMath::Sin(Rad)) * (Spot.DistanceM * 100.0);
+	const FVector Location = Hoop->GetRimFloorPointWorld() + Offset + FVector(0.0, 0.0, CapsuleHalfHeightCm + 2.0);
+
+	SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
+	SetActorRotation((Hoop->GetRimFloorPointWorld() - Location).GetSafeNormal2D().Rotation());
+	GetCharacterMovement()->StopMovementImmediately();
+
+	ShotPhase = EShotPhase::None;
+	bAwaitingShotResult = false;
+	ReturnBallAt = -1.0;
+	bHasBall = true;
+	Dribble.ResetPossession();
+	Dribble.SetHand(Hoops::BallHand::Right);
+	bArcValid = false;
+	Ball->SetControlledLocation(HandWorldLocation(Dribble.GetHand(), 0.0));
+	Hud.SpotName = Spot.Name;
+	LogInput(FString::Printf(TEXT("Spot: %s"), Spot.Name));
+}
+
+// ============================================================================ Helpers
+
+double AHoopsPlayerCharacter::Now() const
+{
+	const UWorld* ThisWorld = GetWorld();
+	return ThisWorld ? ThisWorld->GetTimeSeconds() : 0.0;
+}
+
+FVector AHoopsPlayerCharacter::HoopForward() const
+{
+	return Hoop ? Hoop->GetForwardWorld().GetSafeNormal2D() : FVector::ForwardVector;
+}
+
+FVector AHoopsPlayerCharacter::CameraForwardFlat() const
+{
+	// A câmera olha para a cesta (contra o Forward da cesta).
+	return -HoopForward();
+}
+
+FVector AHoopsPlayerCharacter::HandWorldLocation(Hoops::BallHand Hand, double SecondsAhead) const
+{
+	const FVector Base = GetActorLocation() + GetVelocity().GetSafeNormal2D() * FMath::Min(GetVelocity().Size2D(), 900.0) * SecondsAhead;
+	const FVector Forward = GetActorForwardVector();
+	const FVector Right = GetActorRightVector();
+	const double Side = Hand == Hoops::BallHand::Right ? 1.0 : -1.0;
+	return Base + Forward * 28.0 + Right * (32.0 * Side) + FVector(0.0, 0.0, HandHeightCm - CapsuleHalfHeightCm);
+}
+
+FVector AHoopsPlayerCharacter::SetPointWorldLocation() const
+{
+	// Bola acima da cabeça, levemente à frente (ponto de soltura do jumper).
+	return GetActorLocation() + GetActorForwardVector() * 18.0 + FVector(0.0, 0.0, CapsuleHalfHeightCm + 55.0);
+}
+
+void AHoopsPlayerCharacter::LogInput(const FString& Label)
+{
+	Hud.InputHistory.Insert(FString::Printf(TEXT("%7.2f  %s"), Now(), *Label), 0);
+	if (Hud.InputHistory.Num() > 16)
+	{
+		Hud.InputHistory.SetNum(16);
+	}
+}
+
+// ============================================================================ Input
+
+void AHoopsPlayerCharacter::OnMove(const FInputActionValue& Value) { MoveInput = Value.Get<FVector2D>(); }
+void AHoopsPlayerCharacter::OnMoveReleased(const FInputActionValue& Value) { MoveInput = FVector2D::ZeroVector; }
+void AHoopsPlayerCharacter::OnProStick(const FInputActionValue& Value) { StickInput = Value.Get<FVector2D>(); }
+void AHoopsPlayerCharacter::OnProStickReleased(const FInputActionValue& Value) { StickInput = FVector2D::ZeroVector; }
+
+void AHoopsPlayerCharacter::OnShootPressed(const FInputActionValue& Value)
+{
+	LogInput(TEXT("X (arremesso) pressionado"));
+	BeginShot(false);
+}
+
+void AHoopsPlayerCharacter::OnShootReleased(const FInputActionValue& Value)
+{
+	LogInput(TEXT("X solto"));
+	if (ShotPhase == EShotPhase::Jumper && !bShotFromProStick)
+	{
+		const double HoldMs = (Now() - GatherTime) * 1000.0;
+		if (!bJumpCommitted && HoldMs < ShotModel.GetTuning().PumpFakeMaxHoldMs)
+		{
+			CancelShotAsPumpFake();
+		}
+		else
+		{
+			ReleaseShot();
+		}
+	}
+}
+
+void AHoopsPlayerCharacter::OnSprintPressed(const FInputActionValue& Value)
+{
+	bSprintHeld = true;
+	LogInput(TEXT("RT (sprint)"));
+	// Toque no RT em movimento com a bola = Explosão (Adrenaline Boost do 2K23).
+	if (bHasBall && ShotPhase == EShotPhase::None && MoveInput.Size() > 0.5f && Dribble.TryUseExplosion())
+	{
+		const FVector Fwd = CameraForwardFlat();
+		const FVector Right = FVector::CrossProduct(FVector::UpVector, Fwd);
+		const FVector Dir = (Fwd * MoveInput.Y + Right * MoveInput.X).GetSafeNormal2D();
+		UCharacterMovementComponent* Movement = GetCharacterMovement();
+		FVector Burst = Dir * FMath::Max(Movement->Velocity.Size2D(), 650.0);
+		Burst.Z = Movement->Velocity.Z;
+		Movement->Velocity = Burst;
+		LogInput(FString::Printf(TEXT("EXPLOSAO (restam %d)"), Dribble.GetExplosions()));
+	}
+}
+
+void AHoopsPlayerCharacter::OnSprintReleased(const FInputActionValue& Value) { bSprintHeld = false; }
+void AHoopsPlayerCharacter::OnLeftTriggerPressed(const FInputActionValue& Value) { bLeftTriggerHeld = true; LogInput(TEXT("LT (proteger / post)")); }
+void AHoopsPlayerCharacter::OnLeftTriggerReleased(const FInputActionValue& Value) { bLeftTriggerHeld = false; }
+
+void AHoopsPlayerCharacter::OnPassPressed(const FInputActionValue& Value)
+{
+	LogInput(TEXT("A (passe) - sem companheiro no Freestyle"));
+}
+
+void AHoopsPlayerCharacter::OnBouncePassPressed(const FInputActionValue& Value)
+{
+	const double T = Now();
+	LogInput(T - LastBPressTime < 0.30 ? TEXT("B B (passe flashy)") : TEXT("B (passe quicado)"));
+	LastBPressTime = T;
+}
+
+void AHoopsPlayerCharacter::OnLobPressed(const FInputActionValue& Value)
+{
+	const double T = Now();
+	LogInput(T - LastYPressTime < 0.30 ? TEXT("Y Y (alley-oop)") : TEXT("Y (lob)"));
+	LastYPressTime = T;
+}
+
+void AHoopsPlayerCharacter::OnIconPassPressed(const FInputActionValue& Value) { LogInput(TEXT("RB (passe por icone)")); }
+void AHoopsPlayerCharacter::OnPlayCallPressed(const FInputActionValue& Value) { LogInput(TEXT("LB (jogadas / corta-luz)")); }
+
+void AHoopsPlayerCharacter::OnRequestBall(const FInputActionValue& Value)
+{
+	LogInput(TEXT("D-pad cima: pedir a bola"));
+	if (!bHasBall && Ball && Ball->IsFree())
+	{
+		PassBallToPlayer();
+	}
+}
+
+void AHoopsPlayerCharacter::OnResetSpot(const FInputActionValue& Value) { ResetToSpot(CurrentSpot); }
+void AHoopsPlayerCharacter::OnPrevSpot(const FInputActionValue& Value) { ResetToSpot(CurrentSpot - 1); }
+void AHoopsPlayerCharacter::OnNextSpot(const FInputActionValue& Value) { ResetToSpot(CurrentSpot + 1); }
+
+void AHoopsPlayerCharacter::OnToggleLab(const FInputActionValue& Value)
+{
+	Hud.bLabOverlay = !Hud.bLabOverlay;
+}
+
+// ============================================================================ Tick
+
+void AHoopsPlayerCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	EnsureWorldRefs();
+	if (!Hoop || !Ball)
+	{
+		return;
+	}
+
+	const bool bMoving = GetVelocity().Size2D() > 50.0;
+	Dribble.Update(Now(), DeltaSeconds, bSprintHeld && bMoving);
+
+	UpdateProStick();
+	UpdateMovement(DeltaSeconds);
+
+	if (ShotPhase == EShotPhase::Jumper)
+	{
+		UpdateShot(DeltaSeconds);
+	}
+	else if (ShotPhase == EShotPhase::Finish)
+	{
+		UpdateFinish(DeltaSeconds);
+	}
+	else if (bHasBall)
+	{
+		UpdateDribbleBall(DeltaSeconds);
+	}
+
+	UpdateBallPossession(DeltaSeconds);
+
+	// Câmera estilo 2K: olhando para a cesta, alta, seguindo o jogador.
+	const float CameraYaw = static_cast<float>(CameraForwardFlat().Rotation().Yaw);
+	CameraBoom->SetWorldRotation(FRotator(-21.0f, CameraYaw, 0.0f));
+
+	// Giro visual do spin (Fase 0: gira o corpo; depois vira animação).
+	const double SpinElapsed = Now() - SpinVisualStart;
+	USceneComponent* Body = PlaceholderBody->IsVisible() ? static_cast<USceneComponent*>(PlaceholderBody) : static_cast<USceneComponent*>(GetMesh());
+	const float BaseYaw = PlaceholderBody->IsVisible() ? 0.0f : -90.0f;
+	if (SpinVisualDuration > 0.0 && SpinElapsed < SpinVisualDuration)
+	{
+		const float Alpha = static_cast<float>(SpinElapsed / SpinVisualDuration);
+		Body->SetRelativeRotation(FRotator(0.0f, BaseYaw + SpinVisualDegrees * Alpha, 0.0f));
+	}
+	else
+	{
+		Body->SetRelativeRotation(FRotator(0.0f, BaseYaw, 0.0f));
+	}
+
+	UpdateHud();
+}
+
+void AHoopsPlayerCharacter::UpdateMovement(float DeltaSeconds)
+{
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+
+	const float BaseSpeed = bSprintHeld ? SprintSpeedCm : JogSpeedCm;
+	const float BallScale = bHasBall ? WithBallSpeedScale : 1.0f;
+	Movement->MaxWalkSpeed = BaseSpeed * BallScale * static_cast<float>(Dribble.SpeedScale());
+
+	const bool bShooting = ShotPhase != EShotPhase::None;
+	if (!bShooting && !MoveInput.IsNearlyZero())
+	{
+		const FVector Fwd = CameraForwardFlat();
+		const FVector Right = FVector::CrossProduct(FVector::UpVector, Fwd);
+		AddMovementInput(Fwd, static_cast<float>(MoveInput.Y));
+		AddMovementInput(Right, static_cast<float>(MoveInput.X));
+	}
+
+	// Com a bola e sem sprint: corpo de frente para a cesta (postura do 2K). Sprint/sem bola: vira para onde corre.
+	const bool bFaceHoop = bShooting || (bHasBall && !bSprintHeld);
+	Movement->bOrientRotationToMovement = !bFaceHoop;
+	if (bFaceHoop && Hoop)
+	{
+		const FRotator Target = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D().Rotation();
+		SetActorRotation(FMath::RInterpTo(GetActorRotation(), Target, DeltaSeconds, bShooting ? 18.0f : 9.0f));
+	}
+}
+
+// ============================================================================ Pro Stick e drible
+
+void AHoopsPlayerCharacter::UpdateProStick()
+{
+	// Orientação ABSOLUTA do 2K23: "cima" = direção do ataque (para a cesta), X = direita do jogador.
+	const FVector CamFwd = CameraForwardFlat();
+	const FVector CamRight = FVector::CrossProduct(FVector::UpVector, CamFwd);
+	const FVector StickWorld = CamFwd * StickInput.Y + CamRight * StickInput.X;
+
+	const FVector AttackFwd = Hoop ? (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D() : GetActorForwardVector();
+	const FVector AttackRight = FVector::CrossProduct(FVector::UpVector, AttackFwd);
+	const double LocalX = FVector::DotProduct(StickWorld, AttackRight);
+	const double LocalY = FVector::DotProduct(StickWorld, AttackFwd);
+
+	Hoops::StickGesture Gestures[Hoops::ProStickRecognizer::MaxGesturesPerUpdate];
+	const int Count = ProStick.Update(Now(), LocalX, LocalY, Gestures);
+	for (int Index = 0; Index < Count; ++Index)
+	{
+		HandleGesture(Gestures[Index]);
+	}
+}
+
+void AHoopsPlayerCharacter::HandleGesture(const Hoops::StickGesture& Gesture)
+{
+	const TCHAR* KindLabel = TEXT("?");
+	switch (Gesture.Kind)
+	{
+	case Hoops::StickGestureKind::Flick: KindLabel = TEXT("toque"); break;
+	case Hoops::StickGestureKind::Hold: KindLabel = TEXT("segurar"); break;
+	case Hoops::StickGestureKind::HoldRelease: KindLabel = TEXT("soltar"); break;
+	case Hoops::StickGestureKind::Rotation: KindLabel = TEXT("giro"); break;
+	case Hoops::StickGestureKind::QuarterCircle: KindLabel = TEXT("1/4 de giro"); break;
+	case Hoops::StickGestureKind::DoubleThrow: KindLabel = TEXT("double throw"); break;
+	case Hoops::StickGestureKind::Switchback: KindLabel = TEXT("switchback"); break;
+	}
+	LogInput(FString::Printf(TEXT("RS %s %s"), KindLabel, *Ansi(Hoops::StickDirLabel(Gesture.Dir))));
+
+	// Arremesso pelo Pro Stick: segurar para baixo inicia, soltar arremessa.
+	if (ShotPhase == EShotPhase::Jumper && bShotFromProStick && Gesture.Kind == Hoops::StickGestureKind::HoldRelease)
+	{
+		const double HoldMs = (Now() - GatherTime) * 1000.0;
+		if (!bJumpCommitted && HoldMs < ShotModel.GetTuning().PumpFakeMaxHoldMs)
+		{
+			CancelShotAsPumpFake();
+		}
+		else
+		{
+			ReleaseShot();
+		}
+		return;
+	}
+	if (ShotPhase != EShotPhase::None || !bHasBall)
+	{
+		return;
+	}
+
+	if (Gesture.Kind == Hoops::StickGestureKind::Hold)
+	{
+		if (Gesture.Dir == Hoops::StickDir::Down)
+		{
+			BeginShot(true);
+		}
+		else if (Gesture.Dir == Hoops::StickDir::Up || Gesture.Dir == Hoops::StickDir::Left || Gesture.Dir == Hoops::StickDir::Right)
+		{
+			// Bandeja/enterrada pelo RS em infiltração (RT + RS cima = enterrada).
+			const double DistM = FVector::Dist2D(GetActorLocation(), Hoop->GetRimFloorPointWorld()) / 100.0;
+			if (DistM <= 3.0)
+			{
+				BeginFinish(bSprintHeld && Gesture.Dir == Hoops::StickDir::Up);
+			}
+		}
+		return;
+	}
+
+	Hoops::DribbleContext Context;
+	Context.Hand = Dribble.GetHand();
+	Context.bSprint = bSprintHeld;
+	Context.bMoving = GetVelocity().Size2D() > 80.0;
+	StartDribbleMove(Hoops::ResolveDribbleMove(Gesture, Context));
+}
+
+void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move)
+{
+	if (Move == Hoops::DribbleMove::None)
+	{
+		return;
+	}
+
+	const Hoops::BallHand HandBefore = Dribble.GetHand();
+	if (!Dribble.Request(Move, Now()))
+	{
+		LogInput(FString::Printf(TEXT("  (buffer) %s"), *Ansi(Hoops::DribbleMoveLabel(Move))));
+		return;
+	}
+
+	const Hoops::DribbleMoveSpec& Spec = Hoops::GetDribbleMoveSpec(Move);
+	const Hoops::ActiveDribbleMove& Active = Dribble.GetActive();
+	const double Duration = Spec.Duration / Active.PlayRate;
+	LogInput(FString::Printf(TEXT("  -> %s%s"), *Ansi(Hoops::DribbleMoveLabel(Move)), Active.bInRhythm ? TEXT(" (ritmo!)") : TEXT("")));
+
+	// Impulso do movimento no referencial do ataque.
+	const FVector AttackFwd = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
+	const FVector AttackRight = FVector::CrossProduct(FVector::UpVector, AttackFwd);
+	const Hoops::BallHand HandAfter = Dribble.GetHand();
+	const double NewHandSide = HandAfter == Hoops::BallHand::Right ? 1.0 : -1.0;
+	const double Lateral = Spec.LateralSpeed * 100.0 * NewHandSide;
+	FVector Impulse = AttackRight * Lateral + AttackFwd * (Spec.ForwardSpeed * 100.0);
+
+	// Spin/half-spin seguem a direção do LS (girando para onde o jogador quer ir).
+	if (Move == Hoops::DribbleMove::Spin || Move == Hoops::DribbleMove::HalfSpin)
+	{
+		const FVector CamFwd = CameraForwardFlat();
+		const FVector CamRight = FVector::CrossProduct(FVector::UpVector, CamFwd);
+		const FVector Wish = (CamFwd * MoveInput.Y + CamRight * MoveInput.X).GetSafeNormal2D();
+		Impulse = (Wish.IsNearlyZero() ? AttackFwd : Wish) * (Spec.ForwardSpeed * 100.0);
+		SpinVisualStart = Now();
+		SpinVisualDuration = Duration;
+		SpinVisualDegrees = (Move == Hoops::DribbleMove::Spin ? 360.0f : 180.0f) * (HandBefore == Hoops::BallHand::Right ? -1.0f : 1.0f);
+	}
+
+	if (!Impulse.IsNearlyZero())
+	{
+		UCharacterMovementComponent* Movement = GetCharacterMovement();
+		const FVector Current2D(Movement->Velocity.X, Movement->Velocity.Y, 0.0);
+		const FVector New2D = (Move == Hoops::DribbleMove::Hesitation) ? Current2D * 0.35 : Current2D * 0.25 + Impulse;
+		Movement->Velocity = FVector(New2D.X, New2D.Y, Movement->Velocity.Z);
+	}
+
+	// Bola: drible baixo e rápido. 1 troca: o controlador já trocou a mão, o quique vai para a nova.
+	// 2 trocas (double cross): vai para a outra mão agora e o próximo quique normal volta.
+	const bool bDoubleSwitch = Spec.HandSwitches == 2;
+	PlanDribbleArc(bDoubleSwitch, Duration * (bDoubleSwitch ? 0.4 : 0.6));
+}
+
+void AHoopsPlayerCharacter::PlanDribbleArc(bool bToOtherHand, double PeriodOverride)
+{
+	const double Speed = GetVelocity().Size2D();
+	const double DefaultPeriod = FMath::Lerp(0.52, 0.38, FMath::Clamp(Speed / 650.0, 0.0, 1.0));
+	const double Period = PeriodOverride > 0.0 ? PeriodOverride : DefaultPeriod;
+
+	const Hoops::BallHand TargetHand = bToOtherHand ? Hoops::OtherHand(Dribble.GetHand()) : Dribble.GetHand();
+	const FVector Start = Ball->GetActorLocation();
+	const FVector End = HandWorldLocation(TargetHand, Period);
+	const double FloorZ = (GetActorLocation().Z - CapsuleHalfHeightCm) / 100.0;
+
+	CurrentArc = Hoops::MakeDribbleArc(HoopsUnits::ToSim(Start), HoopsUnits::ToSim(End), HoopsUnits::ToSim(GetVelocity()),
+		Period, AHoopsBall::RadiusCm / 100.0, FloorZ);
+	ArcStartTime = Now();
+	bArcValid = true;
+}
+
+void AHoopsPlayerCharacter::UpdateDribbleBall(float DeltaSeconds)
+{
+	const double Elapsed = Now() - ArcStartTime;
+	if (!bArcValid || Elapsed >= CurrentArc.TotalSeconds())
+	{
+		// Parado e protegendo (LT) ou sem se mexer: drible mais baixo e lento.
+		PlanDribbleArc(false, bLeftTriggerHeld ? 0.36 : 0.0);
+	}
+	const Hoops::Vec3 Pos = CurrentArc.Evaluate(Now() - ArcStartTime);
+	Ball->SetControlledLocation(HoopsUnits::ToUnreal(Pos));
+}
+
+// ============================================================================ Arremesso (jumper)
+
+Hoops::ShotContext AHoopsPlayerCharacter::BuildJumperContext() const
+{
+	Hoops::ShotContext Context;
+	const FVector Feet = GetActorLocation() - FVector(0.0, 0.0, CapsuleHalfHeightCm);
+	const Hoops::Vec3 FeetM = HoopsUnits::ToSim(Feet);
+	const Hoops::Vec3 RimFloor = HoopsUnits::ToSim(Hoop->GetRimFloorPointWorld());
+	const Hoops::Vec3 Fwd = HoopsUnits::DirToSim(Hoop->GetForwardWorld());
+
+	Context.DistanceMeters = Hoops::Distance2D(FeetM, RimFloor);
+	Context.bIsThree = Court.IsThreePointer(FeetM, RimFloor, Fwd);
+	Context.ThreePointDistance = Court.ThreePointRadius;
+
+	const double Speed = GetVelocity().Size2D();
+	const double SinceMove = Now() - Dribble.GetLastMoveEndTime();
+	const bool bMoveActive = Dribble.IsMoveActive(Now());
+	const Hoops::DribbleMove RecentMove = bMoveActive ? Dribble.GetActive().Move : (SinceMove < 0.45 ? Dribble.GetLastMove() : Hoops::DribbleMove::None);
+
+	// Fadeaway: LS puxado para longe da cesta perto do garrafão.
+	const FVector CamFwd = CameraForwardFlat();
+	const FVector CamRight = FVector::CrossProduct(FVector::UpVector, CamFwd);
+	const FVector Wish = (CamFwd * MoveInput.Y + CamRight * MoveInput.X).GetSafeNormal2D();
+	const FVector ToRim = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
+	const bool bFadingAway = !Wish.IsNearlyZero() && FVector::DotProduct(Wish, ToRim) < -0.5;
+
+	if (Context.DistanceMeters > 12.0)
+	{
+		Context.Type = Hoops::ShotType::Heave;
+	}
+	else if (RecentMove == Hoops::DribbleMove::StepBack || RecentMove == Hoops::DribbleMove::EscapeStepBack)
+	{
+		Context.Type = Hoops::ShotType::StepBack;
+	}
+	else if (bFadingAway && Context.DistanceMeters < 6.0)
+	{
+		Context.Type = Hoops::ShotType::Fadeaway;
+	}
+	else if (RecentMove != Hoops::DribbleMove::None || Speed > 250.0)
+	{
+		Context.Type = Hoops::ShotType::PullUp; // dribble pull-up / momentum pull-up
+	}
+	else
+	{
+		Context.Type = Hoops::ShotType::SpotUp;
+	}
+
+	if (Context.bIsThree)
+	{
+		Context.Rating = ThreePointRating;
+	}
+	else
+	{
+		Context.Rating = Context.DistanceMeters < 3.0 ? CloseShotRating : MidRangeRating;
+	}
+
+	Context.Speed = static_cast<Hoops::ReleaseSpeed>(FMath::Clamp(JumperReleaseSpeed, 0, 2));
+	Context.Fatigue = Hoops::ShotModel::FatigueFromEnergy(Dribble.GetEnergy());
+	Context.Balance = bMoveActive ? 0.85 : (Speed > 500.0 ? 0.9 : 1.0);
+	Context.bMeterOff = !bShotMeterEnabled;
+	return Context;
+}
+
+double AHoopsPlayerCharacter::ComputeContest() const
+{
+	// Freestyle sem defensor: livre. O defensor manequim (docs/10-modos.md §0.1) entra aqui.
+	return 0.0;
+}
+
+void AHoopsPlayerCharacter::BeginShot(bool bFromProStick)
+{
+	EnsureWorldRefs();
+	if (!Hoop || !Ball || !bHasBall || ShotPhase != EShotPhase::None || GetCharacterMovement()->IsFalling())
+	{
+		return;
+	}
+
+	const double DistM = FVector::Dist2D(GetActorLocation(), Hoop->GetRimFloorPointWorld()) / 100.0;
+	const FVector ToRim = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
+	const double SpeedToRim = FVector::DotProduct(GetVelocity(), ToRim);
+	if (DistM <= 2.6 && (SpeedToRim > 150.0 || bSprintHeld))
+	{
+		BeginFinish(bSprintHeld && DistM <= 2.4);
+		return;
+	}
+
+	ShotContext = BuildJumperContext();
+	ShotWindows = ShotModel.ComputeWindows(ShotContext); // travada no gather
+	GatherTime = Now();
+	bJumpCommitted = false;
+	bShotFromProStick = bFromProStick;
+	ShotPhase = EShotPhase::Jumper;
+
+	// Momentum: pull-up mantém um pouco do deslocamento; spot-up para.
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	const double Keep = ShotContext.Type == Hoops::ShotType::PullUp ? 0.35 : 0.1;
+	Movement->Velocity = FVector(Movement->Velocity.X * Keep, Movement->Velocity.Y * Keep, Movement->Velocity.Z);
+
+	LogInput(FString::Printf(TEXT("Gather: %s %.1f m (%s) janela green +-%.0f ms"),
+		*Ansi(Hoops::ShotTypeLabel(ShotContext.Type)), ShotContext.DistanceMeters,
+		ShotContext.bIsThree ? TEXT("3PT") : TEXT("2PT"), ShotWindows.PerfectHalfMs));
+}
+
+void AHoopsPlayerCharacter::CancelShotAsPumpFake()
+{
+	ShotPhase = EShotPhase::None;
+	bArcValid = false;
+	LogInput(TEXT("Pump fake"));
+}
+
+void AHoopsPlayerCharacter::UpdateShot(float DeltaSeconds)
+{
+	const double HoldMs = (Now() - GatherTime) * 1000.0;
+	const Hoops::ShotTuning& Tuning = ShotModel.GetTuning();
+
+	// Bola sobe até o set point.
+	const FVector Target = SetPointWorldLocation();
+	Ball->SetControlledLocation(FMath::VInterpTo(Ball->GetActorLocation(), Target, DeltaSeconds, 22.0f));
+
+	// Passou do tempo de pump fake: sai do chão, com ápice perto do ponto ideal de soltura.
+	if (!bJumpCommitted && HoldMs >= Tuning.PumpFakeMaxHoldMs)
+	{
+		bJumpCommitted = true;
+		const double AirSeconds = FMath::Max(0.25, (ShotWindows.IdealReleaseMs - Tuning.PumpFakeMaxHoldMs) / 1000.0);
+		const double JumpZ = FMath::Abs(GetCharacterMovement()->GetGravityZ()) * AirSeconds;
+		FVector Horizontal = GetVelocity() * 0.5;
+		Horizontal.Z = 0.0;
+		if (ShotContext.Type == Hoops::ShotType::Fadeaway || ShotContext.Type == Hoops::ShotType::StepBack)
+		{
+			Horizontal += -(Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D() * 160.0;
+		}
+		LaunchCharacter(FVector(Horizontal.X, Horizontal.Y, JumpZ), true, true);
+	}
+
+	// Segurou demais: soltura automática (muito tarde).
+	if (HoldMs >= ShotWindows.IdealReleaseMs + ShotWindows.SlightHalfMs + Tuning.AutoReleaseAfterIdealMs)
+	{
+		ReleaseShot();
+	}
+}
+
+void AHoopsPlayerCharacter::ReleaseShot()
+{
+	if (ShotPhase != EShotPhase::Jumper)
+	{
+		return;
+	}
+
+	const double HoldMs = (Now() - GatherTime) * 1000.0;
+	const Hoops::ShotEvaluation Eval = ShotModel.Evaluate(ShotContext, ShotWindows, HoldMs, ComputeContest());
+	const Hoops::ShotDecision Decision = ShotModel.Decide(Eval, Random);
+
+	Hoops::ShotRealizeParams Params;
+	Params.ReleasePosition = HoopsUnits::ToSim(Ball->GetActorLocation());
+	const double BaseAngle = ShotContext.DistanceMeters < 4.0 ? 54.0 : 50.0;
+	Params.LaunchAngleDeg = Hoops::LaunchAngleForTiming(BaseAngle, Eval.Timing);
+	const Hoops::RealizedShot Realized = Hoops::RealizeShot(*Ball->GetSim(), Decision, Params, Random);
+
+	Ball->LaunchFree(Realized.Initial);
+	bHasBall = false;
+	ShotPhase = EShotPhase::None;
+	bAwaitingShotResult = true;
+	ReturnBallAt = -1.0;
+
+	++Hud.Attempts;
+	if (Eval.Timing == Hoops::TimingGrade::Green)
+	{
+		++Hud.Greens;
+	}
+	ShowFeedback(Eval, ShotContext);
+
+	Hud.LabLines.Reset();
+	Hud.LabLines.Add(FString::Printf(TEXT("Ultimo: %s | %.2f m | rating %.0f"), *Ansi(Hoops::ShotTypeLabel(ShotContext.Type)), ShotContext.DistanceMeters, ShotContext.Rating));
+	Hud.LabLines.Add(FString::Printf(TEXT("Segurou %.0f ms | ideal %.0f ms | offset %+.0f ms"), HoldMs, ShotWindows.IdealReleaseMs, Eval.TimingOffsetMs));
+	Hud.LabLines.Add(FString::Printf(TEXT("Janelas +-: green %.0f | bom %.0f | leve %.0f ms"), ShotWindows.PerfectHalfMs, ShotWindows.GoodHalfMs, ShotWindows.SlightHalfMs));
+	Hud.LabLines.Add(FString::Printf(TEXT("L=%.2f  P=%.0f%%  garantida=%s  contest=%.2f"), Eval.Logit, Eval.Probability * 100.0, Eval.bGuaranteed ? TEXT("sim") : TEXT("nao"), Eval.Contest));
+	Hud.LabLines.Add(FString::Printf(TEXT("Fisica: %s em %d tentativa(s)"), Realized.bScored ? TEXT("cesta") : TEXT("erro"), Realized.Attempts));
+}
+
+// ============================================================================ Bandeja / enterrada
+
+void AHoopsPlayerCharacter::BeginFinish(bool bDunk)
+{
+	if (!Hoop || !Ball || !bHasBall || ShotPhase != EShotPhase::None)
+	{
+		return;
+	}
+	ShotPhase = EShotPhase::Finish;
+	bFinishIsDunk = bDunk && DunkRating >= 60.0f;
+	GatherTime = Now();
+
+	const FVector ToRim = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
+	const double DistCm = FVector::Dist2D(Hoop->GetRimFloorPointWorld(), GetActorLocation());
+	const double Airtime = bFinishIsDunk ? DunkReleaseSeconds : LayupReleaseSeconds;
+	const double Forward = FMath::Clamp((DistCm - 60.0) / Airtime, 0.0, 450.0);
+	const double JumpZ = FMath::Abs(GetCharacterMovement()->GetGravityZ()) * Airtime * (bFinishIsDunk ? 1.15 : 1.0);
+	LaunchCharacter(FVector(ToRim.X * Forward, ToRim.Y * Forward, JumpZ), true, true);
+
+	ShotContext = Hoops::ShotContext();
+	ShotContext.Type = bFinishIsDunk ? Hoops::ShotType::Dunk : Hoops::ShotType::Layup;
+	ShotContext.Rating = bFinishIsDunk ? DunkRating : LayupRating;
+	ShotContext.DistanceMeters = DistCm / 100.0;
+	ShotContext.bIsThree = false;
+	ShotWindows = ShotModel.ComputeWindows(ShotContext);
+	LogInput(bFinishIsDunk ? TEXT("Enterrada") : TEXT("Bandeja"));
+}
+
+void AHoopsPlayerCharacter::UpdateFinish(float DeltaSeconds)
+{
+	const double Elapsed = Now() - GatherTime;
+	const FVector ToRim = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
+	const FVector Carry = GetActorLocation() + ToRim * 35.0 + FVector(0.0, 0.0, CapsuleHalfHeightCm + (bFinishIsDunk ? 75.0 : 60.0));
+	Ball->SetControlledLocation(FMath::VInterpTo(Ball->GetActorLocation(), Carry, DeltaSeconds, 20.0f));
+
+	if (Elapsed >= (bFinishIsDunk ? DunkReleaseSeconds : LayupReleaseSeconds))
+	{
+		ReleaseFinish();
+	}
+}
+
+void AHoopsPlayerCharacter::ReleaseFinish()
+{
+	// Timing de bandeja desligado por padrão (como "Shot Timing: Shots Only" do 2K23): conta como soltura "Boa".
+	const double HoldMs = bFinishIsDunk ? ShotWindows.IdealReleaseMs : ShotWindows.IdealReleaseMs + ShotWindows.PerfectHalfMs + 1.0;
+	const Hoops::ShotEvaluation Eval = ShotModel.Evaluate(ShotContext, ShotWindows, HoldMs, ComputeContest());
+	const Hoops::ShotDecision Decision = ShotModel.Decide(Eval, Random);
+
+	Hoops::BallState Initial;
+	if (bFinishIsDunk && Decision.bMake)
+	{
+		// Enterrada: a bola entra de cima, pelo centro do aro.
+		const Hoops::Vec3 Rim = Ball->GetSim()->GetHoop().RimCenter();
+		Initial.Position = Rim + Hoops::Vec3(0.0, 0.0, 0.22);
+		Initial.Velocity = Hoops::Vec3(0.0, 0.0, -4.0);
+	}
+	else
+	{
+		Hoops::ShotRealizeParams Params;
+		Params.ReleasePosition = HoopsUnits::ToSim(Ball->GetActorLocation());
+		Params.LaunchAngleDeg = 62.0;
+		Params.BackspinRevPerSec = 1.5;
+		Initial = Hoops::RealizeShot(*Ball->GetSim(), Decision, Params, Random).Initial;
+	}
+
+	Ball->LaunchFree(Initial);
+	bHasBall = false;
+	ShotPhase = EShotPhase::None;
+	bAwaitingShotResult = true;
+	ReturnBallAt = -1.0;
+	++Hud.Attempts;
+	ShowFeedback(Eval, ShotContext);
+}
+
+// ============================================================================ Bola livre, rebotedor, recepção
+
+void AHoopsPlayerCharacter::UpdateBallPossession(float DeltaSeconds)
+{
+	if (bHasBall || !Ball->IsFree())
+	{
+		return;
+	}
+
+	if (bAwaitingShotResult)
+	{
+		if (Ball->ConsumeScoreEvent())
+		{
+			bAwaitingShotResult = false;
+			++Hud.Makes;
+			++Hud.Streak;
+			Hud.BestStreak = FMath::Max(Hud.BestStreak, Hud.Streak);
+			ReturnBallAt = Now() + 0.9;
+		}
+		else if (Ball->HasTouchedFloorSinceLaunch() || Ball->GetSecondsSinceLaunch() > 4.0)
+		{
+			bAwaitingShotResult = false;
+			Hud.Streak = 0;
+			ReturnBallAt = Now() + 0.7;
+		}
+	}
+	else if (ReturnBallAt < 0.0 && Ball->HasTouchedFloorSinceLaunch())
+	{
+		ReturnBallAt = Now() + 0.7;
+	}
+
+	if (ReturnBallAt > 0.0 && Now() >= ReturnBallAt)
+	{
+		ReturnBallAt = -1.0;
+		PassBallToPlayer();
+	}
+
+	// Recepção.
+	const FVector Chest = GetActorLocation() + FVector(0.0, 0.0, 30.0);
+	if (Ball->GetSecondsSinceLaunch() > 0.25 && FVector::Dist(Ball->GetActorLocation(), Chest) < CatchRadiusCm)
+	{
+		CatchBall();
+	}
+}
+
+void AHoopsPlayerCharacter::PassBallToPlayer()
+{
+	Hoops::Vec3 From = Ball->GetSimState().Position;
+	if (From.Z < 0.4)
+	{
+		From.Z = 0.4; // o "rebotedor" pega a bola do chão
+	}
+	const FVector Target = GetActorLocation() + FVector(0.0, 0.0, 30.0) + GetVelocity() * 0.5;
+	const Hoops::Vec3 To = HoopsUnits::ToSim(Target);
+
+	const double Angles[] = {18.0, 30.0, 45.0, 60.0};
+	for (double AngleDeg : Angles)
+	{
+		const Hoops::LaunchSolution Launch = Hoops::SolveLaunch(From, To, Hoops::DegToRad(AngleDeg), Ball->GetSim()->GetConfig().Gravity);
+		if (Launch.bValid)
+		{
+			Hoops::BallState State;
+			State.Position = From;
+			State.Velocity = Launch.Velocity;
+			Ball->LaunchFree(State);
+			LogInput(TEXT("Rebotedor: passe"));
+			return;
+		}
+	}
+}
+
+void AHoopsPlayerCharacter::CatchBall()
+{
+	bHasBall = true;
+	bAwaitingShotResult = false;
+	ReturnBallAt = -1.0;
+	Dribble.ResetPossession();
+	bArcValid = false;
+	Ball->SetControlledLocation(HandWorldLocation(Dribble.GetHand(), 0.0));
+	LogInput(TEXT("Recebeu a bola"));
+}
+
+// ============================================================================ HUD
+
+void AHoopsPlayerCharacter::ShowFeedback(const Hoops::ShotEvaluation& Eval, const Hoops::ShotContext& Context)
+{
+	if (!bShotFeedbackEnabled)
+	{
+		return;
+	}
+	Hud.bShowFeedback = true;
+	Hud.FeedbackTime = Now();
+	Hud.FeedbackTiming = FString::Printf(TEXT("TIMING: %s"), *Ansi(Hoops::TimingGradeLabel(Eval.Timing)));
+	Hud.FeedbackCoverage = FString::Printf(TEXT("COBERTURA: %s"), *Ansi(Hoops::CoverageGradeLabel(Eval.Coverage)));
+	Hud.FeedbackDetail = FString::Printf(TEXT("%s | %+.0f ms | chance %.0f%%"),
+		*Ansi(Hoops::ShotTypeLabel(Context.Type)), Eval.TimingOffsetMs, Eval.Probability * 100.0);
+
+	switch (Eval.Timing)
+	{
+	case Hoops::TimingGrade::Green: Hud.FeedbackColor = FLinearColor(0.20f, 1.0f, 0.35f); break;
+	case Hoops::TimingGrade::Good: Hud.FeedbackColor = FLinearColor::White; break;
+	case Hoops::TimingGrade::SlightlyEarly:
+	case Hoops::TimingGrade::SlightlyLate: Hud.FeedbackColor = FLinearColor(1.0f, 0.85f, 0.2f); break;
+	default: Hud.FeedbackColor = FLinearColor(1.0f, 0.3f, 0.25f); break;
+	}
+}
+
+void AHoopsPlayerCharacter::UpdateHud()
+{
+	Hud.Energy = static_cast<float>(Dribble.GetEnergy());
+	Hud.Explosions = Dribble.GetExplosions();
+	Hud.ComboCount = Dribble.GetComboCount();
+	Hud.bBallInRightHand = Dribble.GetHand() == Hoops::BallHand::Right;
+	Hud.CurrentMove = Dribble.IsMoveActive(Now()) ? Ansi(Hoops::DribbleMoveLabel(Dribble.GetActive().Move)) : FString();
+	Hud.PlayerWorldLocation = GetActorLocation();
+	Hud.HalfHeight = CapsuleHalfHeightCm;
+
+	Hud.bShowMeter = bShotMeterEnabled && ShotPhase == EShotPhase::Jumper;
+	if (Hud.bShowMeter)
+	{
+		const double Ideal = ShotWindows.IdealReleaseMs;
+		const double HoldMs = (Now() - GatherTime) * 1000.0;
+		Hud.MeterFill = static_cast<float>(HoldMs / Ideal);
+		Hud.GreenStart = static_cast<float>((Ideal - ShotWindows.PerfectHalfMs) / Ideal);
+		Hud.GreenEnd = static_cast<float>((Ideal + ShotWindows.PerfectHalfMs) / Ideal);
+		Hud.GoodStart = static_cast<float>((Ideal - ShotWindows.GoodHalfMs) / Ideal);
+		Hud.GoodEnd = static_cast<float>((Ideal + ShotWindows.GoodHalfMs) / Ideal);
+		Hud.MeterWorldAnchor = GetActorLocation() + GetActorRightVector() * 70.0;
+	}
+
+	if (Hud.bShowFeedback && Now() - Hud.FeedbackTime > 2.8)
+	{
+		Hud.bShowFeedback = false;
+	}
+}

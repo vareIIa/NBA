@@ -27,8 +27,18 @@ Jogo de basquete **sim-arcade** em **Unreal Engine 5**: bonito como os grandes, 
 | 🎥 | [Pipeline aberto: visual realista e mocap](docs/16-pipeline-aberto-visual-e-mocap.md) |
 | 🎬 | [Referências: clipes do diretor no 2K23 + análise](referencias/2k23/README.md) |
 
+## Rodar o jogo
+
+👉 **[Como rodar o Freestyle no seu PC (UE 5.8)](docs/dev/COMO-RODAR.md)**
+
+| Pasta | O que é |
+|---|---|
+| `Plugins/HoopsSim/Source/HoopsSimCore` | Núcleo de simulação em C++ puro (bola, aro, arremesso/green, drible, Pro Stick) |
+| `Plugins/HoopsSim/Tests` | Testes do núcleo (24 passando) |
+| `Source/Garrafao` | Camada Unreal: jogador, bola, cesta, quadra, HUD, modo Freestyle |
+
 ## Status
 
-Pré-produção — documentação de design. Próximo passo: **Fase 0 — Freestyle** (drible, arremesso com green, bandejas, enterradas, pull-ups) numa quadra realista.
+**Fase 0 — Freestyle em desenvolvimento.** Primeiro jogável: quadra graybox com medidas oficiais, bola com física própria, arremesso com green (timing travado no gather), dribles do 2K23 pelo Pro Stick, bandeja/enterrada, rebotedor, HUD com medidor e laboratório.
 
 > Os vídeos de referência usam **Git LFS**: rode `git lfs pull` depois de clonar.

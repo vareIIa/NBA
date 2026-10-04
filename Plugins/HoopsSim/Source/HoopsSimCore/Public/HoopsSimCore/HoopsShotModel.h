@@ -21,6 +21,8 @@ namespace Hoops
 		Hook,
 		Heave,
 		FreeThrow,
+		Layup,
+		Dunk,
 	};
 
 	enum class ReleaseSpeed : uint8_t
