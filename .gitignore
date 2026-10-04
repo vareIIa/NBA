@@ -17,3 +17,4 @@ Plugins/*/Intermediate/
 
 # Builds locais
 build/
+__pycache__/
