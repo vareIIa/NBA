@@ -38,6 +38,7 @@
 | D11 | 2026-10-03 | Mídias de referência versionadas com **Git LFS** | Claude |
 | D13 | 2026-10-04 | **Sem Explosões / Adrenaline Boosts.** O único limitador é a **barra de energia (stamina)**: sprint e dribles gastam, energia baixa deixa mais lento e piora o arremesso ("foi aí que o 2K começou a piorar") | Diretor |
 | D12 | 2026-10-04 | **Janela green maior** (~1,65×: rating 85 = ±50 ms) depois do 1º playtest; multiplicador ajustável no editor | Diretor |
+| D14 | 2026-10-04 | **Só assets gratuitos e open source** (sem pacotes pagos, ex.: o "Basketball" do Fab). Animação: todo o mocap útil da CMU (sujeitos 06, 102, 124, gestos), Mixamo só se o diretor quiser baixar (grátis, conta Adobe), e captura própria com ferramenta open source (Pose2Sim + RTMPose, saída 100% nossa) | Diretor |
 
 ## 4. Decisões pendentes (propostas com recomendação)
 

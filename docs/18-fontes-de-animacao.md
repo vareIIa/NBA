@@ -4,6 +4,8 @@
 > Objetivo: trocar ou complementar o mocap da CMU (amador, ~1 quique a cada 0,85 s) por animações dignas de um Freestyle "estilo 2K23".
 > **Licenças mudam: conferir cada uma de novo antes de lançar.** Itens marcados *(não confirmado)* vieram de fonte secundária ou de inferência.
 
+> **Decisão D14 (diretor, 2026-10-04): só gratuito e open source.** O pacote pago do Fab (§1, "atalho mais forte") **não** será comprado. Caminho escolhido: (1) minerar toda a CMU útil (sujeito 102: spin, finta, pump fake, drives, drible correndo; 06_13; 124_05/06 e 15_12 para arremesso/bandeja; gestos 79/141/142 para comemorações); (2) Mixamo só como opcional, se o diretor baixar (grátis); (3) captura própria com Pose2Sim + RTMPose (open source, multi-câmera com celulares), cuja saída é 100% nossa — os planos grátis de DeepMotion/Rokoko/QuickMagic não liberam uso comercial.
+
 Legenda: ✅ uso comercial liberado · ⚠️ liberado com condições · ⛔ **INUTILIZÁVEL** (não comercial, sem derivados ou território restrito)
 
 ## 0. Resumo em 8 linhas
