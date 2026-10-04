@@ -7,6 +7,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -202,6 +204,11 @@ void AHoopsPlayerCharacter::EnsureInputConfig()
 	auto MapKey = [this](UInputAction* Action, const FKey& Key, bool bSwizzle = false, bool bNegate = false)
 	{
 		FEnhancedActionKeyMapping& Mapping = MappingContext->MapKey(Action, Key);
+		if (Key.IsAxis2D())
+		{
+			// Enhanced Input lê o valor cru: sem zona morta, o analógico "anda sozinho".
+			Mapping.Modifiers.Add(NewObject<UInputModifierDeadZone>(MappingContext));
+		}
 		if (bSwizzle)
 		{
 			Mapping.Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(MappingContext));
@@ -313,7 +320,8 @@ void AHoopsPlayerCharacter::ResetToSpot(int32 SpotIndex)
 	CurrentSpot = ((SpotIndex % NumSpots) + NumSpots) % NumSpots;
 	const FFreestyleSpot& Spot = Spots[CurrentSpot];
 	const FVector Forward = HoopForward();
-	const FVector Right = FVector::CrossProduct(FVector::UpVector, Forward);
+	// Direita de quem olha para a cesta (de frente para -Forward).
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, -Forward);
 	const double Rad = FMath::DegreesToRadians(Spot.AngleDeg);
 	const FVector Offset = (Forward * FMath::Cos(Rad) + Right * FMath::Sin(Rad)) * (Spot.DistanceM * 100.0);
 	const FVector Location = Hoop->GetRimFloorPointWorld() + Offset + FVector(0.0, 0.0, CapsuleHalfHeightCm + 2.0);

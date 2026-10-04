@@ -1,6 +1,8 @@
 #include "HoopsBall.h"
 
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "HoopsMeshUtil.h"
 #include "HoopsUnits.h"
 #include "UObject/ConstructorHelpers.h"
@@ -34,7 +36,7 @@ void AHoopsBall::SetControlledLocation(const FVector& WorldLocation)
 {
 	const UWorld* ThisWorld = GetWorld();
 	const float Delta = ThisWorld ? ThisWorld->GetDeltaSeconds() : 0.0f;
-	if (Mode == EHoopsBallMode::Controlled && Delta > KINDA_SMALL_NUMBER)
+	if (Mode == EHoopsBallMode::Controlled && Delta > UE_KINDA_SMALL_NUMBER)
 	{
 		ControlledVelocity = (WorldLocation - LastControlledLocation) / Delta;
 	}
@@ -106,7 +108,7 @@ void AHoopsBall::Tick(float DeltaSeconds)
 	// Giro visual da bola.
 	const FVector Omega = HoopsUnits::DirToUnreal(Current.AngularVelocity);
 	const double Speed = Omega.Size();
-	if (Speed > KINDA_SMALL_NUMBER)
+	if (Speed > UE_KINDA_SMALL_NUMBER)
 	{
 		const FQuat Spin(Omega / Speed, Speed * DeltaSeconds);
 		AddActorWorldRotation(Spin);

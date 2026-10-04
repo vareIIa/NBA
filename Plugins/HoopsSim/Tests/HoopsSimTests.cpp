@@ -2,6 +2,7 @@
 #include "HoopsTestFramework.h"
 
 #include "HoopsSimCore/HoopsBallSim.h"
+#include "HoopsSimCore/HoopsContest.h"
 #include "HoopsSimCore/HoopsCourt.h"
 #include "HoopsSimCore/HoopsDribble.h"
 #include "HoopsSimCore/HoopsDribbleMoves.h"
@@ -647,6 +648,86 @@ HOOPS_TEST(RollingBallComesToRest)
 	}
 	EXPECT_TRUE(State.Velocity.Length2D() < 0.05);
 	EXPECT_NEAR(State.Position.Z, Sim.GetConfig().Ball.Radius, 1e-6);
+}
+
+
+// ---------------------------------------------------------------- Contestação (defensor)
+
+namespace
+{
+	struct ContestScene
+	{
+		Vec3 ShooterFeet = Vec3(7.3, 0.0, 0.0);
+		Vec3 Release = Vec3(7.12, 0.0, 2.75);
+		Vec3 Rim = Vec3(0.0, 0.0, 3.042);
+
+		DefenderPose InFront(double Gap) const
+		{
+			DefenderPose Pose;
+			Pose.FeetPosition = Vec3(ShooterFeet.X - Gap, 0.0, 0.0); // entre o arremessador e o aro
+			return Pose;
+		}
+	};
+}
+
+HOOPS_TEST(ContestWideOpenWhenFar)
+{
+	const ContestScene Scene;
+	DefenderPose Far = Scene.InFront(4.0);
+	Far.HandsUpAmount = 1.0;
+	const ContestBreakdown Result = ComputeContest(Far, Scene.ShooterFeet, Scene.Release, Scene.Rim);
+	EXPECT_TRUE(Result.Contest < 0.15);
+	EXPECT_TRUE(ShotModel::GradeCoverage(Result.Contest) == CoverageGrade::WideOpen);
+}
+
+HOOPS_TEST(ContestCloseoutJumpSmothers)
+{
+	const ContestScene Scene;
+	DefenderPose Close = Scene.InFront(1.0);
+	Close.HandsUpAmount = 1.0;
+	Close.JumpHeight = 0.40;
+	const ContestBreakdown Jump = ComputeContest(Close, Scene.ShooterFeet, Scene.Release, Scene.Rim);
+	std::printf("    closeout com salto a 1 m: contest %.2f (mao a %.2f m da trajetoria)\n", Jump.Contest, Jump.HandToPathMeters);
+	EXPECT_TRUE(Jump.Contest > 0.70);
+
+	Close.JumpHeight = 0.0;
+	const ContestBreakdown HandsUp = ComputeContest(Close, Scene.ShooterFeet, Scene.Release, Scene.Rim);
+	Close.HandsUpAmount = 0.0;
+	const ContestBreakdown HandsDown = ComputeContest(Close, Scene.ShooterFeet, Scene.Release, Scene.Rim);
+	EXPECT_TRUE(Jump.Contest > HandsUp.Contest);
+	EXPECT_TRUE(HandsUp.Contest > HandsDown.Contest);
+}
+
+HOOPS_TEST(ContestFromBehindIsWeak)
+{
+	const ContestScene Scene;
+	DefenderPose Front = Scene.InFront(1.0);
+	Front.HandsUpAmount = 1.0;
+	DefenderPose Behind = Front;
+	Behind.FeetPosition = Vec3(Scene.ShooterFeet.X + 1.0, 0.0, 0.0); // atrás do arremessador
+	const double FrontContest = ComputeContest(Front, Scene.ShooterFeet, Scene.Release, Scene.Rim).Contest;
+	const double BehindContest = ComputeContest(Behind, Scene.ShooterFeet, Scene.Release, Scene.Rim).Contest;
+	EXPECT_TRUE(BehindContest < FrontContest * 0.5);
+}
+
+HOOPS_TEST(ContestHeightAndReleaseMatter)
+{
+	const ContestScene Scene;
+	DefenderPose Guard = Scene.InFront(1.0);
+	Guard.HandsUpAmount = 1.0;
+	Guard.Height = 1.85;
+	Guard.Wingspan = 1.90;
+	DefenderPose Big = Guard;
+	Big.Height = 2.13;
+	Big.Wingspan = 2.25;
+	const double GuardContest = ComputeContest(Guard, Scene.ShooterFeet, Scene.Release, Scene.Rim).Contest;
+	const double BigContest = ComputeContest(Big, Scene.ShooterFeet, Scene.Release, Scene.Rim).Contest;
+	EXPECT_TRUE(BigContest > GuardContest);
+
+	// Soltura mais alta (arremessador alto / fadeaway) é mais difícil de contestar.
+	ContestScene HighRelease = Scene;
+	HighRelease.Release.Z = 3.10;
+	EXPECT_TRUE(ComputeContest(Guard, HighRelease.ShooterFeet, HighRelease.Release, HighRelease.Rim).Contest < GuardContest);
 }
 
 int main()

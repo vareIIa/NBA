@@ -54,12 +54,6 @@ namespace Hoops
 		StickDir ToBallHandFrame(StickDir Dir, BallHand Hand) { return Hand == BallHand::Right ? Dir : MirrorDir(Dir); }
 	}
 
-	double ActiveDribbleMove::EndTime() const
-	{
-		const double Rate = PlayRate > 1e-6 ? PlayRate : 1.0;
-		return StartTime + GetDribbleMoveSpec(Move).Duration / Rate;
-	}
-
 	const DribbleMoveSpec& GetDribbleMoveSpec(DribbleMove Move)
 	{
 		const int Index = static_cast<int>(Move);

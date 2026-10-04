@@ -3,6 +3,7 @@
 #include "Components/DirectionalLightComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
+#include "EngineUtils.h"
 #include "HoopsMeshUtil.h"
 #include "HoopsSimCore/HoopsCourt.h"
 
@@ -42,6 +43,15 @@ AHoopsCourt::AHoopsCourt()
 void AHoopsCourt::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Se o nível já tem um sol (ex.: nível "Basic"), não cria uma segunda iluminação.
+	for (TActorIterator<AActor> It(GetWorld()); It && bSpawnLighting; ++It)
+	{
+		if (*It != this && It->FindComponentByClass<UDirectionalLightComponent>())
+		{
+			bSpawnLighting = false;
+		}
+	}
 
 	if (!bSpawnLighting)
 	{

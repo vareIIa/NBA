@@ -26,7 +26,7 @@ git lfs pull          # baixa os vídeos de referência
 
 1. Clique com o botão direito em **`Garrafao.uproject`** → **Generate Visual Studio project files**.
 2. Dê dois cliques em `Garrafao.uproject`. A Unreal vai perguntar *"The following modules are missing or built with a different engine version... Would you like to rebuild them now?"* → **Sim**. (Ou abra `Garrafao.sln` no Visual Studio, escolha **Development Editor / Win64** e compile o projeto `Garrafao`.)
-3. Com o editor aberto: **File → New Level → Empty Level** (ou *Basic*).
+3. Com o editor aberto: **File → New Level → Empty Level**. (Se usar um nível com luz própria, a quadra não cria uma segunda iluminação.)
 4. Aperte **Play** (Alt+P). O modo **Freestyle** cria sozinho a quadra, a cesta, a bola e a iluminação.
 
 ### Manequim (opcional, recomendado)

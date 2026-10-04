@@ -5,6 +5,18 @@
 
 #include <cmath>
 
+// No build modular da Unreal (Editor), a UBT define HOOPSSIMCORE_API=DLLEXPORT/DLLIMPORT, mas os .cpp do núcleo
+// não incluem HAL/Platform.h. Definimos aqui exatamente como a engine define (redefinição idêntica é inofensiva).
+#ifndef DLLEXPORT
+	#if defined(_WIN32)
+		#define DLLEXPORT __declspec(dllexport)
+		#define DLLIMPORT __declspec(dllimport)
+	#else
+		#define DLLEXPORT __attribute__((visibility("default")))
+		#define DLLIMPORT __attribute__((visibility("default")))
+	#endif
+#endif
+
 #ifndef HOOPSSIMCORE_API
 #define HOOPSSIMCORE_API
 #endif

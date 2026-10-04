@@ -84,7 +84,11 @@ namespace Hoops
 		bool bInRhythm = false;  // entrou na janela de combo do anterior
 		BallHand HandAtStart = BallHand::Right;
 
-		double EndTime() const;
+		double EndTime() const
+		{
+			const double Rate = PlayRate > 1e-6 ? PlayRate : 1.0;
+			return StartTime + GetDribbleMoveSpec(Move).Duration / Rate;
+		}
 		bool IsActive(double Now) const { return Move != DribbleMove::None && Now < EndTime(); }
 	};
 

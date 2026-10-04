@@ -54,8 +54,8 @@ void AHoopsHoop::BuildVisuals()
 	const int32 RimSegments = 32;
 	for (int32 Index = 0; Index < RimSegments; ++Index)
 	{
-		const float A0 = 2.0f * PI * static_cast<float>(Index) / RimSegments;
-		const float A1 = 2.0f * PI * static_cast<float>(Index + 1) / RimSegments;
+		const float A0 = 2.0f * UE_PI * static_cast<float>(Index) / RimSegments;
+		const float A1 = 2.0f * UE_PI * static_cast<float>(Index + 1) / RimSegments;
 		const FVector P0 = RimCenter + FVector(FMath::Cos(A0), FMath::Sin(A0), 0.0f) * CenterlineCm;
 		const FVector P1 = RimCenter + FVector(FMath::Cos(A1), FMath::Sin(A1), 0.0f) * CenterlineCm;
 		HoopsMeshUtil::AddRod(this, Root, P0, P1, TubeDiameterCm, RimColor);
@@ -99,8 +99,8 @@ void AHoopsHoop::BuildVisuals()
 	const float NetDepth = 42.0f;
 	for (int32 Index = 0; Index < Strands; ++Index)
 	{
-		const float Angle = 2.0f * PI * static_cast<float>(Index) / Strands;
-		const float Twist = 2.0f * PI / Strands * 0.5f;
+		const float Angle = 2.0f * UE_PI * static_cast<float>(Index) / Strands;
+		const float Twist = 2.0f * UE_PI / Strands * 0.5f;
 		const FVector Top = RimCenter + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f) * CenterlineCm;
 		const FVector Bottom = RimCenter + FVector(FMath::Cos(Angle + Twist), FMath::Sin(Angle + Twist), 0.0f) * NetBottomRadius
 			- FVector(0.0f, 0.0f, NetDepth);

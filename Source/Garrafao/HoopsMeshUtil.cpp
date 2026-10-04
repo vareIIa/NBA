@@ -88,7 +88,7 @@ namespace HoopsMeshUtil
 	{
 		const FVector Delta = B - A;
 		const float Length = static_cast<float>(Delta.Size());
-		if (Length < KINDA_SMALL_NUMBER)
+		if (Length < UE_KINDA_SMALL_NUMBER)
 		{
 			return nullptr;
 		}
