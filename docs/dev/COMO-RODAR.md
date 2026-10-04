@@ -41,9 +41,9 @@ Para trocar para quadra ao ar livre (sol + céu): selecione o ator **HoopsCourt*
 ### Jogador animado (recomendado)
 
 O jogador **dribla de verdade** (mocap) assim que o boneco é importado — e isso agora é **automático**:
-1. Depois do `git pull`, rode `git lfs pull` (o `Art/Characters/HoopsDummy/SK_HoopsDummy.fbx` tem ~5 MB; sem isso vem só um "ponteiro" de 130 bytes).
-2. Abra o editor. Ao terminar de carregar, ele importa sozinho a malha, o esqueleto e as **19 animações** em `/Game/Hoops/Characters/Dummy` (Output Log: `[Garrafao] Pronto!`). Só reimporta quando o FBX muda.
-3. Aperte **Play**. No topo da tela aparece `Garrafao Freestyle v0.5 | Boneco animado: ATIVO (19/19 clipes)`. Se aparecer em amarelo "NAO IMPORTADO", rode **Tools → Execute Python Script…** → `Tools/Editor/importar_personagem.py` e me mande o Output Log.
+1. Depois do `git pull`, rode `git lfs pull` (o `Art/Characters/HoopsDummy/SK_HoopsDummy.fbx` tem ~8 MB; sem isso vem só um "ponteiro" de 130 bytes).
+2. Abra o editor. Ao terminar de carregar, ele importa sozinho a malha, o esqueleto e as **25 animações** em `/Game/Hoops/Characters/Dummy` (Output Log: `[Garrafao] Pronto!`). Só reimporta quando o FBX muda.
+3. Aperte **Play**. No topo da tela aparece `Garrafao Freestyle v0.5 | Boneco animado: ATIVO (25/25 clipes)`. Se aparecer em amarelo "NAO IMPORTADO", rode **Tools → Execute Python Script…** → `Tools/Editor/importar_personagem.py` e me mande o Output Log.
    (Último recurso: arraste o FBX para `/Game/Hoops/Characters/Dummy` no Content Browser com *Import Animations* ligado.)
 
 O boneco é um "manequim de teste" (partes rígidas, cores de pele/uniforme/tênis) com mocap da CMU: drible parado, andando, correndo, de costas e de lado (as duas mãos), andar e correr sem bola e o arremesso saindo do drible. A **bola segue a mão animada** (sai no fim do empurrão e volta para a mão no topo) e no arremesso a **mão chega ao topo exatamente no centro da janela green**.
@@ -62,7 +62,7 @@ Ajustes no painel Details do jogador durante o Play (categoria *Hoops*): `BodyHe
 - **D-pad nos ~2,5 s depois da cesta** (sem a bola na mão): **cima = flex**, **direita = shrug**, **esquerda = segura a pose do arremesso**. Fora dessa janela o D-pad faz o de sempre.
 - Ajustes em *Hoops|Green*: `GreenHoldSeconds`, `bAutoCelebrate`, `GreenSoundVolume`, `bGreenFeedbackAtRim` (ligado = o "GREEN!"/som/banner só aparecem quando a bola chega ao aro, como no 2K23; desligado = na hora, como o "Simple" do 2K25).
 
-Os dribles que trocam de mão (crossover, entre as pernas, por trás) tocam o **crossover do mocap** por enquanto; spin, step-back e hesitação ainda sem animação própria, e bandeja/enterrada usam o arremesso. Vêm na próxima etapa.
+Dribles com mocap próprio (CMU 102, atlético e baixo): **crossover de ataque/escape** (RT + cima, ou qualquer troca de mão já correndo: planta, cruza e sai acelerando), **spin/half-spin** (o corpo gira pela curva medida no mocap) e **hesitação / in-and-out** (finta baixa e arranque); crossover parado, entre as pernas e por trás usam o crossover do 06_14; step-back, retreat e double cross ainda sem clipe (`Art/Characters/HoopsDummy/preview_moves.png`).
 
 ### Manequim da Epic (alternativa)
 

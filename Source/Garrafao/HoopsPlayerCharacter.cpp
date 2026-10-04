@@ -41,6 +41,7 @@ namespace
 	constexpr float JogSpeedCm = 470.0f;
 	constexpr float SprintSpeedCm = 720.0f;
 	constexpr float WithBallSpeedScale = 0.93f;
+	constexpr double RunningCrossSpeedCm = 300.0;  // crossover acima disso (correndo, fora do size-up) = o de corrida
 	constexpr double CatchRadiusCm = 85.0;
 	constexpr double LayupReleaseSeconds = 0.42;
 	constexpr double DunkReleaseSeconds = 0.48;
@@ -606,13 +607,19 @@ void AHoopsPlayerCharacter::Tick(float DeltaSeconds)
 	const float CameraYaw = static_cast<float>(CameraForwardFlat().Rotation().Yaw);
 	CameraBoom->SetWorldRotation(FRotator(-21.0f, CameraYaw, 0.0f));
 
-	// Giro visual do spin (Fase 0: gira o corpo; depois vira animação).
+	// Giro visual do spin: o corpo gira aqui (o clipe Spin_* do boneco não gira, o giro foi tirado dele).
 	const double SpinElapsed = Now() - SpinVisualStart;
 	USceneComponent* Body = PlaceholderBody->IsVisible() ? static_cast<USceneComponent*>(PlaceholderBody) : static_cast<USceneComponent*>(GetMesh());
 	const float BaseYaw = PlaceholderBody->IsVisible() ? 0.0f : MeshYawOffset;
 	if (SpinVisualDuration > 0.0 && SpinElapsed < SpinVisualDuration)
 	{
-		const float Alpha = static_cast<float>(SpinElapsed / SpinVisualDuration);
+		float Alpha = static_cast<float>(SpinElapsed / SpinVisualDuration);
+		if (bSpinVisualCurve)
+		{
+			// Curva medida no mocap (rápido no começo, assenta no fim). Half-spin: vai pela curva e volta suave.
+			Alpha = !bSpinVisualReturns ? HoopsDummyRig::SpinTurnAlpha(Alpha)
+				: (Alpha < 0.5f ? HoopsDummyRig::SpinTurnAlpha(2.0f * Alpha) : 1.0f - FMath::SmoothStep(0.5f, 1.0f, Alpha));
+		}
 		Body->SetRelativeRotation(FRotator(0.0f, BaseYaw + SpinVisualDegrees * Alpha, 0.0f));
 	}
 	else
@@ -790,6 +797,8 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedi
 	LogInput(FString::Printf(TEXT("  -> %s%s%s"), *Ansi(Hoops::DribbleMoveLabel(Move)), Active.bInRhythm ? TEXT(" (ritmo!)") : TEXT(""),
 		Active.bRedirected ? TEXT(" (misdirection)") : TEXT("")));
 
+	const double SpeedBeforeMove = GetVelocity().Size2D(); // antes do impulso abaixo (crossover já correndo)
+
 	// Impulso do movimento no referencial do ataque.
 	const FVector AttackFwd = (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D();
 	const FVector AttackRight = FVector::CrossProduct(FVector::UpVector, AttackFwd);
@@ -808,6 +817,8 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedi
 		SpinVisualStart = Now();
 		SpinVisualDuration = Duration;
 		SpinVisualDegrees = (Move == Hoops::DribbleMove::Spin ? 360.0f : 180.0f) * (HandBefore == Hoops::BallHand::Right ? -1.0f : 1.0f);
+		bSpinVisualCurve = false; // giro linear; com o clipe do boneco, a curva medida (abaixo)
+		bSpinVisualReturns = false;
 	}
 
 	if (!Impulse.IsNearlyZero())
@@ -829,20 +840,59 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedi
 		bDoubleCrossPending = bDoubleSwitch;
 		SwitchFlightSeconds = FMath::Clamp(Duration * (bDoubleSwitch ? 0.4 : 0.6), 0.18, 0.6);
 
-		// Troca de mão simples (crossover, entre as pernas, por trás): toca o crossover do mocap, com a mão que
-		// recebe chegando junto com a bola. (Spin/half-spin giram o corpo; double cross ainda sem clipe.)
+		// Clipes do mocap (Tools/Animacao/README.md). Troca de mão: a bola sai no início da ação e a mão que recebe
+		// chega junto com ela (Catch no fim do voo de SwitchFlightSeconds). Sem troca: o miolo cabe na duração.
 		const bool bSpin = Move == Hoops::DribbleMove::Spin || Move == Hoops::DribbleMove::HalfSpin;
+		const bool bFromRight = HandBefore == Hoops::BallHand::Right;
+		const bool bSingleSwitch = Spec.HandSwitches == 1 && !bSpin;
+		// Crossover de ataque (RT) ou troca de mão já correndo: o crossover em corrida, que planta e sai acelerando.
+		const bool bEscapeCross = bSingleSwitch &&
+			(Move == Hoops::DribbleMove::AttackingCrossover || SpeedBeforeMove > RunningCrossSpeedCm);
+		const bool bHesitation = Move == Hoops::DribbleMove::Hesitation || Move == Hoops::DribbleMove::EscapeHesitation ||
+			Move == Hoops::DribbleMove::InAndOut;
+		const float SwitchSeconds = FMath::Max(0.12f, static_cast<float>(SwitchFlightSeconds));
 		UHoopsAnimInstance* Anim = GetHoopsAnim();
-		UAnimSequence* Cross = GetActionClip(HandBefore == Hoops::BallHand::Right ? EHoopsClip::CrossR2L : EHoopsClip::CrossL2R);
-		if (Active.bRedirected && Spec.HandSwitches == 0 && Anim)
+		UAnimSequence* SpinClip = bSpin ? GetActionClip(bFromRight ? EHoopsClip::SpinR2L : EHoopsClip::SpinL2R) : nullptr;
+		UAnimSequence* EscapeClip = bEscapeCross ? GetActionClip(bFromRight ? EHoopsClip::EscapeCrossR2L : EHoopsClip::EscapeCrossL2R) : nullptr;
+		UAnimSequence* HesitationClip = bHesitation ? GetActionClip(bFromRight ? EHoopsClip::HesitationR : EHoopsClip::HesitationL) : nullptr;
+		UAnimSequence* Cross = GetActionClip(bFromRight ? EHoopsClip::CrossR2L : EHoopsClip::CrossL2R);
+		if (!Anim)
 		{
-			Anim->StopAction(0.1f); // o crossover trocado não continua tocando
+			return;
 		}
-		if (Spec.HandSwitches == 1 && !bSpin && Anim && Cross)
+		if (Active.bRedirected && Spec.HandSwitches == 0 && !HesitationClip)
 		{
-			const float Rate = (HoopsDummyRig::CrossCatchSeconds - HoopsDummyRig::CrossStartSeconds) /
-				FMath::Max(0.12f, static_cast<float>(SwitchFlightSeconds));
+			Anim->StopAction(0.1f); // misdirection: o crossover trocado não continua tocando
+		}
+		if (SpinClip)
+		{
+			// Spin/half-spin: a outra mão recebe no fim do voo. O clipe não gira: a malha gira no Tick pela curva medida,
+			// no sentido do mocap (bola na direita = horário visto de cima), só durante o miolo do clipe.
+			const float Rate = (HoopsDummyRig::SpinCatchSeconds - HoopsDummyRig::SpinStartSeconds) / SwitchSeconds;
+			Anim->PlayAction(SpinClip, HoopsDummyRig::SpinStartSeconds, Rate, 0.06f, HoopsDummyRig::SpinEndSeconds);
+			SpinVisualDuration = (HoopsDummyRig::SpinEndSeconds - HoopsDummyRig::SpinStartSeconds) / Rate;
+			SpinVisualDegrees = (Move == Hoops::DribbleMove::Spin ? 360.0f : 180.0f) * (bFromRight ? 1.0f : -1.0f);
+			bSpinVisualCurve = true;
+			bSpinVisualReturns = Move == Hoops::DribbleMove::HalfSpin; // vira de costas e volta (sem estalo de 180°)
+		}
+		else if (EscapeClip)
+		{
+			// O corte foi tirado do clipe: quem vira para o novo lado é o capsule (orientado ao movimento).
+			const float Rate = (HoopsDummyRig::EscapeCrossCatchSeconds - HoopsDummyRig::EscapeCrossStartSeconds) / SwitchSeconds;
+			Anim->PlayAction(EscapeClip, HoopsDummyRig::EscapeCrossStartSeconds, Rate, 0.08f, HoopsDummyRig::EscapeCrossEndSeconds);
+		}
+		else if (bSingleSwitch && Cross)
+		{
+			// Troca de mão parado / no size-up (crossover, entre as pernas, por trás, hesi-cross). Double cross sem clipe.
+			const float Rate = (HoopsDummyRig::CrossCatchSeconds - HoopsDummyRig::CrossStartSeconds) / SwitchSeconds;
 			Anim->PlayAction(Cross, HoopsDummyRig::CrossStartSeconds, Rate, 0.08f, HoopsDummyRig::CrossEndSeconds);
+		}
+		else if (HesitationClip)
+		{
+			// Hesitação / in-and-out: finta baixa com a bola na cintura e arranque com o drible da mesma mão.
+			const float Rate = (HoopsDummyRig::HesitationEndSeconds - HoopsDummyRig::HesitationStartSeconds) /
+				FMath::Max(0.12f, static_cast<float>(Duration));
+			Anim->PlayAction(HesitationClip, HoopsDummyRig::HesitationStartSeconds, Rate, 0.08f, HoopsDummyRig::HesitationEndSeconds);
 		}
 		return;
 	}

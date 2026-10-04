@@ -32,11 +32,17 @@ curl -O http://mocap.cs.cmu.edu/subjects/79/79.asf
 curl -O http://mocap.cs.cmu.edu/subjects/79/79_94.amc
 curl -O http://mocap.cs.cmu.edu/subjects/141/141.asf
 curl -O http://mocap.cs.cmu.edu/subjects/141/141_21.amc
+curl -O http://mocap.cs.cmu.edu/subjects/102/102.asf
+for i in 11 14 18; do curl -O http://mocap.cs.cmu.edu/subjects/102/102_$i.amc; done
 ```
 
 - Sujeito 06: drible (parado, andando, de costas, de lado, crossover) e arremesso saindo do drible.
 - Sujeito 16: corrida (16_45, ~4 m/s), passada para o esqueleto do 06.
 - Sujeitos 79 (flexing) e 141 (shrug): celebrações, também passadas para o esqueleto do 06.
+- Sujeito 102 (basquete atlético, baixo e explosivo): 102_14 "GoLeft" (crossover em corrida com corte), 102_11
+  "OffensiveMoveSpinLeft" (spin com a bola na direita) e 102_18 "FeintLeftMoveRight" (finta e arranque),
+  passados para o esqueleto do 06. Outros trials úteis do 102: 12/15 (spin), 13 (crossover em corrida E->D),
+  19 (finta), 20/21 (pump fake + infiltração), 30–32 (infiltrações). Não há step-back no 102.
 - Próximos: sujeito 124 (124_05 jump shot, 124_06 bandeja) e 06_13 (drible baixo/rápido, entre as pernas).
 
 ## 2. Processar os clipes (numpy)
@@ -50,6 +56,9 @@ O que faz em cada clipe:
   para casar também a direção do movimento; fecha com crossfade (slerp).
 - **No lugar**: tira o deslocamento horizontal (quem anda é o capsule do jogo) e guarda a velocidade nativa.
 - **Frente**: gira o clipe para o corpo olhar para +Z (no arremesso, a frente é medida no trecho do arremesso).
+- **Des-girar** (`unturn`, clipes do 102): tira do clipe o giro "grosso" do corpo (frente suavizada), deixando o
+  balanço dos quadris. No spin quem gira é a malha (curva medida, `HoopsDummyRig::SpinTurnProgress`); no crossover
+  em corrida o corte vira o capsule. Assim o giro do clipe e o do jogo nunca somam.
 - **Espelho**: gera a versão da outra mão (S·R·S com S = diag(−1, 1, 1), trocando ossos l/r).
 - **Retarget**: as rotações locais da CMU já estão em frames alinhados ao mundo (C·M·C⁻¹), então valem para
   qualquer sujeito; só a altura da pelve é escalada.
@@ -92,7 +101,20 @@ Ver `docs/dev/COMO-RODAR.md` (script `Tools/Editor/importar_personagem.py`, ou a
 | Cross_R2L / _L2R | 06_14 quadros 8–60 (+ espelho) | 0,88 s | ação (crossover) | solta ~9, recebe ~30 |
 | Celebrate_Flex | 79_94 quadros 295–370 (retarget) | 1,27 s | só tronco no jogo | — |
 | Celebrate_Shrug | 141_21 quadros 25–90 (retarget) | 1,10 s | só tronco no jogo | — |
+| EscapeCross_R2L / _L2R | 102_14 quadros 20–65 (retarget, des-girado; + espelho) | 0,77 s | ação (crossover de ataque/escape, em corrida) | início 6, solta ~16, recebe 30, fim 42 |
+| Spin_R2L / _L2R | 102_11 quadros 9–83 (retarget, des-girado; + espelho) | 1,25 s | ação (spin; o jogo gira a malha) | início 6, solta ~16, recebe 43, empurra ~55, fim 68 |
+| Hesitation_R / _L | 102_18 quadros 26–63 (retarget, 60% des-girado; + espelho) | 0,63 s | ação (hesitação, in-and-out) | início 5, empurra ~26, fim 34 |
 
 **JumpShot** (quadros do clipe): gather 33 · dip **80** (início da ação no jogo; o clipe é centralizado aqui)
 · pés saem ~108 · **soltura 117** · ápice 119 · aterrissagem ~132. O jogo toca a partir do 80 com
 `playrate = (117 − 80) / 60 / (tempo ideal de soltura)`, então a mão chega no topo exatamente no green.
+
+**Movimentos do Pro Stick** (quadros do clipe; constantes em `Source/Garrafao/HoopsDummyRig.h`). Nos que trocam de mão a
+bola sai no **início** da ação e a outra mão recebe no fim do voo: `playrate = (recebe − início) / 60 / SwitchFlightSeconds`
+(0,6 × a duração do movimento). Sem troca de mão (hesitação), o miolo início–fim é tocado na duração do movimento.
+
+| Clipe | Movimentos | O que mostra | Notas |
+|---|---|---|---|
+| EscapeCross_* | Crossover de ataque (RT); qualquer troca de mão simples já correndo (> 3 m/s) | Corre com a direita, planta baixo (pelve ~72 cm no 102), cruza na frente e sai acelerando (1,8 → 3,9 m/s) | O corte de ~40° foi tirado: quem vira é o capsule (orientado ao movimento no sprint) |
+| Spin_* | Spin (360°), half-spin (vai a 180° e volta) | Mão direita leva a bola por fora, empurra no giro, a esquerda recebe e empurra | Giro medido de 211° no miolo (horário visto de cima com a bola na direita); progresso por 1/8 do miolo: 0, 0,230, 0,431, 0,578, 0,682, 0,779, 0,873, 0,956, 1 |
+| Hesitation_* | Hesitação, escape de hesitação, in-and-out | Bola na cintura, corpo começa ~22° virado para o lado da mão livre e volta de frente com o arranque | Termina de frente para emendar no loop de base |
