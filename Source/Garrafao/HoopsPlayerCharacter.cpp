@@ -634,9 +634,11 @@ void AHoopsPlayerCharacter::UpdateMovement(float DeltaSeconds)
 	const FVector CamFwdFlat = CameraForwardFlat();
 	const FVector Wish = (CamFwdFlat * MoveInput.Y + FVector::CrossProduct(FVector::UpVector, CamFwdFlat) * MoveInput.X).GetSafeNormal2D();
 	const FVector ToHoop = Hoop ? (Hoop->GetRimFloorPointWorld() - GetActorLocation()).GetSafeNormal2D() : GetActorForwardVector();
-	const bool bRetreat = !Wish.IsNearlyZero() && FVector::DotProduct(Wish, ToHoop) < -0.64f; // > ~130° da cesta
-	const bool bSizeUp = Wish.IsNearlyZero() || MoveInput.Size() < StrafeStickThreshold;
-	const bool bStrafe = bHasBall && !bSprintHeld && (bLeftTriggerHeld || bRetreat || bSizeUp);
+	// Com histerese, para o corpo e a velocidade não ficarem piscando perto dos limites.
+	const double Stick = MoveInput.Size();
+	bSizeUpLatched = Wish.IsNearlyZero() || Stick < StrafeStickThreshold + (bSizeUpLatched ? 0.06 : -0.06);
+	bRetreatLatched = !Wish.IsNearlyZero() && FVector::DotProduct(Wish, ToHoop) < (bRetreatLatched ? -0.5 : -0.64); // > ~130° da cesta
+	const bool bStrafe = bHasBall && !bSprintHeld && (bLeftTriggerHeld || bRetreatLatched || bSizeUpLatched);
 
 	// Arranque na saída do drible (docs/17 §4.4, P0-8): LS apontado quando o movimento acaba = speedboost ou cross
 	// launch na direção do LS, pago com energia (sem contador de boosts, D13). Corta a curva: sai reto para o LS.
@@ -1619,12 +1621,14 @@ void AHoopsPlayerCharacter::UpdateBodyAnimation(float DeltaSeconds)
 	BaseClip = Clip;
 
 	// Postura atlética + inclinação pela aceleração (no referencial do corpo).
+	// Aceleração no mundo, depois girada para o corpo (derivar a velocidade local inventaria aceleração quando ele gira).
+	const FVector WorldVelocity(GetVelocity().X, GetVelocity().Y, 0.0);
 	if (DeltaSeconds > UE_KINDA_SMALL_NUMBER)
 	{
-		const FVector Accel = (Local - PrevLocalVelocity) / DeltaSeconds;
+		const FVector Accel = GetActorRotation().UnrotateVector((WorldVelocity - PrevWorldVelocity) / DeltaSeconds);
 		SmoothedLocalAccel = FMath::Lerp(SmoothedLocalAccel, Accel, FMath::Min(1.0f, DeltaSeconds * 10.0f));
 	}
-	PrevLocalVelocity = Local;
+	PrevWorldVelocity = WorldVelocity;
 	float Crouch = 0.0f;
 	if (bDribbling)
 	{
@@ -1634,10 +1638,11 @@ void AHoopsPlayerCharacter::UpdateBodyAnimation(float DeltaSeconds)
 	float LeanRight = 0.0f;
 	if (bBodyLean && ShotPhase == EShotPhase::None)
 	{
-		LeanForward = FMath::Clamp(Speed / 600.0f * 6.0f + static_cast<float>(SmoothedLocalAccel.X) / 1500.0f * 5.0f, -6.0f, 12.0f);
+		const float ForwardSpeed = FMath::Max(0.0f, static_cast<float>(Local.X)); // de costas/de lado não inclina para a frente
+		LeanForward = FMath::Clamp(ForwardSpeed / 600.0f * 6.0f + static_cast<float>(SmoothedLocalAccel.X) / 1500.0f * 5.0f, -6.0f, 12.0f);
 		LeanRight = FMath::Clamp(static_cast<float>(SmoothedLocalAccel.Y) / 1500.0f * 9.0f, -12.0f, 12.0f);
 	}
-	Anim->SetStanceTarget(Crouch / FMath::Max(0.1f, MeshScale), LeanForward, LeanRight, FRotator(0.0, MeshForwardYaw, 0.0).Vector());
+	Anim->SetStanceTarget(Crouch / FMath::Max(0.1f, MeshScale), LeanForward, LeanRight, FRotator(0.0, MeshForwardYaw - MeshYawAdjust, 0.0).Vector());
 }
 
 void AHoopsPlayerCharacter::PlayShotAction(float StartSeconds, float SecondsToRelease)
@@ -1748,8 +1753,8 @@ void AHoopsPlayerCharacter::BeginBallFlight(const FVector& Start, Hoops::BallHan
 	// O quique é calculado no referencial do jogador (como a mão): se ele freia, vira ou leva o impulso de um
 	// drible no meio do voo, a bola vai junto e nunca "foge" para onde ele estaria (como no 2K, a bola é do corpo).
 	const FTransform Body = GetActorTransform();
-	FVector LocalVelocity = Body.InverseTransformVector(FVector(GetVelocity().X, GetVelocity().Y, 0.0));
-	LocalVelocity = LocalVelocity.GetClampedToMaxSize(500.0); // só para o quique cair um pouco à frente correndo
+	// Só para o quique cair um pouco à frente correndo (recuando ou de lado, não puxa a bola para os pés/através do corpo).
+	const FVector LocalVelocity(FMath::Clamp(Body.InverseTransformVector(GetVelocity()).X, 0.0, 500.0), 0.0, 0.0);
 	// Recepção prevista: o topo do curso da mesma mão (medido no ciclo anterior) ou, trocando de mão, um pouco
 	// acima da outra mão agora. O fim do voo encosta na mão animada de qualquer jeito.
 	const bool bSameHand = Carry == EBallCarry::Hand && ToHand == CarryHand && bHasTopRelative;

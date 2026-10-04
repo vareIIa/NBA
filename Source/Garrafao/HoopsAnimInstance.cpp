@@ -286,6 +286,14 @@ namespace
 	}
 
 	const FName UpperBodyRootBone(TEXT("spine_02"));
+	const FName BonePelvis(TEXT("pelvis"));
+	const FName BoneSpine01(TEXT("spine_01"));
+	const FName BoneThighL(TEXT("thigh_l"));
+	const FName BoneCalfL(TEXT("calf_l"));
+	const FName BoneFootL(TEXT("foot_l"));
+	const FName BoneThighR(TEXT("thigh_r"));
+	const FName BoneCalfR(TEXT("calf_r"));
+	const FName BoneFootR(TEXT("foot_r"));
 }
 
 bool FHoopsAnimInstanceProxy::Evaluate(FPoseContext& Output)
@@ -375,16 +383,16 @@ void FHoopsAnimInstanceProxy::ApplyStance(FPoseContext& Output) const
 		return;
 	}
 	const FBoneContainer& Bones = Output.Pose.GetBoneContainer();
-	const auto FindBone = [&Bones](const TCHAR* Name)
+	const auto FindBone = [&Bones](const FName& Name)
 	{
-		const int32 MeshIndex = Bones.GetReferenceSkeleton().FindBoneIndex(FName(Name));
+		const int32 MeshIndex = Bones.GetReferenceSkeleton().FindBoneIndex(Name);
 		return MeshIndex == INDEX_NONE ? FCompactPoseBoneIndex(INDEX_NONE) : Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(MeshIndex));
 	};
-	const FCompactPoseBoneIndex Pelvis = FindBone(TEXT("pelvis"));
-	const FCompactPoseBoneIndex Spine = FindBone(TEXT("spine_01"));
+	const FCompactPoseBoneIndex Pelvis = FindBone(BonePelvis);
+	const FCompactPoseBoneIndex Spine = FindBone(BoneSpine01);
 	const FCompactPoseBoneIndex Legs[2][3] = {
-		{FindBone(TEXT("thigh_l")), FindBone(TEXT("calf_l")), FindBone(TEXT("foot_l"))},
-		{FindBone(TEXT("thigh_r")), FindBone(TEXT("calf_r")), FindBone(TEXT("foot_r"))},
+		{FindBone(BoneThighL), FindBone(BoneCalfL), FindBone(BoneFootL)},
+		{FindBone(BoneThighR), FindBone(BoneCalfR), FindBone(BoneFootR)},
 	};
 	if (!Pelvis.IsValid() || !Spine.IsValid())
 	{
@@ -436,8 +444,12 @@ void FHoopsAnimInstanceProxy::ApplyStance(FPoseContext& Output) const
 			FTransform Thigh = CSPose.GetComponentSpaceTransform(Legs[Side][0]);
 			FTransform Calf = CSPose.GetComponentSpaceTransform(Legs[Side][1]);
 			FTransform Foot = CSPose.GetComponentSpaceTransform(Legs[Side][2]);
-			// Joelho aponta para a frente e um pouco para fora (base larga).
-			const FVector KneeTarget = Calf.GetLocation() + Forward * 60.0 + Right * (Side == 0 ? -15.0 : 15.0);
+			// Joelho segue a dobra que a animação já tem (alinhado com a ponta do pé), puxado para a frente e um pouco
+			// para fora (base larga).
+			const FVector HipToFoot = (Foot.GetLocation() - Thigh.GetLocation()).GetSafeNormal();
+			const FVector AnimBend = FVector::VectorPlaneProject(Calf.GetLocation() - Thigh.GetLocation(), HipToFoot);
+			const FVector BendDir = AnimBend.SizeSquared() > 4.0 ? AnimBend.GetSafeNormal() : Forward;
+			const FVector KneeTarget = Calf.GetLocation() + (BendDir + Forward) * 30.0 + Right * (Side == 0 ? -15.0 : 15.0);
 			AnimationCore::SolveTwoBoneIK(Thigh, Calf, Foot, KneeTarget, FeetBefore[Side].GetLocation(), false, 1.0, 1.0);
 			Foot.SetRotation(FeetBefore[Side].GetRotation());
 			const FBoneTransform LegChange[] = {

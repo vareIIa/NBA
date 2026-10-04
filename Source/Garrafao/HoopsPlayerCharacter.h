@@ -341,7 +341,9 @@ private:
 	float MeshYawOffset = 0.0f;   // yaw base do corpo visual (boneco calibrado / manequim -90 / cilindro 0)
 	float MeshScale = 1.0f;
 	float MeshForwardYaw = 0.0f;  // frente do boneco no espaço da malha (medida pelos pés)
-	FVector PrevLocalVelocity = FVector::ZeroVector;
+	FVector PrevWorldVelocity = FVector::ZeroVector;
+	bool bSizeUpLatched = true;   // histerese do size-up / retreat (não fica trocando de orientação a cada frame)
+	bool bRetreatLatched = false;
 	FVector SmoothedLocalAccel = FVector::ZeroVector;
 	EHoopsClip BaseClip = EHoopsClip::HoldIdle;
 
