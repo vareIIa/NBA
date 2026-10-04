@@ -371,6 +371,7 @@ private:
 	bool bSwitchRequested = false;
 	bool bDoubleCrossPending = false;
 	double SwitchFlightSeconds = 0.3;
+	double SwitchNotBefore = 0.0;   // a troca de mão espera o quadro em que a mão do clipe solta a bola
 	// Green: último arremesso foi green (celebra se cair) e qual celebração vem a seguir.
 	bool bLastShotGreen = false;
 	double LastDribbleEffectsStart = -1.0; // StartTime do último drible cujos efeitos (impulso, bola, animação) já rodaram

@@ -60,6 +60,7 @@ namespace HoopsDummyRig
 
 	// Crossover (clipe Cross_R2L; o L2R é o espelho): a mão de origem solta a bola ~quadro 9, a outra recebe ~30.
 	constexpr float CrossStartSeconds = 7.0f / 60.0f;
+	constexpr float CrossReleaseSeconds = 9.0f / 60.0f;
 	constexpr float CrossCatchSeconds = 30.0f / 60.0f;
 	constexpr float CrossEndSeconds = 50.0f / 60.0f;
 
@@ -69,6 +70,7 @@ namespace HoopsDummyRig
 	// Escape/attacking crossover (EscapeCross_R2L, 102_14): crossover em corrida que planta baixo e sai acelerando para
 	// o outro lado. O corte foi tirado do clipe (quem vira é o capsule). Topo da mão 6, soltura ~16, recebe 30, fim 42.
 	constexpr float EscapeCrossStartSeconds = 6.0f / 60.0f;
+	constexpr float EscapeCrossReleaseSeconds = 16.0f / 60.0f;
 	constexpr float EscapeCrossCatchSeconds = 30.0f / 60.0f;
 	constexpr float EscapeCrossEndSeconds = 42.0f / 60.0f;
 
@@ -76,6 +78,7 @@ namespace HoopsDummyRig
 	// de frente) e o jogo gira a malha pela curva medida, de SpinStart a SpinEnd. Topo da mão direita 6 (a bola sai),
 	// empurrão até ~16, a esquerda recebe 43 e empurra ~55, fim 68.
 	constexpr float SpinStartSeconds = 6.0f / 60.0f;
+	constexpr float SpinReleaseSeconds = 16.0f / 60.0f;
 	constexpr float SpinCatchSeconds = 43.0f / 60.0f;
 	constexpr float SpinEndSeconds = 68.0f / 60.0f;
 	constexpr float SpinMeasuredDegrees = 211.0f; // giro do mocap entre SpinStart e SpinEnd (o jogo gira 360 / 180)

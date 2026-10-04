@@ -839,6 +839,14 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedi
 		bSwitchRequested = Spec.HandSwitches > 0 || Active.bRedirected;
 		bDoubleCrossPending = bDoubleSwitch;
 		SwitchFlightSeconds = FMath::Clamp(Duration * (bDoubleSwitch ? 0.4 : 0.6), 0.18, 0.6);
+		SwitchNotBefore = Now();
+		// Com clipe: a bola só sai no quadro em que a mão do mocap solta, e o voo encurta para chegar no mesmo Catch.
+		const auto DelaySwitch = [this](float ReleaseSeconds, float StartSeconds, float Rate)
+		{
+			const double Delay = FMath::Max(0.0, static_cast<double>(ReleaseSeconds - StartSeconds) / FMath::Max(0.1f, Rate));
+			SwitchNotBefore = Now() + Delay;
+			SwitchFlightSeconds = FMath::Max(0.12, SwitchFlightSeconds - Delay);
+		};
 
 		// Clipes do mocap (Tools/Animacao/README.md). Troca de mão: a bola sai no início da ação e a mão que recebe
 		// chega junto com ela (Catch no fim do voo de SwitchFlightSeconds). Sem troca: o miolo cabe na duração.
@@ -870,6 +878,7 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedi
 			// no sentido do mocap (bola na direita = horário visto de cima), só durante o miolo do clipe.
 			const float Rate = (HoopsDummyRig::SpinCatchSeconds - HoopsDummyRig::SpinStartSeconds) / SwitchSeconds;
 			Anim->PlayAction(SpinClip, HoopsDummyRig::SpinStartSeconds, Rate, 0.06f, HoopsDummyRig::SpinEndSeconds);
+			DelaySwitch(HoopsDummyRig::SpinReleaseSeconds, HoopsDummyRig::SpinStartSeconds, Rate);
 			SpinVisualDuration = (HoopsDummyRig::SpinEndSeconds - HoopsDummyRig::SpinStartSeconds) / Rate;
 			SpinVisualDegrees = (Move == Hoops::DribbleMove::Spin ? 360.0f : 180.0f) * (bFromRight ? 1.0f : -1.0f);
 			bSpinVisualCurve = true;
@@ -880,12 +889,14 @@ void AHoopsPlayerCharacter::StartDribbleMove(Hoops::DribbleMove Move, bool bRedi
 			// O corte foi tirado do clipe: quem vira para o novo lado é o capsule (orientado ao movimento).
 			const float Rate = (HoopsDummyRig::EscapeCrossCatchSeconds - HoopsDummyRig::EscapeCrossStartSeconds) / SwitchSeconds;
 			Anim->PlayAction(EscapeClip, HoopsDummyRig::EscapeCrossStartSeconds, Rate, 0.08f, HoopsDummyRig::EscapeCrossEndSeconds);
+			DelaySwitch(HoopsDummyRig::EscapeCrossReleaseSeconds, HoopsDummyRig::EscapeCrossStartSeconds, Rate);
 		}
 		else if (bSingleSwitch && Cross)
 		{
 			// Troca de mão parado / no size-up (crossover, entre as pernas, por trás, hesi-cross). Double cross sem clipe.
 			const float Rate = (HoopsDummyRig::CrossCatchSeconds - HoopsDummyRig::CrossStartSeconds) / SwitchSeconds;
 			Anim->PlayAction(Cross, HoopsDummyRig::CrossStartSeconds, Rate, 0.08f, HoopsDummyRig::CrossEndSeconds);
+			DelaySwitch(HoopsDummyRig::CrossReleaseSeconds, HoopsDummyRig::CrossStartSeconds, Rate);
 		}
 		else if (HesitationClip)
 		{
@@ -1837,7 +1848,7 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 		// Troca de mão pedida por um drible (crossover, entre as pernas, por trás...).
 		const Hoops::BallHand HeldHand = Carry == EBallCarry::Hand ? CarryHand : FlightHand;
 		const FVector BallNow = Carry == EBallCarry::Hand ? HandBallPoint(CarryHand) : Ball->GetActorLocation();
-		if (bSwitchRequested)
+		if (bSwitchRequested && T >= SwitchNotBefore)
 		{
 			bSwitchRequested = false;
 			const Hoops::BallHand To = bDoubleCrossPending ? Hoops::OtherHand(HeldHand) : Dribble.GetHand();
@@ -1854,7 +1865,7 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 				}
 			}
 		}
-		else if (Carry == EBallCarry::Hand && CarryHand != Dribble.GetHand() && !bDoubleCrossPending)
+		else if (Carry == EBallCarry::Hand && CarryHand != Dribble.GetHand() && !bDoubleCrossPending && !bSwitchRequested)
 		{
 			BeginBallFlight(BallNow, Dribble.GetHand(), 0.3); // bola na mão errada (ex.: depois de receber): troca
 		}
@@ -1899,7 +1910,8 @@ void AHoopsPlayerCharacter::LateUpdateHeldBall(float DeltaSeconds)
 			const float Drop = StrokeTopZ - HandPrevZ;
 			// Limiar de velocidade acompanha o playrate (clipe lento ou de lado ao contrário desce devagar).
 			const float PushSpeed = -70.0f * FMath::Clamp(CurrentBaseRateAbs, 0.4f, 1.0f);
-			const bool bPush = Drop > 7.0f * MeshScale && StrokePeakVz < PushSpeed && HandVz > StrokePeakVz * 0.55f && T - CarryStart > 0.1;
+			// (Esperando a troca de mão de um drible: a bola fica na mão até o quadro em que o clipe solta.)
+			const bool bPush = !bSwitchRequested && Drop > 7.0f * MeshScale && StrokePeakVz < PushSpeed && HandVz > StrokePeakVz * 0.55f && T - CarryStart > 0.1;
 			const bool bStuck = T - CarryStart > FMath::Max(1.2, PushPeriod * 2.0); // segurança: nunca fica presa na mão
 			if (bPush || bStuck)
 			{
