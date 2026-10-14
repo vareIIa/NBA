@@ -149,6 +149,12 @@ const BallLegHandMax = 0.25; // m: além disso a mão não vai (braço esticado)
 // A mão segue o desvio suave (sem tranco); a bola, que tem a garantia final, nunca entra na perna. Pode abrir um vão curto
 // entre a palma e a bola no meio de um drible rápido.
 const BallLegHandRate = 12; // 1/s
+// Entre as pernas (Kyrie, LZSlFyyCkhk 164,0–165,2 s, de costas): a mão empurra a bola por fora do joelho, ela quica UMA
+// vez no chão entre os pés (164,7–164,8 s) e a outra mão recebe baixo, por fora do joelho do outro lado (165,1 s). O
+// clipe da CMU quicava 66 cm à frente dos pés e recebia na frente do corpo (era um crossover baixo).
+// Recepção ao lado do JOELHO (no nosso agachamento o joelho fica ~0,4 m à frente do pé; ao lado do pé o braço esticava
+// até o limite e dava tranco).
+const TweenCatch = { outside: 0.12, height: 0.42, forward: 0.3 }; // m: centro da bola na recepção, a partir do pé
 const smoothMax = (x: number, min: number, soft: number) => (x + min + Math.sqrt((x - min) * (x - min) + soft * soft)) / 2;
 // Escape (RT + o mesmo comando do size-up; GIF de "escape moves" do 2K24 no game8): o corpo sai uns 0,5–1 m para o lado
 // da mão nova e os pés acompanham em passos (o da frente abre, o de trás vem atrás), sem deslizar.
@@ -466,6 +472,7 @@ export class PlayerAnimator {
 
     this.applyStance(dt, input);
     this.applyArms(dt);
+    this.applyBetweenLegsArm(dt);
     this.applyBallClearance(dt, input);
   }
 
@@ -768,6 +775,20 @@ export class PlayerAnimator {
         // No fim do giro a malha volta para a frente: a recepção é prevista sem o giro.
         if (a.timing?.turnDeg) palm.applyAxisAngle(axis.set(0, 1, 0), -this.model.rotation.y);
         palm.y -= BallRadius * 1.02;
+        if (a.kind === 'BetweenLegs') {
+          const path = this.betweenLegsPath(a.toHand);
+          if (this.tweenCatch?.action === a) path.catchLocal.copy(this.tweenCatch.local); // o mesmo ponto para a mão e a bola
+          else this.tweenCatch = { action: a, hand: a.toHand, local: path.catchLocal.clone() };
+          this.release({
+            fromHand: a.fromHand,
+            toHand: a.toHand,
+            catchIn: (a.catch - a.release) / a.rate,
+            catchLocal: path.catchLocal,
+            floorLocal: path.floorLocal,
+            move: true,
+          });
+          return;
+        }
         this.release({ fromHand: a.fromHand, toHand: a.toHand, catchIn: (a.catch - a.release) / a.rate, catchLocal: palm, move: true });
       }
       return; // durante a ação, a base não solta a bola
@@ -1171,9 +1192,11 @@ export class PlayerAnimator {
         const radial = dist > 1e-6 ? d.clone().divideScalar(dist) : new THREE.Vector3();
         if (hand) {
           // Mão da bola: a perna do mesmo lado é contornada por fora do joelho; a outra, pela frente (direção fixa,
-          // sem a mão pular de um lado para o outro entre as pernas).
+          // sem a mão pular de um lado para o outro entre as pernas). No entre as pernas, antes da soltura, a bola vai
+          // descer e passar entre os pés: o joelho do mesmo lado também é contornado pela frente.
           const sameSide = cap.a.endsWith(`_${hand}`);
-          d.copy(sameSide ? leftDir : fwdDir).multiplyScalar(sameSide ? sideSign(hand) : 1);
+          const tween = this.active?.kind === 'BetweenLegs' && !this.active.released;
+          d.copy(sameSide && !tween ? leftDir : fwdDir).multiplyScalar(sameSide && !tween ? sideSign(hand) : 1);
         } else {
           d.y = 0;
           if (d.lengthSq() < 1e-6) d.set(c.x - center.x, 0, c.z - center.z);
@@ -1186,6 +1209,56 @@ export class PlayerAnimator {
       }
     }
     return out;
+  }
+
+  /** Entre as pernas: quique entre os pés e recepção por fora do joelho do outro lado (referencial do jogador). */
+  private betweenLegsPath(toHand: Hand): { floorLocal: THREE.Vector3; catchLocal: THREE.Vector3 } {
+    const inv = this.root.matrixWorld.clone().invert();
+    const planted = this.plantBlend > 0.5;
+    const foot = (side: Hand) =>
+      (planted ? this.plant[side].pos.clone() : this.bone(`foot_${side}`).getWorldPosition(new THREE.Vector3())).applyMatrix4(inv);
+    const l = foot('l');
+    const r = foot('r');
+    const floorLocal = l.clone().add(r).multiplyScalar(0.5).setY(0);
+    const to = toHand === 'l' ? l : r;
+    const catchLocal = new THREE.Vector3(
+      to.x + sideSign(toHand) * TweenCatch.outside,
+      TweenCatch.height,
+      to.z + TweenCatch.forward,
+    );
+    return { floorLocal, catchLocal };
+  }
+
+  private tweenCatch: { action: ActiveAction; hand: Hand; local: THREE.Vector3 } | null = null;
+  private tweenArmWeight = 0;
+
+  /** Entre as pernas: depois da soltura, a mão que recebe desce para o ponto de recepção (por fora do joelho, baixo). */
+  private applyBetweenLegsArm(dt: number): void {
+    const cur = this.active;
+    if (cur?.kind === 'BetweenLegs' && !cur.fadingOut && this.hasBall && this.tweenCatch?.action !== cur) {
+      // Começo do entre as pernas: o ponto de recepção já é conhecido (a soltura usa o mesmo).
+      this.tweenCatch = { action: cur, hand: cur.toHand, local: this.betweenLegsPath(cur.toHand).catchLocal };
+    }
+    const t = this.tweenCatch;
+    if (!t) return;
+    const a = this.active;
+    const running = !!a && t.action === a && !a.fadingOut;
+    if (running) {
+      // A mão que recebe já desce desde o começo do drible (no real ela espera a bola baixa) e segura lá até o fim.
+      this.tweenArmWeight = THREE.MathUtils.smoothstep(a.action.time, a.start, a.release + (a.catch - a.release) * 0.7);
+    } else {
+      // Fim do drible: o braço volta para o loop devagar (cortar o peso de uma vez dava tranco).
+      this.tweenArmWeight *= Math.exp(-8 * dt);
+      if (this.tweenArmWeight < 0.01) {
+        this.tweenCatch = null;
+        return;
+      }
+    }
+    const w = this.tweenArmWeight;
+    if (w <= 1e-3) return;
+    const palm = t.local.clone().add(new THREE.Vector3(0, BallRadius * 1.02, 0)).applyMatrix4(this.root.matrixWorld);
+    const pole = new THREE.Vector3(sideSign(t.hand), -0.3, -0.8).transformDirection(this.root.matrixWorld);
+    this.reachPalm(t.hand, palm, w, pole);
   }
 
   private readonly ballClearance = { l: new THREE.Vector3(), r: new THREE.Vector3() };
