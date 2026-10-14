@@ -122,6 +122,12 @@ const ActionOutBlend = 0.24; // volta para a base
 const MinStateTime = 0.16; // histerese: o loop não troca de novo antes disso
 const ClipGroundOffset = 0.028;
 const NoBallLoops = new Set(['Hold_Idle', 'Walk', 'Run']);
+// Drible em movimento (referência real: Kyrie em câmera lenta, LZSlFyyCkhk 9,0–10,9 s): as pernas não param; a cada
+// quique um pé apoia e o outro passa, e só o tronco e os braços fazem o drible. Os clipes de drible da CMU foram
+// gravados parados, então em movimento as pernas e a pelve vêm do loop de locomoção (camada por osso).
+const LegLayerBones = ['pelvis', 'hip_l', 'thigh_l', 'calf_l', 'foot_l', 'ball_l', 'hip_r', 'thigh_r', 'calf_r', 'foot_r', 'ball_r'];
+const LegLayerMoves = new Set<string>(['Cross', 'EscapeCross', 'BetweenLegs']);
+const LegLayerSpeed = [0.5, 1.2]; // m/s: abaixo, as pernas do drible parado; acima, as da locomoção
 
 const v = new THREE.Vector3();
 const v2 = new THREE.Vector3();
@@ -150,6 +156,9 @@ export class PlayerAnimator {
   private clock = 0;
   private prevTimes = new Map<string, number>();
   private hasBall = true;
+  /** Camada das pernas: loop de locomoção que segue tocando nas pernas durante um drible em movimento. */
+  private readonly legLayer = { clip: '', time: 0, weight: 0 };
+  private readonly legTracks = new Map<string, { bone: THREE.Bone; q?: THREE.Interpolant; p?: THREE.Interpolant }[]>();
 
   private crouch = 0;
   private widen = 0;
@@ -159,6 +168,7 @@ export class PlayerAnimator {
     r: { locked: false, pos: new THREE.Vector3(), prevAnim: new THREE.Vector3(), release: new THREE.Vector3(), releaseT: 1 },
   };
   footLockEnabled = true;
+  legLayerEnabled = true;
   /**
    * Base plantada do size-up (parado com a bola, drible normal ou baixo): os dois pés pregados no chão, abertos e retos;
    * o ritmo fica no joelho e no quadril. Se o corpo gira ou anda além da base, o pé dá um passinho para a nova posição.
@@ -170,6 +180,8 @@ export class PlayerAnimator {
   };
   private restFootLocal = { l: new THREE.Quaternion(), r: new THREE.Quaternion() };
   private restAnkleY = 0.1;
+  /** Pontos da sola do tênis (vértices mais baixos da malha no bind pose), no espaço do osso do pé ou da ponta. */
+  private readonly solePoints: Record<Hand, { bone: THREE.Bone; local: THREE.Vector3 }[]> = { l: [], r: [] };
   private leanForward = 0;
   private leanRight = 0;
   private dribbleArmWeight = 0;
@@ -246,6 +258,7 @@ export class PlayerAnimator {
       this.restFootLocal[side] = rootInv.clone().multiply(this.bone(`foot_${side}`).getWorldQuaternion(new THREE.Quaternion()));
     }
     this.restAnkleY = this.bone('foot_l').getWorldPosition(new THREE.Vector3()).y;
+    this.collectSolePoints();
 
     // Altura nativa da palma da mão da bola na recepção (picos) e na soltura (vales) de cada loop de drible.
     for (const [name, info] of Object.entries(this.clips)) {
@@ -406,6 +419,7 @@ export class PlayerAnimator {
       }
     }
     this.mixer.update(dt);
+    this.applyLegLayer(dt, input);
     this.inertial.apply(dt);
     this.model.rotation.y = this.yawOffset;
     this.root.updateMatrixWorld(true);
@@ -496,6 +510,13 @@ export class PlayerAnimator {
         if (peaks.length > 0) time = peaks[0] / ClipFps;
       }
     }
+    // Drible em movimento: a camada das pernas manda; o loop novo entra na mesma fase da passada (senão a perna pula).
+    const L = this.legLayer;
+    if (L.clip && L.weight > 0.5 && L.clip !== next.name) {
+      time = this.matchLegPhase(L.clip, L.time, next.name);
+      L.clip = next.name;
+      L.time = time;
+    }
     to.time = time;
     this.prevTimes.set(next.name, time);
     this.base = next;
@@ -533,6 +554,91 @@ export class PlayerAnimator {
       this.actionWeight = 0;
       this.yawOffset = 0;
       this.blend(ActionOutBlend);
+    }
+  }
+
+  /** Interpolantes das pernas e da pelve de um loop (criados uma vez por clipe). */
+  private legTracksOf(clipName: string): { bone: THREE.Bone; q?: THREE.Interpolant; p?: THREE.Interpolant }[] {
+    let tracks = this.legTracks.get(clipName);
+    if (tracks) return tracks;
+    const clip = this.actions.get(clipName)?.getClip();
+    tracks = LegLayerBones.map((name) => {
+      // createInterpolant existe no KeyframeTrack (escolhe linear/slerp pelo tipo), mas não está nos tipos do three.
+      const find = (prop: string) =>
+        (clip?.tracks.find((t) => t.name === `${name}.${prop}`) as { createInterpolant(): THREE.Interpolant } | undefined)?.createInterpolant();
+      return { bone: this.bone(name), q: find('quaternion'), p: name === 'pelvis' ? find('position') : undefined };
+    });
+    this.legTracks.set(clipName, tracks);
+    return tracks;
+  }
+
+  /** Tempo do clipe `to` cuja pose das pernas (coxas e canelas, rotação local) é a mais próxima da de `from` em tFrom. */
+  private matchLegPhase(from: string, tFrom: number, to: string): number {
+    const a = this.legTracksOf(from);
+    const b = this.legTracksOf(to);
+    const clipA = this.actions.get(from)!.getClip();
+    const clipB = this.actions.get(to)!.getClip();
+    const ta = ((tFrom % clipA.duration) + clipA.duration) % clipA.duration;
+    const legs = [2, 3, 7, 8]; // thigh_l, calf_l, thigh_r, calf_r em LegLayerBones
+    const qa = legs.map((i) => {
+      const r = a[i].q?.evaluate(ta);
+      return r ? new THREE.Quaternion(r[0], r[1], r[2], r[3]) : new THREE.Quaternion();
+    });
+    let best = 0;
+    let bestCost = Infinity;
+    const qb = new THREE.Quaternion();
+    for (let f = 0; f * (1 / ClipFps) < clipB.duration; f++) {
+      const t = f / ClipFps;
+      let cost = 0;
+      legs.forEach((i, k) => {
+        const r = b[i].q?.evaluate(t);
+        if (r) cost += qa[k].angleTo(qb.set(r[0], r[1], r[2], r[3]));
+      });
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Pernas da locomoção sob o drible em movimento. No começo do drible guarda o loop da base e segue o relógio dele
+   * (a base pode trocar de mão no meio do crossover, e o clipe da outra mão tem outra fase de passada).
+   */
+  private applyLegLayer(dt: number, input: AnimInput): void {
+    const a = this.active;
+    const L = this.legLayer;
+    const layered = this.legLayerEnabled && !!a && !a.fadingOut && LegLayerMoves.has(a.kind) && this.hasBall;
+    if (!layered) {
+      L.clip = '';
+      L.weight = 0;
+      return;
+    }
+    const speed = this.speedOf(input);
+    const target = THREE.MathUtils.smoothstep(speed, LegLayerSpeed[0], LegLayerSpeed[1]);
+    if (!L.clip) {
+      // Começo do drible: a inertialization já suaviza a entrada, então o peso entra direto.
+      L.clip = this.base.name;
+      L.time = this.actions.get(L.clip)?.time ?? 0;
+      L.weight = target;
+    } else {
+      const baseAction = this.actions.get(this.base.name);
+      L.time += dt * (baseAction?.timeScale ?? 1);
+      L.weight += (target - L.weight) * (1 - Math.exp(-10 * dt));
+    }
+    const clip = this.actions.get(L.clip)?.getClip();
+    if (!clip || L.weight < 1e-3) return;
+    const t = ((L.time % clip.duration) + clip.duration) % clip.duration;
+    for (const tr of this.legTracksOf(L.clip)) {
+      if (tr.q) {
+        const r = tr.q.evaluate(t);
+        tr.bone.quaternion.slerp(q.set(r[0], r[1], r[2], r[3]), L.weight);
+      }
+      if (tr.p) {
+        const r = tr.p.evaluate(t);
+        tr.bone.position.lerp(v.set(r[0], r[1], r[2]), L.weight);
+      }
     }
   }
 
@@ -740,13 +846,24 @@ export class PlayerAnimator {
       footQL.copy(rootQ).multiply(this.restFootLocal.l).slerp(footQL, 1 - this.plantBlend);
       footQR.copy(rootQ).multiply(this.restFootLocal.r).slerp(footQR, 1 - this.plantBlend);
     }
-    for (const [foot, worldQ] of [
-      [footL, footQL],
-      [footR, footQR],
-    ] as const) {
+    const orientFoot = (foot: THREE.Bone, worldQ: THREE.Quaternion) => {
       const parentWorld = foot.parent!.getWorldQuaternion(new THREE.Quaternion());
       foot.quaternion.copy(parentWorld.invert().multiply(worldQ));
       foot.updateWorldMatrix(false, true);
+    };
+    orientFoot(footL, footQL);
+    orientFoot(footR, footQR);
+    // Sola no chão: a malha do tênis é mais grossa que o pé do mocap; se o ponto mais baixo da sola ficou abaixo do
+    // piso, o tornozelo sobe exatamente isso e o IK da perna é refeito (o pé mantém a orientação).
+    for (const [side, foot, ankle, worldQ] of [
+      ['l', footL, ankleL, footQL],
+      ['r', footR, ankleR, footQR],
+    ] as const) {
+      const below = -this.soleHeight(side);
+      if (below <= 0) continue;
+      ankle.y += below;
+      solveTwoBoneIK(this.bone(`thigh_${side}`), this.bone(`calf_${side}`), foot, ankle, forward);
+      orientFoot(foot, worldQ);
     }
 
     // 4) Inclinação do tronco: metade em spine_01, metade em spine_02 (as costas curvam, não dobram num ponto só).
@@ -766,6 +883,47 @@ export class PlayerAnimator {
   }
 
   private plantBlend = 0;
+
+  /** Guarda os vértices da sola (até 4,5 cm acima do mais baixo: a ponta curva entra no piso quando o pé dobra de cada pé, no bind pose) no espaço do osso. */
+  private collectSolePoints(): void {
+    const sides: Record<string, Hand> = { foot_l: 'l', ball_l: 'l', foot_r: 'r', ball_r: 'r' };
+    const found: Record<Hand, { bone: THREE.Bone; world: THREE.Vector3 }[]> = { l: [], r: [] };
+    const p = new THREE.Vector3();
+    this.model.traverse((o) => {
+      const mesh = o as THREE.SkinnedMesh;
+      if (!mesh.isSkinnedMesh) return;
+      const idx = mesh.geometry.getAttribute('skinIndex');
+      const wts = mesh.geometry.getAttribute('skinWeight');
+      for (let i = 0; i < idx.count; i++) {
+        let best = -1;
+        let bestW = 0;
+        for (let k = 0; k < 4; k++) {
+          if (wts.getComponent(i, k) > bestW) {
+            bestW = wts.getComponent(i, k);
+            best = idx.getComponent(i, k);
+          }
+        }
+        const bone = mesh.skeleton.bones[best];
+        const side = bone && sides[bone.name];
+        if (side) found[side].push({ bone, world: mesh.localToWorld(mesh.getVertexPosition(i, p)).clone() });
+      }
+    });
+    for (const side of ['l', 'r'] as const) {
+      const minY = Math.min(...found[side].map((f) => f.world.y));
+      const sole = found[side].filter((f) => f.world.y < minY + 0.045);
+      const stride = Math.max(1, Math.floor(sole.length / 120));
+      this.solePoints[side] = sole
+        .filter((_, i) => i % stride === 0)
+        .map((f) => ({ bone: f.bone, local: f.bone.worldToLocal(f.world.clone()) }));
+    }
+  }
+
+  /** Altura do ponto mais baixo da sola (mundo); os ossos do pé precisam estar com a matriz do mundo atualizada. */
+  private soleHeight(side: Hand): number {
+    let min = Infinity;
+    for (const pt of this.solePoints[side]) min = Math.min(min, v.copy(pt.local).applyMatrix4(pt.bone.matrixWorld).y);
+    return min;
+  }
 
   /**
    * Base plantada. Retorna true se os pés estão sob controle dela (alvos já escritos em ankleL/ankleR).

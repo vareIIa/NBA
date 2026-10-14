@@ -4,7 +4,9 @@
            [quadro_inicial quadro_final]
 
 Vistas do laboratório: 0 = trás, 1 = lado, 2 = frente, 3 = cima. Os n quadros são espalhados por igual nos dois.
+Com COMPARAR_ANTES=<pasta_do_cenario_antes>, entra uma linha do meio com o "antes" (mesmos quadros).
 """
+import os
 import glob
 import sys
 
@@ -39,27 +41,37 @@ def frame_no(path):
 if f0 is not None:
     files = [p for p in files if f0 <= frame_no(p) <= f1]
 pick = [files[round(i * (len(files) - 1) / (n - 1))] for i in range(n)]
-ours = []
-for p in pick:
-    im = Image.open(p).convert("RGB")
-    W, H = im.size
-    x, y = (view % 2) * W // 2, (view // 2) * H // 2
-    ours.append((frame_no(p), im.crop((x, y, x + W // 2, y + H // 2))))
+def lab_cells(paths):
+    cells = []
+    for p in paths:
+        im = Image.open(p).convert("RGB")
+        W, H = im.size
+        x, y = (view % 2) * W // 2, (view // 2) * H // 2
+        cell = im.crop((x, y, x + W // 2, y + H // 2))
+        # Letreiro das métricas do quadro (centro da imagem): vai para o pé da célula.
+        cell.paste(im.crop((W // 2 - 170, H // 2 - 16, W // 2 + 170, H // 2 + 16)), ((W // 2 - 340) // 2, H // 2 - 34))
+        cells.append((frame_no(p), cell))
+    return cells
+ours = lab_cells(pick)
+before_dir = os.environ.get("COMPARAR_ANTES")
+before = lab_cells([os.path.join(before_dir, os.path.basename(p)) for p in pick]) if before_dir else []
 
 cell_h = 300
 def fit(im):
     return im.resize((int(im.width * cell_h / im.height), cell_h))
 row1 = [fit(im) for _, im in real]
-row2 = [fit(im) for _, im in ours]
-cw = max(max(i.width for i in row1), max(i.width for i in row2))
-sheet = Image.new("RGB", (cw * n, cell_h * 2 + 4), (20, 20, 20))
+rows = [("real", real, row1)]
+if before:
+    rows.append(("antes", before, [fit(im) for _, im in before]))
+rows.append(("depois" if before else "nosso", ours, [fit(im) for _, im in ours]))
+cw = max(i.width for _, _, r in rows for i in r)
+sheet = Image.new("RGB", (cw * n, (cell_h + 4) * len(rows)), (20, 20, 20))
 d = ImageDraw.Draw(sheet)
-for i, (im, (t, _)) in enumerate(zip(row1, real)):
-    sheet.paste(im, (i * cw, 0))
-    d.text((i * cw + 4, 4), f"real {t:.2f}s", fill=(255, 255, 0))
-for i, (im, (q, _)) in enumerate(zip(row2, ours)):
-    sheet.paste(im, (i * cw, cell_h + 4))
-    d.text((i * cw + 4, cell_h + 8), f"nosso q{q}", fill=(0, 255, 255))
+for k, (label, src, row) in enumerate(rows):
+    for i, (im, (key, _)) in enumerate(zip(row, src)):
+        sheet.paste(im, (i * cw, k * (cell_h + 4)))
+        text = f"real {key:.2f}s" if label == "real" else f"{label} q{key}"
+        d.text((i * cw + 4, k * (cell_h + 4) + 4), text, fill=(255, 255, 0) if label == "real" else (0, 255, 255))
 scale = min(1.0, 2400 / sheet.width)
 if scale < 1:
     sheet = sheet.resize((int(sheet.width * scale), int(sheet.height * scale)))
