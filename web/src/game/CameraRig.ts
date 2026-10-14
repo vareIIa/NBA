@@ -9,18 +9,27 @@ export interface CameraTuning {
   lookHeight: number; // altura do ponto de mira
   lookTowardRim: number; // 0 = mira no jogador, 1 = mira no aro
   damping: number; // 1/s (quanto maior, mais rígida)
+  rimPull: number; // 0 = olha sempre ao longo da quadra, 1 = sempre do jogador para o aro
 }
 
 export const defaultCameraTuning = (): CameraTuning => ({
-  distanceBehind: 6.4,
-  height: 3.3,
-  lookHeight: 1.6,
-  lookTowardRim: 0.42,
-  damping: 5,
+  // Câmera alta do modo de rua do jogo de referência (vídeos do diretor): bem atrás e acima, olhando para baixo.
+  distanceBehind: 7.2,
+  height: 4.6,
+  lookHeight: 1.1,
+  lookTowardRim: 0.38,
+  damping: 4,
+  rimPull: 0.35,
 });
+
+/** jogo = câmera do jogo; lado/frente = câmeras de inspeção da animação (?cam=lado na URL). */
+export type CameraMode = 'jogo' | 'lado' | 'frente';
 
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
+  mode: CameraMode = 'jogo';
+  /** Frente do jogador (núcleo), usada pelas câmeras de inspeção. */
+  playerFacing = new Vec3(-1, 0, 0);
   private position = new Vec3();
   private target = new Vec3();
   private initialized = false;
@@ -29,7 +38,7 @@ export class CameraRig {
     aspect: number,
     readonly tuning: CameraTuning = defaultCameraTuning(),
   ) {
-    this.camera = new THREE.PerspectiveCamera(50, aspect, 0.05, 200);
+    this.camera = new THREE.PerspectiveCamera(46, aspect, 0.05, 200);
   }
 
   /** Horizontal, da câmera para onde ela olha (núcleo). Base do movimento relativo à câmera. */
@@ -39,9 +48,21 @@ export class CameraRig {
 
   update(dt: number, player: Vec3, rim: Vec3): void {
     const t = this.tuning;
-    const toRim = rim.sub(player).flat().normalized(new Vec3(-1, 0, 0));
-    const desiredPos = player.sub(toRim.scale(t.distanceBehind)).withZ(t.height);
-    const desiredTarget = lerpVec(player, rim, t.lookTowardRim).withZ(t.lookHeight);
+    // Como no modo de rua do jogo de referência: a câmera olha quase sempre ao longo da quadra (para a linha de fundo)
+    // e só puxa um pouco para a cesta; perto do aro ou no canto ela não gira em volta do jogador.
+    const alongCourt = rim.sub(new Vec3(rim.x + 1, rim.y, rim.z)).flat().normalized(); // da quadra para a tabela
+    const towardRim = rim.sub(player).flat().normalized(alongCourt);
+    const toRim = alongCourt.add(towardRim.sub(alongCourt).scale(this.tuning.rimPull)).normalized(alongCourt);
+    let desiredPos = player.sub(toRim.scale(t.distanceBehind)).withZ(t.height);
+    let desiredTarget = lerpVec(player, rim, t.lookTowardRim).withZ(t.lookHeight);
+    if (this.mode !== 'jogo') {
+      // Inspeção: perto, na altura do quadril, de lado (direita do jogador) ou de frente.
+      const f = this.playerFacing.flat().normalized(toRim);
+      const right = new Vec3(-f.y, f.x, 0).neg(); // eixos da Unreal: direita = up × frente
+      const offset = this.mode === 'lado' ? right.scale(3.4).add(f.scale(0.6)) : f.scale(3.6).add(right.scale(0.8));
+      desiredPos = player.add(offset).withZ(1.25);
+      desiredTarget = player.withZ(0.85);
+    }
 
     if (!this.initialized) {
       this.position = desiredPos;

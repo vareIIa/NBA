@@ -48,7 +48,13 @@
 > **Progresso (2026-10-14):** passos 1 e 2 feitos (ver `web/README.md`). `npm test` = 33 testes do C++ + 1 de
 > paridade do RNG; `npm run e2e` joga sozinho e grava prints e vídeo em `web/test-results/entrega/`. Já há um
 > Freestyle mínimo (drible com o arco do núcleo, arremesso com janela travada no gather, física a 120 Hz) com
-> jogador provisório. Próximo: passo 3 (GLB do boneco).
+> jogador provisório.
+>
+> **Passo 3 (2026-10-14):** feito, junto com boa parte do 4 e do 5. Personagem estilizado de malha contínua com os 38
+> clipes (`Tools/Animacao/exportar_glb.py` -> `web/public/assets/hoops_player.glb`), animador em camadas com fase
+> casada, postura com IK, bola presa à mão animada, dribles do Pro Stick (crossover, de ataque, entre as pernas, spin,
+> hesitação) e jump shot com follow-through. Ver "Como a animação funciona" em `web/README.md`. Próximo: afinar com o
+> diretor jogando, bandeja/enterrada, comemorações, sons (WebAudio) e o menu.
 
 1. **Esqueleto** em `web/`: Vite + TypeScript + three, vitest e Playwright.
    - Scripts: `npm run dev`, `npm test`, `npm run e2e` (abre o jogo headless, tira screenshot e grava um vídeo curto).

@@ -5,6 +5,7 @@
 > **ATENÇÃO (D15, 2026-10-14): o jogo vai migrar para three.js. A próxima sessão começa por `docs/dev/HANDOFF-THREEJS.md`.**
 > **Migração (2026-10-14): passos 1 e 2 do handoff feitos.** `web/` tem o esqueleto (Vite + TS + three + vitest +
 > Playwright) e o núcleo portado em `web/src/sim/` com os 33 testes passando. Ver `web/README.md`.
+> **Passo 3 feito:** jogador animado (GLB, 38 clipes), dribles do Pro Stick e arremesso jogáveis no navegador.
 
 ## 1. O que é o projeto
 

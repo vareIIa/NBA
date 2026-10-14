@@ -10,11 +10,13 @@ export interface InputState {
   /** Instante (s, relógio performance.now) da última vez que o X mudou: o timing do arremesso vem daqui. */
   shootEdgeTime: number;
   sprint: boolean; // RT
+  protect: boolean; // LT (drible baixo de proteção)
   gamepadConnected: boolean;
 }
 
 // Índices do mapeamento standard (Xbox): 0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 6 LT, 7 RT, 8 View, 9 Menu.
 const ButtonX = 2;
+const ButtonLT = 6;
 const ButtonRT = 7;
 const DeadZone = 0.18;
 
@@ -25,11 +27,13 @@ const ShootKeys = ['Space', 'KeyJ'];
 export class Input {
   private readonly keys = new Set<string>();
   private shootHeld = false;
+  private spinFrames = -1; // E no teclado: gira o Pro Stick virtual (o reconhecedor vê um giro de verdade)
   private shootEdgeTime = 0;
 
   constructor(target: Window = window) {
     target.addEventListener('keydown', (e) => {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+      if (e.code === 'KeyE' && !e.repeat) this.spinFrames = 0;
       if (ShootKeys.includes(e.code) && !e.repeat && !this.keys.has(e.code)) this.shootEdgeTime = e.timeStamp / 1000;
       this.keys.add(e.code);
     });
@@ -50,8 +54,24 @@ export class Input {
       shoot: ShootKeys.some((code) => this.keys.has(code)),
       shootEdgeTime: this.shootEdgeTime,
       sprint: this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'),
+      protect: this.keys.has('KeyQ'),
       gamepadConnected: false,
     };
+
+    if (this.spinFrames >= 0) {
+      // 300° no sentido horário em 12 quadros, começando em cima, e volta ao centro.
+      const frames = 12;
+      if (this.spinFrames <= frames) {
+        const deg = 90 - (300 * this.spinFrames) / frames;
+        state.proX = Math.cos((deg * Math.PI) / 180);
+        state.proY = Math.sin((deg * Math.PI) / 180);
+        this.spinFrames++;
+      } else {
+        state.proX = 0;
+        state.proY = 0;
+        this.spinFrames = -1;
+      }
+    }
 
     const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
     for (const pad of pads) {
@@ -67,6 +87,7 @@ export class Input {
       state.proY = -(pad.axes[3] ?? 0);
       state.shoot ||= pad.buttons[ButtonX]?.pressed ?? false;
       state.sprint ||= (pad.buttons[ButtonRT]?.value ?? 0) > 0.3;
+      state.protect ||= (pad.buttons[ButtonLT]?.value ?? 0) > 0.3;
       break;
     }
 

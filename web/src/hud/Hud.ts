@@ -17,6 +17,9 @@ export class Hud {
   private readonly energyFill = $('energy-fill');
   private readonly stats = $('stats');
   private readonly pad = $('pad');
+  private readonly move = $('move');
+  private readonly loading = $('loading');
+  private moveTimer = 0;
   private bannerTimer = 0;
   private meterFade = 0;
 
@@ -60,6 +63,18 @@ export class Hud {
     this.stats.textContent = `Treino: ${made}/${total}`;
   }
 
+  /** Nome do drible que acabou de começar (embaixo, discreto, como o feedback de movimento do jogo de referência). */
+  showMove(label: string, detail: string): void {
+    this.move.textContent = detail ? `${label} · ${detail}` : label;
+    this.move.className = 'show';
+    this.moveTimer = 0.9;
+  }
+
+  setLoading(text: string | null): void {
+    this.loading.textContent = text ?? '';
+    this.loading.style.display = text ? 'flex' : 'none';
+  }
+
   private setBanner(main: string, sub: string, kind: string): void {
     this.bannerMain.textContent = main;
     this.bannerSub.textContent = sub;
@@ -69,7 +84,13 @@ export class Hud {
 
   update(dt: number, energy: number, gamepad: boolean): void {
     this.energyFill.style.width = `${energy * 100}%`;
-    this.pad.textContent = gamepad ? 'Controle conectado' : 'Teclado: WASD move · Shift sprint · Espaço arremessa';
+    this.pad.textContent = gamepad
+      ? 'Controle: LS move · RT sprint · RS dribles · LT protege · X arremessa'
+      : 'Teclado: WASD move · Shift sprint · setas = Pro Stick · Q protege · Espaço arremessa';
+    if (this.moveTimer > 0) {
+      this.moveTimer -= dt;
+      if (this.moveTimer <= 0) this.move.className = '';
+    }
     if (this.bannerTimer > 0) {
       this.bannerTimer -= dt;
       if (this.bannerTimer <= 0) this.banner.className = '';

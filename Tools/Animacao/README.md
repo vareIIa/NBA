@@ -115,7 +115,21 @@ Ossos renomeados para o padrão da Unreal (`pelvis`, `spine_01..03`, `neck_01/02
 `upperarm_l`, `lowerarm_l`, `hand_l`, `palm_l`, `fingers_l`, `thumb_l`, `thigh_l`, `calf_l`, `foot_l`, `ball_l`, ...).
 Malha "boneco de teste" com 3 materiais (`Pele`, `Uniforme`, `Tenis`) que o jogo colore em runtime.
 
-## 4. Importar na Unreal
+## 3b. Exportar para o jogo three.js (D15)
+
+```bash
+blender --background --python exportar_glb.py -- ../../Art/Characters/HoopsDummy/SK_HoopsDummy.fbx ../../web/public/assets/hoops_player.glb [--render previews]
+```
+
+- Lê o FBX acima (esqueleto + 38 ações), tira o manequim de peças rígidas e monta um personagem de **malha contínua**:
+  Skin modifier sobre as juntas do esqueleto, subdivisão 2, pesos automáticos (bone heat), cabeça, cabelo, faixa,
+  tênis com sola, meia, uniforme e calção (8 materiais PBR).
+- Analisa cada clipe e grava `hoops_player.clips.json`: palmas, pontas dos pés e pelve quadro a quadro (espaço glTF,
+  Y para cima, frente +Z) e os **vales** (empurrão = a bola sai) e **picos** (recepção) de cada palma, com histerese de
+  10 cm. Nos loops a busca roda sobre o clipe repetido 3x (sem falso empurrão no quadro 0).
+- Exporta um GLB com todas as ações (faixas NLA, 60 fps amostrado).
+
+## 4. Importar na Unreal (legado)
 
 Ver `docs/dev/COMO-RODAR.md` (script `Tools/Editor/importar_personagem.py`, ou arrastar o FBX para
 `/Game/Hoops/Characters/Dummy`).
