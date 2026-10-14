@@ -3,6 +3,8 @@
 > Última atualização: 2026-10-14 · branch `claude/hopeful-einstein-eargc1` · commit de referência `a40fb2d`.
 > Este arquivo é o resumo para retomar o desenvolvimento numa conversa nova. Detalhes ficam nos docs citados.
 > **ATENÇÃO (D15, 2026-10-14): o jogo vai migrar para three.js. A próxima sessão começa por `docs/dev/HANDOFF-THREEJS.md`.**
+> **Migração (2026-10-14): passos 1 e 2 do handoff feitos.** `web/` tem o esqueleto (Vite + TS + three + vitest +
+> Playwright) e o núcleo portado em `web/src/sim/` com os 33 testes passando. Ver `web/README.md`.
 
 ## 1. O que é o projeto
 

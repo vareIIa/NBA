@@ -45,6 +45,11 @@
 
 ## 4. Plano de execução (ordem recomendada)
 
+> **Progresso (2026-10-14):** passos 1 e 2 feitos (ver `web/README.md`). `npm test` = 33 testes do C++ + 1 de
+> paridade do RNG; `npm run e2e` joga sozinho e grava prints e vídeo em `web/test-results/entrega/`. Já há um
+> Freestyle mínimo (drible com o arco do núcleo, arremesso com janela travada no gather, física a 120 Hz) com
+> jogador provisório. Próximo: passo 3 (GLB do boneco).
+
 1. **Esqueleto** em `web/`: Vite + TypeScript + three, vitest e Playwright.
    - Scripts: `npm run dev`, `npm test`, `npm run e2e` (abre o jogo headless, tira screenshot e grava um vídeo curto).
    - Cena vazia com quadra, cesta e câmera do 2K (atrás do jogador, olhando para a cesta).
