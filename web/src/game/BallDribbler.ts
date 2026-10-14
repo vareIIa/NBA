@@ -126,6 +126,9 @@ export class BallDribbler {
           this.gripBlend = 0;
         }
         this.gripPoint(animator, this.hand, this.grip, tmp);
+        // Garantia final: quando o braço não alcança (esticado, quadril baixo), a bola sai da perna mesmo longe 1–2 cm
+        // da palma; atravessar a coxa é pior que um vão pequeno.
+        if (this.grip === 'dribble') tmp.add(animator.legClearance(tmp, this.radius, tmp2));
       }
       if (this.gripBlend < 1) {
         this.gripBlend = Math.min(1, this.gripBlend + dt / 0.1);
@@ -151,6 +154,8 @@ export class BallDribbler {
       const a = Math.min(1, (this.arcTime - magnetStart) / (total - magnetStart));
       world.lerp(real, a * a);
     }
+    // O arco é cinemático: se passaria por dentro de uma perna, contorna por fora dela (a bola não atravessa o corpo).
+    world.add(animator.legClearance(world, this.radius, tmp2));
     this.position.copy(world);
     if (this.arcTime >= total) {
       this.mode = 'held';

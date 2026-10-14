@@ -219,6 +219,9 @@ export class Freestyle {
     const camForward = cameraForward.flat().normalized(new Vec3(-1, 0, 0));
     const camRight = upVector().cross(camForward).normalized();
 
+    // Fora do drible o Pro Stick não é lido: zera o reconhecedor para o primeiro RS depois do arremesso não sair como
+    // continuação de um gesto antigo (um meio giro fantasma).
+    if (this.phase !== 'dribble') this.proStick.reset();
     if (this.phase === 'dribble') {
       this.updateProStick(input);
       this.updateTransitionDribbles(input);

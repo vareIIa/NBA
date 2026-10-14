@@ -132,6 +132,16 @@ const LegLayerSpeed = [0.5, 1.2]; // m/s: abaixo, as pernas do drible parado; ac
 // dribles no lugar não tiram o jogador da base. Pés abertos e pregados, quadril baixo; só o quadril balança sobre eles.
 const SizeUpMoves = new Set<string>(['Cross', 'BetweenLegs', 'Hesitation', 'BehindBack']);
 const SizeUpMaxSpeed = 0.6; // m/s
+// Pernas como cápsulas (raios medidos na malha pelo laboratório, Lab.capsuleRadii): a bola não entra nelas. No real a
+// mão recebe a bola por fora do joelho e o crossover passa baixo, na frente (Dre Baldwin, fvXFeCAS3ds 7–12 s; Kyrie,
+// LZSlFyyCkhk 44,1–44,7 s). `from`: a coxa começa a 30% (junto ao quadril a bola nunca passa).
+const LegCapsules = [
+  { a: 'thigh_l', b: 'calf_l', r: 0.086, from: 0.3 },
+  { a: 'calf_l', b: 'foot_l', r: 0.056, from: 0 },
+  { a: 'thigh_r', b: 'calf_r', r: 0.086, from: 0.3 },
+  { a: 'calf_r', b: 'foot_r', r: 0.056, from: 0 },
+];
+const BallLegMargin = 0.01; // m de folga entre a bola e a perna
 // Escape (RT + o mesmo comando do size-up; GIF de "escape moves" do 2K24 no game8): o corpo sai uns 0,5–1 m para o lado
 // da mão nova e os pés acompanham em passos (o da frente abre, o de trás vem atrás), sem deslizar.
 const EscapeMoves = new Set<string>([...SizeUpMoves, 'EscapeCross']);
@@ -446,6 +456,7 @@ export class PlayerAnimator {
 
     this.applyStance(dt, input);
     this.applyArms(dt);
+    this.applyBallClearance(dt, input);
   }
 
   private speedOf(input: AnimInput): number {
@@ -533,6 +544,10 @@ export class PlayerAnimator {
     const L = this.legLayer;
     if (L.clip && L.weight > 0.5 && L.clip !== next.name) {
       time = this.matchLegPhase(L.clip, L.time, next.name);
+      L.clip = next.name;
+      L.time = time;
+    } else if (L.clip && L.clip !== next.name) {
+      // Camada fraca (devagar): as pernas quase não aparecem; segue o loop novo na fase do drible.
       L.clip = next.name;
       L.time = time;
     }
@@ -1113,6 +1128,78 @@ export class PlayerAnimator {
     const goal = palm.clone().lerp(palmTarget, weight).sub(palm).add(wristPos); // mesmo deslocamento no punho
     solveTwoBoneIK(upper, lower, wrist, goal, pole);
     applyPole(upper, lower, goal, pole, weight);
+  }
+
+  /**
+   * Quanto um ponto (centro de uma esfera de raio r) precisa andar na horizontal para sair das pernas. Empurra para longe
+   * do eixo de cada cápsula; se o ponto está em cima do eixo, para fora do corpo.
+   */
+  legClearance(point: THREE.Vector3, radius: number, out = new THREE.Vector3(), hand?: Hand): THREE.Vector3 {
+    out.set(0, 0, 0);
+    const p = new THREE.Vector3();
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    const d = new THREE.Vector3();
+    const center = this.root.position;
+    const leftDir = new THREE.Vector3(1, 0, 0).applyQuaternion(this.root.quaternion);
+    const fwdDir = new THREE.Vector3(0, 0, 1).applyQuaternion(this.root.quaternion);
+    for (let iter = 0; iter < 2; iter++) {
+      for (const cap of LegCapsules) {
+        this.bone(cap.a).getWorldPosition(a);
+        this.bone(cap.b).getWorldPosition(b);
+        if (cap.from > 0) a.lerp(b, cap.from);
+        p.copy(point).add(out);
+        const ab = b.clone().sub(a);
+        const t = THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / Math.max(1e-9, ab.lengthSq()), 0, 1);
+        c.copy(a).addScaledVector(ab, t);
+        const need = cap.r + radius + BallLegMargin;
+        d.copy(p).sub(c);
+        if (d.length() >= need) continue;
+        if (hand) {
+          // Mão da bola: a perna do mesmo lado é contornada por fora do joelho; a outra, pela frente (direção fixa,
+          // sem a mão pular de um lado para o outro entre as pernas).
+          const sameSide = cap.a.endsWith(`_${hand}`);
+          d.copy(sameSide ? leftDir : fwdDir).multiplyScalar(sameSide ? sideSign(hand) : 1);
+        } else {
+          d.y = 0;
+          if (d.lengthSq() < 1e-6) d.set(c.x - center.x, 0, c.z - center.z);
+          d.normalize();
+        }
+        // Distância horizontal até sair: resolve |dh + k*dir|^2 + dy^2 = need^2.
+        const dy = p.y - c.y;
+        const dh = new THREE.Vector3(p.x - c.x, 0, p.z - c.z);
+        const along = dh.dot(d);
+        const perp2 = dh.lengthSq() - along * along;
+        const k = Math.sqrt(Math.max(0, need * need - dy * dy - perp2)) - along;
+        if (k > 0) out.addScaledVector(d, k);
+      }
+    }
+    return out;
+  }
+
+  private readonly ballClearance = { l: new THREE.Vector3(), r: new THREE.Vector3() };
+
+  /** A mão da bola contorna as pernas: se a bola presa sob a palma entraria numa perna, a palma vai para fora dela. */
+  private applyBallClearance(dt: number, input: AnimInput): void {
+    const a = this.active && !this.active.fadingOut ? this.active : null;
+    // Entrada sem suavizar: com a direção fixa o empurrão já é contínuo (cresce com o quanto a bola entraria), e uma mola
+    // deixava a bola dentro da perna (atraso) ou oscilava a 60 Hz (rígida). Só a saída, a mão voltando para o clipe, é suave.
+    const kOut = 1 - Math.exp(-14 * dt);
+    for (const hand of ['l', 'r'] as const) {
+      const holding =
+        this.hasBall && !this.ballHeldLocal && a?.kind !== 'Shot' && hand === (a && !a.released ? a.fromHand : input.ballHand);
+      const off = this.ballClearance[hand];
+      const palm = this.palmWorld(hand, new THREE.Vector3());
+      const target = holding
+        ? this.legClearance(palm.clone().add(new THREE.Vector3(0, -BallRadius * 1.02, 0)), BallRadius, undefined, hand)
+        : new THREE.Vector3();
+      if (target.lengthSq() >= off.lengthSq()) off.copy(target);
+      else off.lerp(target, kOut);
+      if (off.lengthSq() < 1e-6) continue;
+      const pole = new THREE.Vector3(sideSign(hand), -0.3, -0.8).transformDirection(this.root.matrixWorld);
+      this.reachPalm(hand, palm.add(off), 1, pole);
+    }
   }
 
   private applyArms(dt: number): void {

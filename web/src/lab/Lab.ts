@@ -34,7 +34,8 @@ export interface LabMetrics {
   // Bola no corpo: maior sobreposição da bola com as cápsulas do tronco e das pernas.
   ballBodyMax: number; // m
   ballBodyFrames: number; // quadros com sobreposição > 1 cm
-  ballBodyWorst: { part: string; frame: number; depth: number } | null;
+  ballBodyWorst: { part: string; frame: number; depth: number; mode: string } | null;
+  ballBodyByMode: Record<string, number>; // quadros com bola no corpo por estado da bola (presa / no ar)
 }
 
 /** Cápsula de um segmento do corpo: do osso `a` ao osso `b`; o raio sai da malha (mediana dos vértices do osso). */
@@ -175,6 +176,7 @@ export class Lab {
       ballBodyMax: 0,
       ballBodyFrames: 0,
       ballBodyWorst: null,
+      ballBodyByMode: {},
     };
   }
 
@@ -299,8 +301,10 @@ export class Lab {
     m.ballBodyMax = Math.max(m.ballBodyMax, ballBody);
     if (ballBody > 0.01) {
       m.ballBodyFrames++;
+      const mode = this.animator.ballHeldLocal ? 'procedural' : this.game.dribbler.mode;
+      m.ballBodyByMode[mode] = (m.ballBodyByMode[mode] ?? 0) + 1;
       if (!m.ballBodyWorst || ballBody > m.ballBodyWorst.depth)
-        m.ballBodyWorst = { part: ballPart, frame: m.frames, depth: +ballBody.toFixed(3) };
+        m.ballBodyWorst = { part: ballPart, frame: m.frames, depth: +ballBody.toFixed(3), mode };
     }
     this.frameFlags = { legGap, sole, ballBody, legPair, ballPart };
   }
