@@ -54,7 +54,11 @@ def lab_cells(paths):
     return cells
 ours = lab_cells(pick)
 before_dir = os.environ.get("COMPARAR_ANTES")
-before = lab_cells([os.path.join(before_dir, os.path.basename(p)) for p in pick]) if before_dir else []
+def same_frame(folder, path):
+    # Mesmo quadro (número q) na pasta do "antes", mesmo que tenha sido capturada com outro intervalo.
+    want = frame_no(path)
+    return min(glob.glob(folder + "/*.png"), key=lambda f: abs(frame_no(f) - want))
+before = lab_cells([same_frame(before_dir, p) for p in pick]) if before_dir else []
 
 cell_h = 300
 def fit(im):

@@ -205,8 +205,8 @@ export class PlayerAnimator {
   private widen = 0;
   /** Trava de pé: enquanto o pé está apoiado na animação, ele fica preso no chão (mundo) e não patina. */
   private readonly footLock = {
-    l: { locked: false, pos: new THREE.Vector3(), prevAnim: new THREE.Vector3(), release: new THREE.Vector3(), releaseT: 1 },
-    r: { locked: false, pos: new THREE.Vector3(), prevAnim: new THREE.Vector3(), release: new THREE.Vector3(), releaseT: 1 },
+    l: { locked: false, pos: new THREE.Vector3(), prevAnim: new THREE.Vector3(), release: new THREE.Vector3(), releaseT: 1, land: new THREE.Vector3(), prevToe: 1 },
+    r: { locked: false, pos: new THREE.Vector3(), prevAnim: new THREE.Vector3(), release: new THREE.Vector3(), releaseT: 1, land: new THREE.Vector3(), prevToe: 1 },
   };
   footLockEnabled = true;
   legLayerEnabled = true;
@@ -1214,12 +1214,23 @@ export class PlayerAnimator {
    */
   private applyFootLock(side: Hand, ankle: THREE.Vector3, toeY: number, enabled: boolean, dt: number): void {
     const f = this.footLock[side];
-    const animSpeed = dt > 0 ? Math.hypot(ankle.x - f.prevAnim.x, ankle.z - f.prevAnim.z) / dt : 0;
+    const animVel = new THREE.Vector3(ankle.x - f.prevAnim.x, 0, ankle.z - f.prevAnim.z).divideScalar(Math.max(dt, 1e-4));
+    const animSpeed = dt > 0 ? animVel.length() : 0;
     f.prevAnim.copy(ankle);
-    const planted = toeY < 0.055 && animSpeed < 1.2;
+    const descending = toeY < f.prevToe - 1e-4;
+    f.prevToe = toeY;
+    // Freio na aterrissagem: descendo, a ponta a menos de ~8 cm do chão, o movimento horizontal do pé vai sendo anulado;
+    // ele chega ao chão parado e a trava pega (antes ele pousava a 3–4 m/s e escorregava 2–3 quadros).
+    // Só na passada para a frente/para trás: um pé que anda de lado (deslize, passo cruzado do crossover) preso antes da hora
+    // ficava no caminho do outro e as pernas cruzavam.
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.root.quaternion);
+    const alongStride = animSpeed > 1e-3 && Math.abs(animVel.dot(fwd)) > 0.6 * animSpeed;
+    const brake = descending && alongStride ? 1 - THREE.MathUtils.smoothstep(toeY, 0.04, 0.085) : 0;
+    const planted = toeY < 0.055 && (animSpeed < 1.2 || brake > 0.5);
     if (!enabled) {
       f.locked = false;
       f.releaseT = 1;
+      f.land.set(0, 0, 0);
       return;
     }
     if (f.locked) {
@@ -1233,10 +1244,16 @@ export class PlayerAnimator {
         ankle.z = f.pos.z;
         return;
       }
-    } else if (planted && f.releaseT >= 0.6) {
-      f.locked = true;
-      f.pos.copy(ankle);
-      return;
+    } else {
+      if (brake > 0 && f.releaseT >= 0.6) f.land.addScaledVector(animVel, -brake * dt);
+      else f.land.multiplyScalar(Math.exp(-12 * dt));
+      ankle.add(f.land);
+      if (planted && f.releaseT >= 0.6) {
+        f.locked = true;
+        f.pos.copy(ankle);
+        f.land.set(0, 0, 0);
+        return;
+      }
     }
     // Soltou: o pé desliza de volta para a animação em ~0,15 s (no ar, onde não aparece).
     if (f.releaseT < 1) {
