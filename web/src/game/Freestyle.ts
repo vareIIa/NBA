@@ -361,6 +361,11 @@ export class Freestyle {
     const forwardNow = Math.max(0, this.velocity.dot(this.facing));
     this.moveIsStepBack = kind === 'StepBack';
     this.moveCarry = spec.forwardSpeed < 0 ? new Vec3() : this.facing.scale(forwardNow * 0.9);
+    // Spin / half spin: o deslocamento vem do pé de pivô (root motion do animador), não de um impulso.
+    if (kind === 'Spin' || kind === 'HalfSpin') {
+      this.moveSpeed = 0;
+      this.moveCarry = new Vec3();
+    }
     // Size-up (2K23 e jogo real): parado, com o LS solto e sem RT, o drible é no lugar; quem tira da base é o LS ou o
     // RT (escape: o mesmo comando segurando RT sai para o lado).
     if (!this.moveIsStepBack && !this.lastSprint && this.velocity.length2D() < 0.6 && this.lastWish < 0.2) {
@@ -421,6 +426,8 @@ export class Freestyle {
     }
 
     this.position = this.position.add(this.velocity.scale(dt));
+    // Root motion do spin: o corpo girou em volta do pé de pivô; o jogador vai junto (zero fora do giro).
+    this.position = this.position.add(fromThree(this.animator.takeRootMotion()).withZ(0));
     const { baselineX, halfCourtX, halfWidth } = this.layout;
     this.position = new Vec3(
       clamp(this.position.x, baselineX + 0.3, halfCourtX - 0.3),

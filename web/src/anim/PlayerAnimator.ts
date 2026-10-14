@@ -160,6 +160,7 @@ const smoothMax = (x: number, min: number, soft: number) => (x + min + Math.sqrt
 // da mão nova e os pés acompanham em passos (o da frente abre, o de trás vem atrás), sem deslizar.
 const EscapeMoves = new Set<string>([...SizeUpMoves, 'EscapeCross']);
 // lead: quanto à frente (s) o passo mira; o corpo segue andando enquanto o outro pé vem, então o pé da frente abre mais.
+const HalfSpinBall = { release: 0.3, catch: 0.85 }; // frações do half spin (o giro vira em 0,5)
 const EscapeStep = { threshold: 0.12, seconds: 0.14, lead: 0.18 };
 
 const v = new THREE.Vector3();
@@ -442,7 +443,8 @@ export class PlayerAnimator {
 
   /** Progresso (0..1) do drible ativo pelo relógio (procedurais) ou pelo tempo do clipe. */
   private progress(a: ActiveAction): number {
-    if (a.timing?.procedural) return (this.clock - a.startClock) / Math.max(0.05, a.duration);
+    // Half spin: o clipe vai e volta (driveHalfSpinClip), então o progresso vem do relógio.
+    if (a.timing?.procedural || a.timing?.turnBack) return (this.clock - a.startClock) / Math.max(0.05, a.duration);
     return (a.action.time - a.start) / Math.max(1e-3, a.end - a.start);
   }
 
@@ -454,6 +456,9 @@ export class PlayerAnimator {
     this.ballHeldLocal = null;
     this.hasBall = input.hasBall;
     this.chooseBase(input);
+    // Antes do updateAction: no quadro em que o half spin acaba, o clipe vai para o fim e o drible já fecha nesse quadro
+    // (sem um quadro da pose do fim do spin inteiro).
+    this.driveHalfSpinClip();
     this.updateAction();
     this.updateWeights();
 
@@ -468,6 +473,7 @@ export class PlayerAnimator {
     this.inertial.apply(dt);
     this.model.rotation.y = this.yawOffset;
     this.root.updateMatrixWorld(true);
+    this.applySpinPivot();
     this.detectEvents();
 
     this.applyStance(dt, input);
@@ -606,6 +612,82 @@ export class PlayerAnimator {
       this.yawOffset = 0;
       this.blend(ActionOutBlend);
     }
+  }
+
+  // ------------------------------------------------------------------------------------- spin: pé de pivô
+
+  /**
+   * Half spin: o clipe do spin vai e volta junto com o giro. Tocá-lo para a frente até o fim fazia os pés continuarem o
+   * spin inteiro enquanto o corpo voltava (o pé de apoio era arrastado ao contrário). O quadro do clipe é o do spin com o
+   * mesmo ângulo de giro (curva medida no mocap, spinTurnAlpha), indo até ~150° e voltando.
+   */
+  private driveHalfSpinClip(): void {
+    const a = this.active;
+    if (!a || a.fadingOut || !a.timing?.turnBack || !a.timing.turnDeg) return;
+    const u = this.progress(a);
+    a.action.timeScale = 0;
+    if (u >= 1) {
+      a.action.time = a.end; // fim: updateAction encerra o drible
+      return;
+    }
+    const fraction = (a.timing.turnDeg * halfSpinTurn(Math.max(0, u))) / 360;
+    // Inverso de spinTurnAlpha (monotônica): busca binária.
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 20; i++) {
+      const mid = (lo + hi) / 2;
+      if (spinTurnAlpha(mid) < fraction) lo = mid;
+      else hi = mid;
+    }
+    const spin = MoveTimings.Spin;
+    let time = spin.start + lo * (spin.end - spin.start);
+    // O mixer do three só reescreve um osso quando o valor muda: com o mesmo tempo dois quadros seguidos (no pico do giro)
+    // o agachamento e o IK do quadro anterior ficavam nos ossos e eram aplicados de novo (a pelve descia 9 cm num quadro).
+    if (time === a.action.time) time += 1e-4;
+    a.action.time = time;
+  }
+
+  /** Deslocamento do corpo (referencial do jogador) que ainda não foi passado para o jogo. */
+  private readonly pivotOffset = new THREE.Vector3();
+  private spinPivot: { action: ActiveAction; side: Hand; world: THREE.Vector3 } | null = null;
+
+  /**
+   * Spin e half spin giram em volta do pé de pivô, não do centro do corpo (girar no centro arrastava os dois pés em
+   * círculo). O clipe da CMU (Spin_R2L) apoia o pé esquerdo na primeira metade e o direito na segunda; o half spin fica
+   * no primeiro. O pé de pivô é pregado no chão deslocando a malha; o deslocamento vira root motion (takeRootMotion).
+   */
+  private applySpinPivot(): void {
+    // A malha começa no deslocamento que ainda não foi entregue (o jogo já somou o resto à posição da raiz).
+    this.model.position.x = this.pivotOffset.x;
+    this.model.position.z = this.pivotOffset.z;
+    this.root.updateMatrixWorld(true);
+    const a = this.active;
+    const turning = !!a && !a.fadingOut && !!a.timing?.turnDeg && this.hasBall;
+    if (!turning) {
+      this.spinPivot = null;
+    } else {
+      const u = this.progress(a);
+      const first: Hand = a.fromHand === 'r' ? 'l' : 'r';
+      const side: Hand = a.timing?.turnBack || u < 0.5 ? first : otherSide(first);
+      if (!this.spinPivot || this.spinPivot.action !== a || this.spinPivot.side !== side) {
+        this.spinPivot = { action: a, side, world: this.bone(`ball_${side}`).getWorldPosition(new THREE.Vector3()) };
+      }
+      const now = this.bone(`ball_${side}`).getWorldPosition(new THREE.Vector3());
+      const delta = this.spinPivot.world.clone().sub(now).setY(0);
+      // Mundo -> referencial do jogador (a malha é filha da raiz).
+      delta.applyQuaternion(this.root.quaternion.clone().invert());
+      this.pivotOffset.add(delta);
+    }
+    this.model.position.x = this.pivotOffset.x;
+    this.model.position.z = this.pivotOffset.z;
+    this.root.updateMatrixWorld(true);
+  }
+
+  /** Root motion: o deslocamento (mundo) que o jogo deve somar à posição do jogador; zera o que foi entregue. */
+  takeRootMotion(): THREE.Vector3 {
+    const world = this.pivotOffset.clone().applyQuaternion(this.root.quaternion);
+    this.pivotOffset.set(0, 0, 0);
+    return world;
   }
 
   /** Interpolantes das pernas e da pelve de um loop (criados uma vez por clipe). */
@@ -763,6 +845,24 @@ export class PlayerAnimator {
           catchIn: (a.catch - a.release) * a.duration,
           catchLocal,
           floorLocal,
+          move: true,
+        });
+        return;
+      }
+      if (a.timing?.turnBack) {
+        // Half spin: o clipe vai e volta, então a soltura e a recepção seguem o progresso do giro (solta indo, recebe
+        // voltando) e a mão recebe na pose do começo, para onde o clipe volta.
+        if (this.progress(a) < HalfSpinBall.release) return;
+        a.released = true;
+        // Recepção na posição de drible da mão nova (pico da palma no loop parado dela), por fora e à frente; a mão vai
+        // até lá por IK (applyBetweenLegsArm). A pose do começo do clipe deixava a mão nova solta atrás do quadril.
+        const palm = this.receivingDribblePalm(a.toHand);
+        this.tweenCatch = { action: a, hand: a.toHand, local: palm.clone() };
+        this.release({
+          fromHand: a.fromHand,
+          toHand: a.toHand,
+          catchIn: (HalfSpinBall.catch - HalfSpinBall.release) * a.duration,
+          catchLocal: palm,
           move: true,
         });
         return;
@@ -1173,8 +1273,10 @@ export class PlayerAnimator {
     const c = new THREE.Vector3();
     const d = new THREE.Vector3();
     const center = this.root.position;
-    const leftDir = new THREE.Vector3(1, 0, 0).applyQuaternion(this.root.quaternion);
-    const fwdDir = new THREE.Vector3(0, 0, 1).applyQuaternion(this.root.quaternion);
+    // Orientação do CORPO (no spin a malha gira até 360° em relação à raiz do jogo).
+    const bodyQ = this.model.getWorldQuaternion(new THREE.Quaternion());
+    const leftDir = new THREE.Vector3(1, 0, 0).applyQuaternion(bodyQ);
+    const fwdDir = new THREE.Vector3(0, 0, 1).applyQuaternion(bodyQ);
     for (let iter = 0; iter < 2; iter++) {
       for (const cap of LegCapsules) {
         this.bone(cap.a).getWorldPosition(a);
@@ -1230,6 +1332,17 @@ export class PlayerAnimator {
   }
 
   private tweenCatch: { action: ActiveAction; hand: Hand; local: THREE.Vector3 } | null = null;
+
+  /** Centro da bola na recepção do drible parado de uma mão (referencial do jogador, alturas de jogador bom). */
+  private receivingDribblePalm(hand: Hand): THREE.Vector3 {
+    const clip = loopClip('Dribble_Idle', hand);
+    const info = this.clips[clip];
+    const peaks = hand === 'r' ? info.peaks_r : info.peaks_l;
+    const palm = this.palmLocal(info, hand, peaks[0] ?? 0).applyAxisAngle(axis.set(0, 1, 0), -this.model.rotation.y);
+    this.lowDribblePalm(clip, hand, palm, palm.y);
+    palm.y -= BallRadius * 1.02;
+    return palm;
+  }
   private tweenArmWeight = 0;
 
   /** Entre as pernas: depois da soltura, a mão que recebe desce para o ponto de recepção (por fora do joelho, baixo). */
@@ -1243,7 +1356,10 @@ export class PlayerAnimator {
     if (!t) return;
     const a = this.active;
     const running = !!a && t.action === a && !a.fadingOut;
-    if (running) {
+    if (running && a.timing?.turnBack) {
+      // Half spin: a mão nova vai para a recepção na volta do giro.
+      this.tweenArmWeight = THREE.MathUtils.smoothstep(this.progress(a), HalfSpinBall.release, HalfSpinBall.catch);
+    } else if (running) {
       // A mão que recebe já desce desde o começo do drible (no real ela espera a bola baixa) e segura lá até o fim.
       this.tweenArmWeight = THREE.MathUtils.smoothstep(a.action.time, a.start, a.release + (a.catch - a.release) * 0.7);
     } else {
