@@ -128,6 +128,15 @@ const NoBallLoops = new Set(['Hold_Idle', 'Walk', 'Run']);
 const LegLayerBones = ['pelvis', 'hip_l', 'thigh_l', 'calf_l', 'foot_l', 'ball_l', 'hip_r', 'thigh_r', 'calf_r', 'foot_r', 'ball_r'];
 const LegLayerMoves = new Set<string>(['Cross', 'EscapeCross', 'BetweenLegs']);
 const LegLayerSpeed = [0.5, 1.2]; // m/s: abaixo, as pernas do drible parado; acima, as da locomoção
+// Size-up parado (referências: Harden no 2K23, u8jYUDS2eoo 47,7–51,0 s; Kyrie x Bulls, LZSlFyyCkhk 43,1–48,3 s): os
+// dribles no lugar não tiram o jogador da base. Pés abertos e pregados, quadril baixo; só o quadril balança sobre eles.
+const SizeUpMoves = new Set<string>(['Cross', 'BetweenLegs', 'Hesitation', 'BehindBack']);
+const SizeUpMaxSpeed = 0.6; // m/s
+// Escape (RT + o mesmo comando do size-up; GIF de "escape moves" do 2K24 no game8): o corpo sai uns 0,5–1 m para o lado
+// da mão nova e os pés acompanham em passos (o da frente abre, o de trás vem atrás), sem deslizar.
+const EscapeMoves = new Set<string>([...SizeUpMoves, 'EscapeCross']);
+// lead: quanto à frente (s) o passo mira; o corpo segue andando enquanto o outro pé vem, então o pé da frente abre mais.
+const EscapeStep = { threshold: 0.12, seconds: 0.14, lead: 0.18 };
 
 const v = new THREE.Vector3();
 const v2 = new THREE.Vector3();
@@ -158,6 +167,13 @@ export class PlayerAnimator {
   private hasBall = true;
   /** Camada das pernas: loop de locomoção que segue tocando nas pernas durante um drible em movimento. */
   private readonly legLayer = { clip: '', time: 0, weight: 0 };
+  /** O drible atual começou parado (size-up ou escape): pernas pela base plantada, não pela locomoção. */
+  private moveStartedStanding = false;
+  /** Até quando (relógio) os pés continuam na base plantada depois de um drible que começou parado (o corpo freia). */
+  private standingSettleUntil = 0;
+  /** Base do escape: onde cada pé fica em relação ao corpo (tirado da base plantada no começo do drible). */
+  private readonly escapeStance = { l: new THREE.Vector3(), r: new THREE.Vector3(), action: null as ActiveAction | null };
+  private lastSpeed = 0;
   private readonly legTracks = new Map<string, { bone: THREE.Bone; q?: THREE.Interpolant; p?: THREE.Interpolant }[]>();
 
   private crouch = 0;
@@ -195,13 +211,15 @@ export class PlayerAnimator {
 
   // Ajustes de postura (tunáveis no laboratório). Metros no mundo (jogador de 1,96 m) e graus.
   stance = {
-    crouchIdle: 0.22, // quanto o quadril desce parado (size-up: base baixa e larga, como nas referências reais)
+    crouchIdle: 0.27, // quanto o quadril desce parado (size-up: base baixa e larga, como nas referências reais)
     crouchWalk: 0.15,
     crouchRun: 0.12,
     crouchLow: 0.08, // o clipe baixo já é baixo
     crouchMove: 0.07, // dribles de mocap (os clipes já abaixam)
     crouchProcedural: 0.14, // behind the back / step-back (o tronco vem de um clipe mais alto)
-    widenIdle: 0.13, // m que cada pé abre para o lado parado (base larga do size-up)
+    // m que cada pé abre para o lado parado: tornozelos a ~0,62 m (1,5x a largura dos ombros; Harden no 2K23 a 47,7 s,
+    // Kyrie a 44,3 s com ~0,8 m). O clipe deixa os tornozelos a 0,34 m.
+    widenIdle: 0.24,
     widenWalk: 0.03,
     leanBaseDeg: 20, // inclinação do tronco para frente no drible (dividida entre spine_01 e spine_02)
     leanPerSpeedDeg: 3.0, // +3° por m/s (correndo a 4 m/s: ~28°)
@@ -338,6 +356,7 @@ export class PlayerAnimator {
       feetStart: null,
       holdUntil: 0,
     });
+    this.moveStartedStanding = this.lastSpeed < SizeUpMaxSpeed;
     if (t.procedural === 'StepBack' && this.active) {
       const l = this.bone('foot_l').getWorldPosition(new THREE.Vector3());
       const r = this.bone('foot_r').getWorldPosition(new THREE.Vector3());
@@ -615,6 +634,11 @@ export class PlayerAnimator {
       L.weight = 0;
       return;
     }
+    if (this.moveStartedStanding) {
+      L.clip = '';
+      L.weight = 0;
+      return;
+    }
     const speed = this.speedOf(input);
     const target = THREE.MathUtils.smoothstep(speed, LegLayerSpeed[0], LegLayerSpeed[1]);
     if (!L.clip) {
@@ -759,9 +783,30 @@ export class PlayerAnimator {
     const kind = a?.kind ?? null;
     const u = a ? this.progress(a) : 0;
     const stepBack = a?.timing?.procedural === 'StepBack' ? stepBackBody(u) : null;
+    this.lastSpeed = speed;
+    const standingMove = !!kind && EscapeMoves.has(kind) && input.hasBall && this.moveStartedStanding;
+    const sizeUpMove = standingMove && speed < SizeUpMaxSpeed;
+    if (standingMove) this.standingSettleUntil = this.clock + 0.3;
+    if (standingMove && this.escapeStance.action !== a) {
+      // Começo do drible parado: guarda a base atual (pés abertos, nunca cruzados) no referencial do jogador.
+      this.escapeStance.action = a;
+      const inv = this.root.matrixWorld.clone().invert();
+      const l = this.plant.l.pos.clone().applyMatrix4(inv);
+      const r = this.plant.r.pos.clone().applyMatrix4(inv);
+      // Meia base entre 0,25 e 0,33 m do centro do corpo (+X do jogador = esquerda), sem acumular de um escape para o
+      // outro (copiar os pés do escape anterior abria a base até o espacate).
+      const clamp = THREE.MathUtils.clamp;
+      l.set(clamp(l.x, 0.25, 0.33), l.y, clamp(l.z, -0.25, 0.25));
+      r.set(clamp(r.x, -0.33, -0.25), r.y, clamp(r.z, -0.25, 0.25));
+      this.escapeStance.l.copy(l);
+      this.escapeStance.r.copy(r);
+    }
+    // Fim do size-up/escape: o corpo ainda freia; os pés seguem em passos até assentar (sem voltar ao clipe no meio).
+    const settling = !kind && input.hasBall && this.clock < this.standingSettleUntil;
 
     let crouchTarget: number;
     if (kind === 'Shot') crouchTarget = 0;
+    else if (standingMove) crouchTarget = s.crouchIdle;
     else if (kind) crouchTarget = (a?.timing?.procedural ? s.crouchProcedural : s.crouchMove) + (stepBack?.crouch ?? 0);
     else if (!input.hasBall) crouchTarget = 0.03;
     else if (this.base.base === 'Dribble_Low') crouchTarget = s.crouchLow;
@@ -805,7 +850,7 @@ export class PlayerAnimator {
     // 3) Tornozelos: base larga parada; no step-back, presos no chão onde estavam e levados para trás em passos.
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.root.quaternion);
     const leftDir = new THREE.Vector3(1, 0, 0).applyQuaternion(this.root.quaternion);
-    const widenTarget = kind
+    const widenTarget = kind && !standingMove
       ? 0
       : this.base.base === 'Dribble_Idle' || this.base.base === 'Dribble_Low'
         ? s.widenIdle
@@ -833,8 +878,13 @@ export class PlayerAnimator {
     }
     // Base plantada (size-up parado) ou trava de pé (fora do step-back, que tem os passos dele, e do arremesso).
     const planted =
-      input.hasBall && !kind && speed < 0.35 && (this.base.base === 'Dribble_Idle' || this.base.base === 'Dribble_Low');
-    const flatFeet = this.applyPlantedStance(planted, ankleL, ankleR, dt);
+      input.hasBall &&
+      ((!kind && speed < 0.35 && (this.base.base === 'Dribble_Idle' || this.base.base === 'Dribble_Low')) || standingMove || settling);
+    // Nos dribles do size-up os pés não seguem o clipe (a hesitação da CMU anda até 1 m com os pés): ficam pregados.
+    // No escape os pés dão passos para onde o corpo vai estar (velocidade x duração do passo).
+    const velocity = forward.clone().multiplyScalar(input.forward).addScaledVector(leftDir, -input.right);
+    const feetMode = sizeUpMove ? 'hold' : standingMove || (settling && speed > 0.35) ? 'escape' : 'free';
+    const flatFeet = this.applyPlantedStance(planted, ankleL, ankleR, dt, feetMode, velocity);
     const lockable = this.footLockEnabled && !a?.feetStart && kind !== 'Shot' && !flatFeet;
     this.applyFootLock('l', ankleL, toeY.l, lockable, dt);
     this.applyFootLock('r', ankleR, toeY.r, lockable, dt);
@@ -930,7 +980,14 @@ export class PlayerAnimator {
    * Cada pé fica numa posição fixa do chão; se a posição ideal (a do clipe, aberta) se afasta mais de 22 cm ou o corpo
    * gira, o pé levanta e anda até ela em 0,16 s (passinho de ajuste), um pé por vez.
    */
-  private applyPlantedStance(active: boolean, ankleL: THREE.Vector3, ankleR: THREE.Vector3, dt: number): boolean {
+  private applyPlantedStance(
+    active: boolean,
+    ankleL: THREE.Vector3,
+    ankleR: THREE.Vector3,
+    dt: number,
+    mode: 'free' | 'hold' | 'escape' = 'free',
+    velocity = new THREE.Vector3(),
+  ): boolean {
     const p = this.plant;
     this.plantBlend += ((active ? 1 : 0) - this.plantBlend) * (1 - Math.exp(-10 * dt));
     if (!active) {
@@ -949,23 +1006,54 @@ export class PlayerAnimator {
       }
     }
     let stepping = p.l.t < 1 || p.r.t < 1;
-    for (const [side, ankle] of [
-      ['l', ankleL],
-      ['r', ankleR],
-    ] as const) {
+    const escape = mode === 'escape';
+    const threshold = escape ? EscapeStep.threshold : 0.22;
+    const stepSeconds = escape ? EscapeStep.seconds : 0.16;
+    const ideals = {
+      l: new THREE.Vector3(ankleL.x, this.restAnkleY, ankleL.z),
+      r: new THREE.Vector3(ankleR.x, this.restAnkleY, ankleR.z),
+    };
+    if (escape) {
+      // Pés na base do jogador (o clipe do escape cruza as pernas; o escape real é passo lateral, sem cruzar), para onde
+      // o corpo vai estar quando o passo pousar.
+      if (this.escapeStance.action) {
+        ideals.l.copy(this.escapeStance.l).applyMatrix4(this.root.matrixWorld).setY(this.restAnkleY);
+        ideals.r.copy(this.escapeStance.r).applyMatrix4(this.root.matrixWorld).setY(this.restAnkleY);
+      }
+      ideals.l.addScaledVector(velocity, EscapeStep.lead);
+      ideals.r.addScaledVector(velocity, EscapeStep.lead);
+    }
+    const gap = (side: Hand) => Math.hypot(ideals[side].x - p[side].pos.x, ideals[side].z - p[side].pos.z);
+    // Quem sai primeiro: no escape, o pé do lado para onde o corpo vai (abre) e depois o outro (vem atrás, sem cruzar);
+    // no resto, o pé mais longe de onde deveria estar.
+    const leftAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(this.root.quaternion);
+    const leftFirst = escape ? velocity.dot(leftAxis) >= 0 : gap('l') >= gap('r');
+    const order: [Hand, THREE.Vector3][] = leftFirst ? [['l', ankleL], ['r', ankleR]] : [['r', ankleR], ['l', ankleL]];
+    if (escape) {
+      // O pé nunca pousa além da linha do outro (sempre um palmo de base): sem cruzar as pernas.
+      const minGap = 0.3;
+      const side = (v: THREE.Vector3) => v.dot(leftAxis);
+      const sl = side(ideals.l);
+      const sr = side(p.r.pos);
+      if (sl < sr + minGap) ideals.l.addScaledVector(leftAxis, sr + minGap - sl);
+      const sr2 = side(ideals.r);
+      const sl2 = side(p.l.pos);
+      if (sr2 > sl2 - minGap) ideals.r.addScaledVector(leftAxis, sl2 - minGap - sr2);
+    }
+    for (const [side, ankle] of order) {
       const f = p[side];
-      const ideal = new THREE.Vector3(ankle.x, this.restAnkleY, ankle.z);
-      if (f.t >= 1 && !stepping && Math.hypot(ideal.x - f.pos.x, ideal.z - f.pos.z) > 0.22) {
+      const ideal = ideals[side];
+      if (f.t >= 1 && !stepping && mode !== 'hold' && gap(side) > threshold) {
         f.from.copy(f.pos);
         f.to.copy(ideal);
         f.t = 0;
         stepping = true;
       }
       if (f.t < 1) {
-        f.t = Math.min(1, f.t + dt / 0.16);
+        f.t = Math.min(1, f.t + dt / stepSeconds);
         const s = f.t * f.t * (3 - 2 * f.t);
         f.pos.lerpVectors(f.from, f.to, s);
-        f.pos.y = this.restAnkleY + 0.06 * Math.sin(Math.PI * f.t);
+        f.pos.y = this.restAnkleY + 0.09 * Math.sin(Math.PI * f.t); // passo de verdade: a ponta sai do chão
         if (f.t >= 1) f.pos.y = this.restAnkleY;
       }
       ankle.lerp(f.pos, this.plantBlend);

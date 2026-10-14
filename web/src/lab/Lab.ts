@@ -25,6 +25,8 @@ export interface LabMetrics {
   legGapMin: number; // m
   legCrossFrames: number; // quadros com folga < -1 cm
   legCrossWorst: { pair: string; frame: number; depth: number } | null;
+  // Base aberta demais (espacate): maior distância horizontal entre os tornozelos.
+  stanceMax: number; // m
   // Pé no chão: menor altura dos vértices da sola (malha deformada); negativo = dentro do chão.
   soleMin: number; // m
   soleBelowFrames: number; // quadros com sola abaixo de -1 cm
@@ -166,6 +168,7 @@ export class Lab {
       legGapMin: Infinity,
       legCrossFrames: 0,
       legCrossWorst: null,
+      stanceMax: 0,
       soleMin: Infinity,
       soleBelowFrames: 0,
       ankleMin: Infinity,
@@ -265,6 +268,9 @@ export class Lab {
       }
     }
     m.legGapMin = Math.min(m.legGapMin, legGap);
+    const ankleL = this.animator.bone('foot_l').getWorldPosition(new THREE.Vector3());
+    const ankleR = this.animator.bone('foot_r').getWorldPosition(new THREE.Vector3());
+    m.stanceMax = Math.max(m.stanceMax, Math.hypot(ankleL.x - ankleR.x, ankleL.z - ankleR.z));
     if (legGap < -0.01) {
       m.legCrossFrames++;
       if (!m.legCrossWorst || -legGap > m.legCrossWorst.depth)

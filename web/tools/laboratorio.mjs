@@ -64,7 +64,7 @@ for (const name of names) {
     `${name.padEnd(18)} pé desliza máx ${metrics.footSlideMax.toFixed(2)} m/s (média ${metrics.footSlideMean.toFixed(2)})` +
       `  estalos ${metrics.popCount}${metrics.popWorst ? ` (pior ${metrics.popWorst.bone} q${metrics.popWorst.frame})` : ''}` +
       `  bola-mão ${metrics.ballGapMax.toFixed(2)} m  quiques ${metrics.bounces}` +
-      `  pernas ${(metrics.legGapMin * 100).toFixed(0)} cm (${metrics.legCrossFrames} q cruzando)` +
+      `  pernas ${(metrics.legGapMin * 100).toFixed(0)} cm (${metrics.legCrossFrames} q cruzando, base máx ${metrics.stanceMax.toFixed(2)} m)` +
       `  sola ${(metrics.soleMin * 100).toFixed(1)} cm (${metrics.soleBelowFrames} q no chão)` +
       `  bola-corpo ${(metrics.ballBodyMax * 100).toFixed(0)} cm (${metrics.ballBodyFrames} q)  ${metrics.moves.join(' > ')}`,
   );

@@ -26,6 +26,10 @@ export const Cenarios = {
   half_spin: { hand: 'r', steps: [...sweep(110, 6), ...wait(55)] },
   step_back: { hand: 'r', steps: [...flick(0, -1), ...wait(55)] },
   size_up: { hand: 'r', steps: [...flick(0, 1), ...wait(22), ...flick(0, 1), ...wait(22), ...flick(1, 0), ...wait(22), ...flick(0, 1), ...wait(40)] },
+  // Escape (RT + comando do size-up, parado): sai para o lado da mão nova em passos.
+  escape_cross: { hand: 'r', steps: [...flick(0, 1, { sprint: true }), ...wait(50, { sprint: true })] },
+  escape_entre_pernas: { hand: 'r', steps: [...flick(-1, 0, { sprint: true }), ...wait(50, { sprint: true })] },
+  escape_combo: { hand: 'r', steps: [...flick(-1, 0, { sprint: true }), ...wait(26, { sprint: true }), ...flick(1, 0, { sprint: true }), ...wait(26, { sprint: true }), ...flick(-1, 0, { sprint: true }), ...wait(40, { sprint: true })] },
   troca_auto: { hand: 'l', steps: wait(70, { moveX: 1 }) },
   retreat: { hand: 'r', steps: [...wait(20, { moveY: 1 }), ...wait(60, { moveY: -1 })] },
 };

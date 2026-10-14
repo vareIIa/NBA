@@ -141,6 +141,8 @@ export class Freestyle {
   private moveSpeed = 0;
   private moveCarry = new Vec3(); // embalo para a frente que o drible mantém (o bom jogador acelera no corte)
   private moveIsStepBack = false;
+  private lastWish = 0; // tamanho do LS no último quadro (size-up: drible parado com o LS solto fica no lugar)
+  private lastSprint = false; // RT no último quadro (com RT o mesmo comando vira escape e sai do lugar)
   private secondCrossAt = -1; // double cross: o segundo crossover
   private autoSwitchSince = -1;
   private retreatArmed = true;
@@ -356,6 +358,17 @@ export class Freestyle {
     const forwardNow = Math.max(0, this.velocity.dot(this.facing));
     this.moveIsStepBack = kind === 'StepBack';
     this.moveCarry = spec.forwardSpeed < 0 ? new Vec3() : this.facing.scale(forwardNow * 0.9);
+    // Size-up (2K23 e jogo real): parado, com o LS solto e sem RT, o drible é no lugar; quem tira da base é o LS ou o
+    // RT (escape: o mesmo comando segurando RT sai para o lado).
+    if (!this.moveIsStepBack && !this.lastSprint && this.velocity.length2D() < 0.6 && this.lastWish < 0.2) {
+      this.moveSpeed = 0;
+      this.moveCarry = new Vec3();
+    } else if (!this.moveIsStepBack && this.lastSprint && this.velocity.length2D() < 0.6 && this.lastWish < 0.2) {
+      // Escape parado (GIF de escape moves do 2K24): reposiciona para o lado da mão nova, sem atacar para a frente.
+      this.moveSpeed = Math.abs(lateral);
+      this.moveDir = this.right().scale(lateral).normalized(this.facing);
+      this.moveCarry = new Vec3();
+    }
     const label = dribbleMoveLabel(active.move);
     this.moves.push(label);
     this.events.onMove?.(label, active.redirected ? 'misdirection' : active.inRhythm ? `combo x${this.dribble.getComboCount()}` : '');
@@ -365,6 +378,8 @@ export class Freestyle {
 
   private updateMovement(dt: number, input: InputState, camForward: Vec3, camRight: Vec3): void {
     const wish = camForward.scale(input.moveY).add(camRight.scale(input.moveX));
+    this.lastWish = Math.hypot(input.moveX, input.moveY);
+    this.lastSprint = input.sprint;
     const now = this.now;
     const active = this.dribble.getActive();
     const inMove = this.phase === 'dribble' && this.dribble.isMoveActive(now);
