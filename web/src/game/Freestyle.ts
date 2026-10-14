@@ -69,6 +69,7 @@ export interface FreestyleEvents {
   onMove?: (label: string, detail: string) => void;
   onFloorBounce?: (speed: number) => void;
   onRim?: () => void;
+  onScore?: () => void;
   onBoard?: () => void;
 }
 
@@ -80,32 +81,38 @@ const Deceleration = 18;
 const MoveAcceleration = 30; // durante um drible o impulso do movimento manda
 const FixedStep = 1 / 120;
 
-/** Drible do núcleo -> clipe. Por trás das costas e double cross usam o crossover (ver Tools/Animacao/README.md). */
+/** Drible do núcleo -> animação (clipe de mocap ou procedural). Double cross = dois crossovers. */
 function moveKindFor(move: DribbleMove): MoveKind | null {
   switch (move) {
     case DribbleMove.Crossover:
-    case DribbleMove.BehindBack:
     case DribbleMove.HesiCross:
     case DribbleMove.DoubleCross:
       return 'Cross';
+    case DribbleMove.BehindBack:
+      return 'BehindBack';
     case DribbleMove.AttackingCrossover:
       return 'EscapeCross';
     case DribbleMove.BetweenLegs:
       return 'BetweenLegs';
     case DribbleMove.Spin:
-    case DribbleMove.HalfSpin:
       return 'Spin';
+    case DribbleMove.HalfSpin:
+      return 'HalfSpin';
     case DribbleMove.Hesitation:
     case DribbleMove.EscapeHesitation:
     case DribbleMove.InAndOut:
+      return 'Hesitation';
     case DribbleMove.StepBack:
     case DribbleMove.EscapeStepBack:
     case DribbleMove.Retreat:
-      return 'Hesitation';
+      return 'StepBack';
     default:
       return null;
   }
 }
+
+/** Troca de mão automática pelo LS (o "drible de transição" do jogo de referência): limiar, tempo e intervalo. */
+const AutoSwitch = { stick: 0.55, holdSeconds: 0.1, cooldown: 0.55, walkMoveSpeed: 1.6 };
 
 const sideOf = (hand: 'Right' | 'Left' | number): Hand => (hand === 0 || hand === 'Right' ? 'r' : 'l');
 
@@ -132,7 +139,13 @@ export class Freestyle {
   private moveStart = -1;
   private moveDir = new Vec3(); // direção do impulso do movimento (núcleo, horizontal)
   private moveSpeed = 0;
+  private moveCarry = new Vec3(); // embalo para a frente que o drible mantém (o bom jogador acelera no corte)
+  private moveIsStepBack = false;
   private secondCrossAt = -1; // double cross: o segundo crossover
+  private autoSwitchSince = -1;
+  private retreatArmed = true;
+  /** Achatamento da bola no quique (s restantes). */
+  private squash = 0;
 
   // Arremesso.
   private gatherTime = 0;
@@ -169,7 +182,7 @@ export class Freestyle {
     scene.add(animator.root);
     this.dribbler = new BallDribbler(radius);
     this.syncRoot();
-    animator.update(0, { right: 0, forward: 0, ballHand: 'r', low: false, accelRight: 0, accelForward: 0 });
+    animator.update(0, { right: 0, forward: 0, ballHand: 'r', hasBall: true, low: false, accelRight: 0, accelForward: 0 });
     this.dribbler.take('r', true);
     this.dribbler.update(0, animator);
     this.ballMesh.position.copy(this.dribbler.position);
@@ -206,6 +219,7 @@ export class Freestyle {
 
     if (this.phase === 'dribble') {
       this.updateProStick(input);
+      this.updateTransitionDribbles(input);
       if (shootPressed && this.dribble.canCancel(now)) this.beginGather(input.shootEdgeTime);
     } else if (this.phase === 'gather') {
       this.updateGather(shootReleased, input.shootEdgeTime);
@@ -228,6 +242,7 @@ export class Freestyle {
     this.animator.update(dt, {
       ...local,
       ballHand: this.dribbler.ballHand(),
+      hasBall: this.phase === 'dribble' || this.phase === 'gather',
       low: input.protect,
       accelRight: clamp(accel.right, -12, 12),
       accelForward: clamp(accel.forward, -12, 12),
@@ -237,9 +252,17 @@ export class Freestyle {
     if (this.phase === 'dribble' || this.phase === 'gather') {
       this.dribbler.setGrip(this.phase === 'gather' ? 'shot' : 'dribble');
       this.dribbler.update(dt, this.animator);
-      for (const speed of this.dribbler.bounces) this.events.onFloorBounce?.(speed);
+      for (const speed of this.dribbler.bounces) {
+        this.events.onFloorBounce?.(speed);
+        this.squash = 0.07;
+      }
       this.ballMesh.position.copy(this.dribbler.position);
       this.ballMesh.rotation.x += dt * 9;
+      // Achatamento no impacto: a bola "esmaga" ~15% no chão e volta (lê como um quique forte).
+      this.squash = Math.max(0, this.squash - dt);
+      const sq = this.squash > 0 ? Math.sin((Math.PI * this.squash) / 0.07) * 0.15 : 0;
+      this.ballMesh.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
+      if (sq > 0) this.ballMesh.position.y -= sq * this.sim.getConfig().ball.radius;
     } else if (this.phase === 'return') {
       this.updateReturn(dt);
     } else {
@@ -270,6 +293,39 @@ export class Freestyle {
     }
   }
 
+  /**
+   * Dribles de transição pelo LS, como no jogo de referência: correndo para o lado da mão livre, o jogador troca a bola
+   * de mão sozinho (crossover; entre as pernas devagar); puxando o LS para trás, sai num retreat dribble. Passam pelo
+   * núcleo como qualquer drible (energia, commit, combo).
+   */
+  private updateTransitionDribbles(input: InputState): void {
+    const now = this.now;
+    if (this.dribble.isMoveActive(now) || !this.dribble.canCancel(now)) {
+      this.autoSwitchSince = -1;
+      return;
+    }
+    const hand = this.dribbler.ballHand();
+    const towardFreeHand = (input.moveX > AutoSwitch.stick && hand === 'l') || (input.moveX < -AutoSwitch.stick && hand === 'r');
+    const sinceLast = now - this.dribble.getLastMoveEndTime();
+    if (towardFreeHand && this.dribbler.mode === 'held' && sinceLast > AutoSwitch.cooldown) {
+      if (this.autoSwitchSince < 0) this.autoSwitchSince = now;
+      if (now - this.autoSwitchSince >= AutoSwitch.holdSeconds) {
+        const move = this.velocity.length2D() < AutoSwitch.walkMoveSpeed ? DribbleMove.BetweenLegs : DribbleMove.Crossover;
+        this.dribble.request(move, now);
+        this.autoSwitchSince = -1;
+      }
+    } else {
+      this.autoSwitchSince = -1;
+    }
+    // Retreat: LS puxado para trás (uma vez por puxada).
+    if (input.moveY < -0.6 && this.retreatArmed && sinceLast > 0.3) {
+      this.dribble.request(DribbleMove.Retreat, now);
+      this.retreatArmed = false;
+    } else if (input.moveY > -0.3) {
+      this.retreatArmed = true;
+    }
+  }
+
   /** Quando o núcleo começa um movimento (na hora, do buffer ou por misdirection), toca o clipe e dá o impulso. */
   private syncMoveStart(): void {
     const active = this.dribble.getActive();
@@ -296,6 +352,10 @@ export class Freestyle {
     const dir = this.right().scale(lateral).add(this.facing.scale(spec.forwardSpeed));
     this.moveSpeed = dir.length2D();
     this.moveDir = dir.normalized(this.facing);
+    // O bom jogador acelera durante o corte (Hashizume et al., ISBS 2014): o drible lateral mantém o embalo para a frente.
+    const forwardNow = Math.max(0, this.velocity.dot(this.facing));
+    this.moveIsStepBack = kind === 'StepBack';
+    this.moveCarry = spec.forwardSpeed < 0 ? new Vec3() : this.facing.scale(forwardNow * 0.9);
     const label = dribbleMoveLabel(active.move);
     this.moves.push(label);
     this.events.onMove?.(label, active.redirected ? 'misdirection' : active.inRhythm ? `combo x${this.dribble.getComboCount()}` : '');
@@ -314,10 +374,16 @@ export class Freestyle {
       let target = wish.scale(maxSpeed);
       let accel = wish.length2D() > 0.1 ? Acceleration : Deceleration;
       if (inMove) {
-        // O drible dá a direção: impulso cheio no meio do movimento, some no fim.
+        // O drible dá a direção. Lateral/frente: o impulso cresce rápido e se mantém até o fim (acelera no corte, não
+        // freia). Step-back/retreat: o salto para trás acontece no meio (empurrão, voo, aterrissagem).
         const alpha = clamp((now - active.startTime) / Math.max(0.05, active.endTime() - active.startTime), 0, 1);
-        const profile = Math.sin(Math.PI * Math.min(1, alpha * 1.15));
-        target = this.moveDir.scale(this.moveSpeed * profile).add(wish.scale(maxSpeed * 0.35));
+        const profile = this.moveIsStepBack
+          ? Math.sin(Math.PI * clamp((alpha - 0.06) / 0.62, 0, 1)) * 1.35
+          : clamp(alpha / 0.3, 0, 1) ** 0.7;
+        target = this.moveDir
+          .scale(this.moveSpeed * profile)
+          .add(this.moveCarry)
+          .add(wish.scale(maxSpeed * (this.moveIsStepBack ? 0.1 : 0.3)));
         accel = MoveAcceleration;
       }
       // Arranque de saída (speedboost / cross launch): LS no referencial do ataque.
@@ -449,6 +515,7 @@ export class Freestyle {
     while (this.accumulator >= FixedStep) {
       this.accumulator -= FixedStep;
       const ev = this.sim.tick(this.ball);
+      if (ev.scored && !this.scoredThisShot) this.events.onScore?.();
       if (ev.scored) this.scoredThisShot = true;
       if (ev.hitRim) this.events.onRim?.();
       if (ev.hitBackboard) this.events.onBoard?.();

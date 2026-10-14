@@ -142,3 +142,78 @@ describe('IK de duas articulações', () => {
     expect(a.y).toBeLessThan(0.1); // esticou para baixo o máximo possível
   });
 });
+
+// ---------------------------------------------------------------- Dribles procedurais e quique físico
+
+import {
+  BehindBack,
+  SkilledDribble,
+  StepBack,
+  behindBackBall,
+  behindBackCatch,
+  behindBackFloor,
+  footStep,
+  halfSpinTurn,
+} from './ProceduralMoves';
+import { DribbleArc } from '../sim';
+import { Vec3 } from '../sim';
+import { downFractionFor } from '../game/BallDribbler';
+
+describe('Dribles procedurais', () => {
+  test('BehindBackGoesBehindTheHipsToTheOtherHand', () => {
+    for (const hand of ['r', 'l'] as const) {
+      const side = hand === 'r' ? -1 : 1; // x = esquerda do jogador
+      const start = behindBackBall(0, hand);
+      const mid = behindBackBall(BehindBack.release * 0.75, hand);
+      const end = behindBackBall(BehindBack.release, hand);
+      expect(Math.sign(start[0])).toBe(side); // começa do lado da mão da bola
+      expect(mid[2]).toBeLessThan(-0.2); // passa atrás do quadril (z < 0 = atrás)
+      expect(mid[1]).toBeGreaterThan(0.55); // na altura do quadril, não no chão
+      expect(end[2]).toBeLessThan(-0.25);
+      expect(Math.sign(behindBackFloor(hand)[0])).toBe(-side); // quica atrás do outro calcanhar
+      expect(behindBackFloor(hand)[2]).toBeLessThan(0);
+      expect(Math.sign(behindBackCatch(hand)[0])).toBe(-side); // a outra mão recebe na frente
+      expect(behindBackCatch(hand)[2]).toBeGreaterThan(0);
+    }
+  });
+
+  test('StepBackFeetLeaveAndReturnToTheFloor', () => {
+    for (const [window, lift] of [
+      [StepBack.rearFoot, StepBack.liftRear],
+      [StepBack.frontFoot, StepBack.liftFront],
+    ] as const) {
+      expect(footStep(0, window, lift)).toEqual({ travel: 0, height: 0 });
+      const midU = (window[0] + window[1]) / 2;
+      expect(footStep(midU, window, lift).height).toBeCloseTo(lift, 6);
+      const done = footStep(1, window, lift);
+      expect(done.travel).toBe(1);
+      expect(done.height).toBeCloseTo(0, 9);
+    }
+    // O pé de trás sai primeiro e os dois ficam no ar juntos um pouco (o saltinho).
+    expect(StepBack.rearFoot[0]).toBeLessThan(StepBack.frontFoot[0]);
+    expect(StepBack.frontFoot[0]).toBeLessThan(StepBack.rearFoot[1]);
+  });
+
+  test('HalfSpinGoesAndComesBack', () => {
+    expect(halfSpinTurn(0)).toBeCloseTo(0, 9);
+    expect(halfSpinTurn(0.5)).toBeCloseTo(1, 9);
+    expect(halfSpinTurn(1)).toBeCloseTo(0, 9);
+  });
+
+  test('SkilledDribbleHeightsFromResearch', () => {
+    // Hirata et al. (ISBS 2011): recepção a 40,3% e soltura a 32,5% da altura.
+    expect(SkilledDribble.catchHeight).toBeCloseTo(0.79, 2);
+    expect(SkilledDribble.releaseHeight).toBeCloseTo(0.637, 2);
+  });
+
+  test('BounceSplitMatchesWoodRestitution', () => {
+    // Mão a 0,64 m -> chão -> mão a 0,79 m em 0,3 s: a bola sai do chão com ~78% da velocidade de chegada.
+    const arc = new DribbleArc();
+    arc.startPos = new Vec3(0, -0.3, 0.64);
+    arc.endPos = new Vec3(0, -0.3, 0.79);
+    arc.floorPos = new Vec3(0, -0.3, 0.119);
+    downFractionFor(arc, 0.3);
+    expect(arc.floorExitSpeed() / arc.floorEntrySpeed()).toBeCloseTo(0.78, 1);
+    expect(arc.downSeconds).toBeLessThan(arc.upSeconds); // empurrada para baixo, sobe freando
+  });
+});

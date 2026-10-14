@@ -28,12 +28,16 @@ export class Input {
   private readonly keys = new Set<string>();
   private shootHeld = false;
   private spinFrames = -1; // E no teclado: gira o Pro Stick virtual (o reconhecedor vê um giro de verdade)
+  private spinSweep = 300; // E = giro (300°); R = meio giro (110°, half spin)
   private shootEdgeTime = 0;
 
   constructor(target: Window = window) {
     target.addEventListener('keydown', (e) => {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-      if (e.code === 'KeyE' && !e.repeat) this.spinFrames = 0;
+      if ((e.code === 'KeyE' || e.code === 'KeyR') && !e.repeat) {
+        this.spinFrames = 0;
+        this.spinSweep = e.code === 'KeyE' ? 300 : 110;
+      }
       if (ShootKeys.includes(e.code) && !e.repeat && !this.keys.has(e.code)) this.shootEdgeTime = e.timeStamp / 1000;
       this.keys.add(e.code);
     });
@@ -59,10 +63,10 @@ export class Input {
     };
 
     if (this.spinFrames >= 0) {
-      // 300° no sentido horário em 12 quadros, começando em cima, e volta ao centro.
-      const frames = 12;
+      // Giro no sentido horário começando em cima (12 quadros no spin, 6 no meio giro) e volta ao centro.
+      const frames = this.spinSweep > 200 ? 12 : 6;
       if (this.spinFrames <= frames) {
-        const deg = 90 - (300 * this.spinFrames) / frames;
+        const deg = 90 - (this.spinSweep * this.spinFrames) / frames;
         state.proX = Math.cos((deg * Math.PI) / 180);
         state.proY = Math.sin((deg * Math.PI) / 180);
         this.spinFrames++;

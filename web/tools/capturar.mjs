@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const [out, cam = 'jogo', script = 'wait:1500,shot'] = process.argv.slice(2);
+const [out, cam = 'jogo', script = 'wait:1500,shot', lento = '1'] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });
 const root = join(homedir(), 'AppData', 'Local', 'ms-playwright');
 const dir = existsSync(root) ? readdirSync(root).filter((d) => d.startsWith('chromium_headless_shell-')).sort().pop() : null;
@@ -15,9 +15,9 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--ignore-gp
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', (e) => console.log('ERRO', String(e)));
 page.on('console', (m) => m.type() === 'error' && console.log('console', m.text()));
-await page.goto(`http://127.0.0.1:5173/?cam=${cam}`);
+await page.goto(`http://127.0.0.1:5173/?cam=${cam}&lento=${lento}`);
 await page.waitForFunction(() => window.__garrafao?.ready === true, undefined, { timeout: 30000 });
-const keys = { E: 'KeyE', J: 'KeyJ', W: 'KeyW', A: 'KeyA', S: 'KeyS', D: 'KeyD', Shift: 'ShiftLeft', Q: 'KeyQ', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', space: 'Space' };
+const keys = { E: 'KeyE', R: 'KeyR', J: 'KeyJ', W: 'KeyW', A: 'KeyA', S: 'KeyS', D: 'KeyD', Shift: 'ShiftLeft', Q: 'KeyQ', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', space: 'Space' };
 let n = 0;
 const held = new Set();
 for (const step of script.split(',')) {
@@ -33,6 +33,12 @@ for (const step of script.split(',')) {
     await page.keyboard.down(keys[act]);
     await page.waitForTimeout(Number(a ?? 60));
     await page.keyboard.up(keys[act]);
+  } else if (act === 'combo') {
+    // combo:ArrowDown+ArrowLeft:ms — aperta juntas (diagonal do Pro Stick) e solta.
+    const ks = a.split('+');
+    for (const k of ks) await page.keyboard.down(k);
+    await page.waitForTimeout(Number(b ?? 70));
+    for (const k of ks) await page.keyboard.up(k);
   } else if (act === 'space') {
     await page.keyboard.down('Space');
     await page.waitForTimeout(Number(a));

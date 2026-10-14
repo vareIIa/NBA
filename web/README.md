@@ -13,17 +13,25 @@ npm run dev        # abre em http://localhost:5173
 
 Controles (mapa do jogo de referência): controle de Xbox — LS move, RT sprint, **RS = Pro Stick** (dribles),
 LT drible baixo, X arremessa (segure e solte no topo). Teclado — WASD move, Shift sprint, **setas = Pro Stick**
-(toque = flick), **E = spin** (gira o stick virtual), Q drible baixo, Espaço arremessa.
+(toque = flick; duas setas juntas = diagonal), **E = spin**, **R = half spin** (giram o stick virtual), Q drible baixo,
+Espaço arremessa.
 
 Dribles pelo Pro Stick (bola na direita; com a esquerda é o espelho): cima = crossover (com RT = crossover de ataque),
-esquerda = entre as pernas, direita = hesitação, giro = spin, toques rápidos = double cross / hesi-cross.
+esquerda = entre as pernas, **baixo-esquerda = behind the back**, direita = hesitação, **baixo = step-back**,
+giro = spin, meio giro = half spin, toques rápidos = double cross / hesi-cross.
+
+**Dribles de transição pelo LS** (sem o Pro Stick, como no jogo de referência): correndo para o lado da mão livre, o
+jogador troca a bola de mão sozinho (crossover; entre as pernas quando está devagar); puxando o LS para trás, sai num
+retreat (step-back curto).
+
+Inspeção: `?lento=0.25` deixa o jogo em câmera lenta (não arremesse nela: o timing usa o relógio real).
 
 Inspeção da animação: `?cam=lado` ou `?cam=frente` na URL troca para uma câmera perto do jogador.
 
 ## Testes
 
 ```bash
-npm test           # vitest: 33 testes do núcleo C++ + 1 de paridade do RNG + 11 da animação (clipes, fase, IK)
+npm test           # vitest: 33 testes do núcleo C++ + 1 de paridade do RNG + 16 da animação (clipes, fase, IK, procedurais)
 npm run typecheck  # tsc
 npm run e2e        # Playwright: abre o jogo headless, joga sozinho, tira prints e grava vídeo
 npm run build      # gera web/dist
@@ -68,5 +76,16 @@ O `npm run e2e` salva os prints e o vídeo em `test-results/entrega/` (`01-quadr
   no referencial do jogador e chega na palma prevista no quadro de recepção, com um "ímã" no fim para a palma real.
 - **Postura**: quadril mais baixo (13 cm parado) com IK nas duas pernas (pés presos onde o clipe os pôs), base mais
   larga parada, tronco inclinado 15° para a frente e inclinação extra na aceleração.
+- **Drible de jogador bom** (dados medidos, Hirata et al., ISBS 2011): o IK do braço da bola leva a recepção para
+  40% da altura e a soltura para 32,5% (o mocap da CMU, amador, recebia a ~58%), com a bola por fora e à frente do pé.
+- **Quique físico**: a divisão descida/subida sai da restituição da madeira (a bola sai do chão com 78% da velocidade
+  de chegada), com achatamento no impacto e som sintetizado (porte de `HoopsAudioSynth.cpp` para WebAudio).
+- **Procedurais** (`src/anim/ProceduralMoves.ts`), para o que a CMU não tem: behind the back (a mão leva a bola por
+  fora e por trás do quadril, quique atrás do outro calcanhar, a outra mão recebe), step-back (pé de trás e pé da
+  frente em passos presos no chão, saltinho, bola puxada com um quique forte à frente) e half spin (giro de ~150°
+  que volta). Dribles que começam com a bola no ar trazem a bola para a mão na hora.
+- **Corte acelerando** (Hashizume et al., ISBS 2014): o impulso dos dribles laterais cresce e se mantém, somado ao
+  embalo para a frente; o step-back joga o impulso no meio (o salto).
+- **Sem a bola** o boneco usa parado/andando/correndo sem drible.
 - O teste `npm run e2e` mede a bola no drible: nunca abaixo do raio, nunca a mais de 1,3 m do jogador, e conta os
   quiques e as trocas de mão.

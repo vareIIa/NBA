@@ -42,7 +42,11 @@ export const LoopNativeVelocity: Record<string, { right: number; forward: number
   Dribble_Side_L: { right: 1.23, forward: 0 },
 };
 
-/** Quadros-chave (s) de uma ação de drible: a mão de origem solta em release e a outra (ou a mesma) recebe em catch. */
+/**
+ * Quadros-chave (s) de uma ação de drible: a mão de origem solta em release e a outra (ou a mesma) recebe em catch.
+ * Nos procedurais (behind the back, step-back), release e catch são frações (0..1) da duração do movimento e o clipe
+ * só dá o tronco; mãos, pés e bola vêm de src/anim/ProceduralMoves.ts.
+ */
 export interface MoveTiming {
   clip: string; // nome com a mão de origem (R2L / _R); o espelho troca R<->L
   start: number;
@@ -50,25 +54,60 @@ export interface MoveTiming {
   catch: number;
   end: number;
   switchesHand: boolean;
+  procedural?: 'BehindBack' | 'StepBack';
+  /** Giro da malha em volta do eixo vertical (graus): spin = 360, half spin = vai e volta até ~150. */
+  turnDeg?: number;
+  turnBack?: boolean;
 }
 
 const f = (frame: number): number => frame / ClipFps;
 
-/** Ações de drible (HoopsDummyRig.h). Os nomes estão na versão "bola na direita". */
+/** Ações de drible (HoopsDummyRig.h + procedurais). Os nomes estão na versão "bola na direita". */
 export const MoveTimings = {
   Cross: { clip: 'Cross_R2L', start: f(7), release: f(9), catch: f(30), end: f(50), switchesHand: true },
   EscapeCross: { clip: 'EscapeCross_R2L', start: f(6), release: f(16), catch: f(30), end: f(42), switchesHand: true },
-  Spin: { clip: 'Spin_R2L', start: f(6), release: f(16), catch: f(43), end: f(68), switchesHand: true },
+  Spin: { clip: 'Spin_R2L', start: f(6), release: f(16), catch: f(43), end: f(68), switchesHand: true, turnDeg: 360 },
+  // Half spin: começa o spin, fica de costas e volta (o giro vai a ~150° e retorna); a bola troca de mão.
+  HalfSpin: {
+    clip: 'Spin_R2L',
+    start: f(6),
+    release: f(16),
+    catch: f(43),
+    end: f(60),
+    switchesHand: true,
+    turnDeg: 150,
+    turnBack: true,
+  },
   BetweenLegs: { clip: 'BetweenLegs_R2L', start: f(12), release: f(23), catch: f(40), end: f(48), switchesHand: true },
   // Hesitação: empurrão ~26 com a mesma mão; a recepção cai já no loop seguinte.
   Hesitation: { clip: 'Hesitation_R', start: f(5), release: f(26), catch: f(40), end: f(34), switchesHand: false },
+  // Procedurais: o tronco vem do clipe (esticado na duração), o resto do ProceduralMoves.
+  BehindBack: {
+    clip: 'Cross_R2L',
+    start: f(7),
+    release: 0.5,
+    catch: 0.94,
+    end: f(50),
+    switchesHand: true,
+    procedural: 'BehindBack',
+  },
+  // Tronco do step-back: o começo do jump shot (pegada e dip atléticos), que já deixa o corpo pronto para o arremesso.
+  StepBack: {
+    clip: 'JumpShot2_R',
+    start: f(0),
+    release: 0.14,
+    catch: 0.9,
+    end: f(18),
+    switchesHand: false,
+    procedural: 'StepBack',
+  },
 } as const satisfies Record<string, MoveTiming>;
 
 export type MoveKind = keyof typeof MoveTimings;
 
 /** Nome do clipe para a mão da bola no início do movimento (o R2L/_R vale para a direita; o espelho para a esquerda). */
 export function moveClipFor(kind: MoveKind, fromHand: Hand): string {
-  const name = MoveTimings[kind].clip;
+  const name: string = MoveTimings[kind].clip;
   if (fromHand === 'r') return name;
   return name.replace('R2L', 'L2R').replace(/_R$/, '_L');
 }

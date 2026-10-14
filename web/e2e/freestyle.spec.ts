@@ -46,13 +46,16 @@ test('Freestyle: jogador animado, dribles do Pro Stick e arremessos', async ({ p
 
   // Drible andando para a cesta e crossover no meio da passada.
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(450);
   await shot(page, 'drible-andando');
   await flick(page, 'ArrowUp');
   await page.waitForTimeout(250);
   await shot(page, 'crossover-andando');
-  await page.waitForTimeout(400);
   await page.keyboard.up('KeyW');
+  // Volta um pouco para o topo do garrafão (os próximos dribles acontecem com espaço).
+  await page.keyboard.down('KeyS');
+  await page.waitForTimeout(500);
+  await page.keyboard.up('KeyS');
   await page.waitForTimeout(700);
   expect(await ballHand(page)).toBe('l');
 
@@ -68,6 +71,40 @@ test('Freestyle: jogador animado, dribles do Pro Stick e arremessos', async ({ p
   await page.waitForTimeout(350);
   await shot(page, 'spin');
   await page.waitForTimeout(1000);
+
+  // Behind the back: diagonal baixo + lado da mão da bola (bola na esquerda depois do spin -> baixo-direita).
+  const hand = await ballHand(page);
+  const diag = hand === 'r' ? 'ArrowLeft' : 'ArrowRight';
+  await page.keyboard.down('ArrowDown');
+  await page.keyboard.down(diag);
+  await page.waitForTimeout(70);
+  await page.keyboard.up(diag);
+  await page.keyboard.up('ArrowDown');
+  await page.waitForTimeout(160);
+  await shot(page, 'behind-the-back');
+  await page.waitForTimeout(800);
+  expect(await ballHand(page)).not.toBe(hand);
+
+  // Step-back (seta para baixo) e half spin (R) seguidos de step-back: o combo do diretor.
+  await flick(page, 'ArrowDown');
+  await page.waitForTimeout(260);
+  await shot(page, 'step-back');
+  await page.waitForTimeout(800);
+  await hold(page, 'KeyR', 40);
+  await page.waitForTimeout(260);
+  await shot(page, 'half-spin');
+  await page.waitForTimeout(500);
+  await flick(page, 'ArrowDown');
+  await page.waitForTimeout(800);
+
+  // Troca de mão automática pelo LS: correndo para o lado da mão livre, ele cruza a bola sozinho.
+  const freeSide = (await ballHand(page)) === 'r' ? 'KeyA' : 'KeyD';
+  await page.keyboard.down(freeSide);
+  await page.waitForTimeout(450);
+  await shot(page, 'troca-automatica');
+  await page.waitForTimeout(400);
+  await page.keyboard.up(freeSide);
+  await page.waitForTimeout(700);
 
   // Sprint para a direita da tela e crossover de ataque (RT + flick para cima).
   await page.keyboard.down('ShiftLeft');
@@ -96,6 +133,9 @@ test('Freestyle: jogador animado, dribles do Pro Stick e arremessos', async ({ p
   await page.waitForTimeout(250);
   await shot(page, 'arremesso-soltura');
   await page.waitForTimeout(700);
+  // Sem a bola (ela está no ar), o boneco não dribla: a base é parado/andando/correndo sem bola.
+  const baseWithoutBall = await page.evaluate(() => window.__garrafao!.anim().base);
+  expect(baseWithoutBall.startsWith('Dribble_')).toBe(false);
   await shot(page, 'bola-no-ar');
   await waitForShots(page, 1);
   await shot(page, 'resultado');
@@ -117,12 +157,16 @@ test('Freestyle: jogador animado, dribles do Pro Stick e arremessos', async ({ p
   console.log(`FPS no headless: ${(await page.evaluate(() => window.__garrafao!.fps())).toFixed(0)}`);
 
   // Dribles reconhecidos pelo núcleo e tocados pelo animador.
-  for (const move of ['Crossover', 'Entre as pernas', 'Spin', 'Crossover de ataque']) expect(moves).toContain(move);
+  for (const move of ['Crossover', 'Entre as pernas', 'Spin', 'Crossover de ataque', 'Por trás', 'Step-back', 'Half-spin']) {
+    expect(moves).toContain(move);
+  }
+  // A troca automática pelo LS gerou mais um drible de troca de mão sem o Pro Stick.
+  expect(moves.filter((m) => m === 'Crossover' || m === 'Entre as pernas').length).toBeGreaterThanOrEqual(3);
   // A bola nunca atravessa o chão nem foge do jogador no drible, e quica de verdade (com as trocas de mão).
   expect(stats.minY).toBeGreaterThan(0.1);
   expect(stats.maxDist).toBeLessThan(1.3);
   expect(stats.bounces).toBeGreaterThan(12);
-  expect(stats.handChanges).toBeGreaterThanOrEqual(4);
+  expect(stats.handChanges).toBeGreaterThanOrEqual(7);
   // Arremessos: timing pelo relógio real e a física realiza a decisão do modelo.
   expect(shots.length).toBe(2);
   expect(['GREEN', 'BOM']).toContain(shots[0].timing);

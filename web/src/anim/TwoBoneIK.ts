@@ -89,3 +89,36 @@ export function solveTwoBoneIK(upper: Bone, lower: Bone, end: Bone, target: Vect
   end.getWorldPosition(c);
   return c.distanceTo(target);
 }
+
+const sh = new Vector3();
+const el = new Vector3();
+const dir = new Vector3();
+const pe = new Vector3();
+const pp = new Vector3();
+const qw = new Quaternion();
+const qwInv = new Quaternion();
+
+/**
+ * Gira a cadeia em torno do eixo ombro -> alvo para o cotovelo (ou joelho) ficar do lado de `pole` (direção no mundo).
+ * Chamar depois de solveTwoBoneIK: o alvo continua atingido (a rotação é em torno do eixo que passa por ele).
+ */
+export function applyPole(upper: Bone, lower: Bone, target: Vector3, pole: Vector3, weight = 1): void {
+  upper.getWorldPosition(sh);
+  lower.getWorldPosition(el);
+  dir.subVectors(target, sh);
+  if (dir.lengthSq() < 1e-10) return;
+  dir.normalize();
+  pe.subVectors(el, sh).addScaledVector(dir, -el.clone().sub(sh).dot(dir));
+  pp.copy(pole).addScaledVector(dir, -pole.dot(dir));
+  if (pe.lengthSq() < 1e-10 || pp.lengthSq() < 1e-10) return;
+  pe.normalize();
+  pp.normalize();
+  let angle = Math.acos(Math.min(1, Math.max(-1, pe.dot(pp))));
+  if (new Vector3().crossVectors(pe, pp).dot(dir) < 0) angle = -angle;
+  upper.getWorldQuaternion(qw);
+  qwInv.copy(qw).invert();
+  r.setFromAxisAngle(dir, angle * weight);
+  tmp.copy(qwInv).multiply(r).multiply(qw);
+  upper.quaternion.multiply(tmp);
+  upper.updateWorldMatrix(false, true);
+}

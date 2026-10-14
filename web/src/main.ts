@@ -8,7 +8,9 @@ import { buildCourt } from './game/Court';
 import { Freestyle, type ShotRecord } from './game/Freestyle';
 import { buildHoop } from './game/HoopMesh';
 import { Input } from './game/Input';
+import { TimingGrade } from './sim';
 import { Hud } from './hud/Hud';
+import { Sfx } from './audio/Sfx';
 
 declare global {
   interface Window {
@@ -43,10 +45,15 @@ scene.fog = new THREE.Fog(0x0b0d12, 30, 70);
 
 const hud = new Hud();
 const input = new Input();
+const sfx = new Sfx();
+// O navegador só libera o som depois de um gesto (tecla, clique; o controle conta quando a página já tem foco).
+for (const type of ['keydown', 'pointerdown']) window.addEventListener(type, () => sfx.unlock());
 const rig = new CameraRig(window.innerWidth / window.innerHeight);
 const params = new URLSearchParams(location.search);
 const camParam = params.get('cam');
 if (camParam === 'lado' || camParam === 'frente') rig.mode = camParam;
+// Câmera lenta de inspeção da animação (?lento=0.25). O timing do arremesso usa o relógio real: não arremesse nela.
+const timeScale = Math.min(1, Math.max(0.05, Number(params.get('lento') ?? 1)));
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -64,7 +71,12 @@ async function boot(): Promise<void> {
     onRelease: (evaluation) => {
       hud.freezeMeter(evaluation);
       hud.showRelease(evaluation);
+      if (evaluation.timing === TimingGrade.Green) sfx.ding();
     },
+    onFloorBounce: (speed) => sfx.bounce(speed),
+    onRim: () => sfx.rim(),
+    onBoard: () => sfx.rim(),
+    onScore: () => sfx.swish(),
     onResult: (record) => {
       made += record.scored ? 1 : 0;
       hud.showResult(record, made, game.history.length);
@@ -111,13 +123,18 @@ async function boot(): Promise<void> {
   (window as unknown as { __debug: unknown }).__debug = { animator, game, THREE };
 
   let last = performance.now();
+  let gameClock = performance.now() / 1000;
   const frame = (now: number): void => {
-    const dt = Math.min(0.1, (now - last) / 1000);
+    const realDt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+    const dt = realDt * timeScale;
+    gameClock += timeScale === 1 ? realDt : dt;
+    if (timeScale === 1) gameClock = now / 1000;
+    fps += (1 / Math.max(realDt, 1e-3) - fps) * 0.05;
 
     const state = input.read();
-    game.update(now / 1000, dt, state, rig.forward());
+    if (state.gamepadConnected && (state.shoot || state.sprint)) sfx.unlock();
+    game.update(gameClock, dt, state, rig.forward());
     rig.playerFacing = game.facing;
     rig.update(dt, game.position, game.rimCenter());
 

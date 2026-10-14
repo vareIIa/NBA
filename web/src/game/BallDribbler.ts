@@ -1,9 +1,10 @@
 // Bola no drible, presa à mão ANIMADA:
-//  - "held": o centro da bola fica logo abaixo da palma (a mão empurra por cima), ou entre as mãos no arremesso.
-//  - "air": o animador avisou a soltura (vale da palma / quadro de soltura do drible). O quique é o arco do núcleo
-//    (DribbleArc: mão -> chão -> mão) no REFERENCIAL DO JOGADOR, então a bola nunca fica para trás quando ele anda.
-//    O fim do arco é a palma prevista no quadro da recepção; no último trecho a bola é puxada para a palma real
-//    (as camadas podem ter mudado no meio do quique), e a recepção acontece sem salto.
+//  - "held": o centro da bola fica logo abaixo da palma (a mão empurra por cima), entre as mãos no arremesso, ou no
+//    caminho que um drible procedural define (behind the back).
+//  - "air": o animador avisou a soltura. O quique é o arco do núcleo (DribbleArc: mão -> chão -> mão) no REFERENCIAL
+//    DO JOGADOR (a bola nunca fica para trás quando ele anda), com a divisão descida/subida tirada da física: a bola
+//    sai do chão com ~78% da velocidade de chegada (restituição da madeira). O fim do arco é a recepção prevista; no
+//    último trecho a bola é puxada para a palma real, e a recepção acontece sem salto.
 import * as THREE from 'three';
 import { type DribbleArc, Vec3, makeDribbleArc } from '../sim';
 import type { BallRelease, PlayerAnimator } from '../anim/PlayerAnimator';
@@ -12,12 +13,37 @@ import { fromThree, toThree } from '../units';
 
 export type GripMode = 'dribble' | 'shot';
 
-const MagnetFraction = 0.3; // último trecho do arco puxado para a palma real
+const MagnetFraction = 0.25; // último trecho do arco puxado para a palma real
+const Restitution = 0.78; // saída / chegada no chão (madeira; regra da FIBA dá 0,73–0,80)
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
 const offset = new THREE.Vector3(); // só para os deslocamentos da pegada (nunca é o vetor de saída)
 const otherPalm = new THREE.Vector3();
 const inv = new THREE.Matrix4();
+
+/**
+ * Fração da descida no tempo total do quique para a bola sair do chão com `restitution` da velocidade de chegada.
+ * Busca simples (o arco é monotônico na fração); limitada a 25–55%.
+ */
+export function downFractionFor(arc: DribbleArc, total: number, restitution = Restitution): number {
+  let best = 0.4;
+  let bestErr = Infinity;
+  for (let f = 0.25; f <= 0.551; f += 0.01) {
+    arc.downSeconds = total * f;
+    arc.upSeconds = total - arc.downSeconds;
+    const entry = arc.floorEntrySpeed();
+    const exit = arc.floorExitSpeed();
+    if (entry <= 0) continue;
+    const err = Math.abs(exit / entry - restitution);
+    if (err < bestErr) {
+      bestErr = err;
+      best = f;
+    }
+  }
+  arc.downSeconds = total * best;
+  arc.upSeconds = total - arc.downSeconds;
+  return best;
+}
 
 export class BallDribbler {
   mode: 'held' | 'air' = 'held';
@@ -25,13 +51,14 @@ export class BallDribbler {
   grip: GripMode = 'dribble';
   /** Posição da bola (mundo, three). */
   readonly position = new THREE.Vector3();
-  /** Quiques no chão neste quadro (velocidade de chegada, m/s), para o som. */
+  /** Quiques no chão neste quadro (velocidade de chegada, m/s), para o som e o achatamento. */
   bounces: number[] = [];
 
   private arc: DribbleArc | null = null;
   private arcTime = 0;
-  private gripBlend = 1; // 0..1: suaviza a troca de pegada (drible <-> arremesso)
+  private gripBlend = 1; // 0..1: suaviza a troca de pegada (drible <-> arremesso <-> procedural)
   private readonly gripFrom = new THREE.Vector3();
+  private procedural = false;
 
   constructor(private readonly radius: number) {}
 
@@ -48,7 +75,7 @@ export class BallDribbler {
     return palm.add(offset.set(0, -this.radius * 1.02, 0));
   }
 
-  /** Troca a pegada (o centro desliza para o novo ponto em ~0,12 s). */
+  /** Troca a pegada (o centro desliza para o novo ponto em ~0,1 s). */
   setGrip(mode: GripMode): void {
     if (mode === this.grip) return;
     this.grip = mode;
@@ -77,10 +104,31 @@ export class BallDribbler {
       this.launch(release, animator);
     }
 
+    // Drible procedural começou com a bola no ar: ela vem para a mão na hora (o comando responde já).
+    if (this.mode === 'air' && animator.ballHeldLocal) {
+      this.mode = 'held';
+      this.arc = null;
+    }
+
     if (this.mode === 'held') {
-      this.gripPoint(animator, this.hand, this.grip, tmp);
+      const held = animator.ballHeldLocal;
+      if (held) {
+        tmp.copy(held).applyMatrix4(animator.root.matrixWorld);
+        if (!this.procedural) {
+          this.procedural = true;
+          this.gripFrom.copy(this.position);
+          this.gripBlend = 0;
+        }
+      } else {
+        if (this.procedural) {
+          this.procedural = false;
+          this.gripFrom.copy(this.position);
+          this.gripBlend = 0;
+        }
+        this.gripPoint(animator, this.hand, this.grip, tmp);
+      }
       if (this.gripBlend < 1) {
-        this.gripBlend = Math.min(1, this.gripBlend + dt / 0.12);
+        this.gripBlend = Math.min(1, this.gripBlend + dt / 0.1);
         const s = this.gripBlend * this.gripBlend * (3 - 2 * this.gripBlend);
         this.position.copy(this.gripFrom).lerp(tmp, s);
       } else {
@@ -108,28 +156,26 @@ export class BallDribbler {
       this.mode = 'held';
       this.arc = null;
       this.gripBlend = 1;
+      this.procedural = false;
     }
   }
 
   private launch(release: BallRelease, animator: PlayerAnimator): void {
-    // Começo: onde a bola está agora; fim: a palma da mão que recebe, prevista no quadro da recepção.
+    // Começo: onde a bola está agora; fim: a recepção prevista (referencial do jogador).
     inv.copy(animator.root.matrixWorld).invert();
     const startLocal = tmp.copy(this.position).applyMatrix4(inv);
-    // catchModel está no espaço do modelo escalado; o modelo fica no root com o deslocamento vertical do bind pose.
-    const endLocal = tmp2
-      .copy(release.catchModel)
-      .applyAxisAngle(new THREE.Vector3(0, 1, 0), animator.model.rotation.y)
-      .add(new THREE.Vector3(0, animator.model.position.y - this.radius * 1.02, 0));
-    const period = Math.min(0.75, Math.max(0.16, release.catchIn));
-    const arc = makeDribbleArc(fromThree(startLocal), fromThree(endLocal), new Vec3(), period, this.radius);
-    // O quique cai um pouco à frente do corpo (no crossover, no meio do caminho entre as mãos).
-    if (!release.move) arc.floorPos = arc.floorPos.add(new Vec3(0, 0.06, 0)); // núcleo: y = frente local (z do three)
-    // Quique mais rápido para baixo no drible normal (a mão empurra forte).
-    arc.downSeconds = period * (release.move ? 0.45 : 0.4);
-    arc.upSeconds = period - arc.downSeconds;
+    const total = Math.min(0.75, Math.max(0.16, release.catchIn));
+    const arc = makeDribbleArc(fromThree(startLocal), fromThree(release.catchLocal), new Vec3(), total, this.radius);
+    if (release.floorLocal) {
+      arc.floorPos = fromThree(release.floorLocal).withZ(this.radius);
+    } else if (!release.move) {
+      arc.floorPos = arc.floorPos.add(new Vec3(0, 0.05, 0)); // núcleo: y = frente local (z do three)
+    }
+    downFractionFor(arc, total);
     this.arc = arc;
     this.arcTime = 0;
     this.mode = 'air';
     this.hand = release.toHand;
+    this.procedural = false;
   }
 }
