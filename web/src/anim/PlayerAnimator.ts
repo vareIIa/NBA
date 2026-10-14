@@ -142,6 +142,14 @@ const LegCapsules = [
   { a: 'calf_r', b: 'foot_r', r: 0.056, from: 0 },
 ];
 const BallLegMargin = 0.01; // m de folga entre a bola e a perna
+// Barreira macia: a bola começa a ser desviada ~5 cm antes de encostar (máximo suave entre a distância e o mínimo), em vez
+// de um empurrão que liga de repente no contato e dá tranco no braço.
+const BallLegSoft = 0.05;
+const BallLegHandMax = 0.25; // m: além disso a mão não vai (braço esticado); a garantia final fica na bola (BallDribbler)
+// A mão segue o desvio suave (sem tranco); a bola, que tem a garantia final, nunca entra na perna. Pode abrir um vão curto
+// entre a palma e a bola no meio de um drible rápido.
+const BallLegHandRate = 12; // 1/s
+const smoothMax = (x: number, min: number, soft: number) => (x + min + Math.sqrt((x - min) * (x - min) + soft * soft)) / 2;
 // Escape (RT + o mesmo comando do size-up; GIF de "escape moves" do 2K24 no game8): o corpo sai uns 0,5–1 m para o lado
 // da mão nova e os pés acompanham em passos (o da frente abre, o de trás vem atrás), sem deslizar.
 const EscapeMoves = new Set<string>([...SizeUpMoves, 'EscapeCross']);
@@ -195,6 +203,7 @@ export class PlayerAnimator {
   };
   footLockEnabled = true;
   legLayerEnabled = true;
+  ballClearanceEnabled = true;
   /**
    * Base plantada do size-up (parado com a bola, drible normal ou baixo): os dois pés pregados no chão, abertos e retos;
    * o ritmo fica no joelho e no quadril. Se o corpo gira ou anda além da base, o pé dá um passinho para a nova posição.
@@ -210,7 +219,8 @@ export class PlayerAnimator {
   private readonly solePoints: Record<Hand, { bone: THREE.Bone; local: THREE.Vector3 }[]> = { l: [], r: [] };
   private leanForward = 0;
   private leanRight = 0;
-  private dribbleArmWeight = 0;
+  /** Peso do IK do drible baixo por mão: cada braço entra e sai sozinho (a mão da bola troca no meio do crossover). */
+  private readonly dribbleArmWeight = { l: 0, r: 0 };
   private restArmWeight = 0;
   /** Giro extra da malha (rad) além do yaw do jogador: spin / half spin. */
   yawOffset = 0;
@@ -1155,7 +1165,10 @@ export class PlayerAnimator {
         c.copy(a).addScaledVector(ab, t);
         const need = cap.r + radius + BallLegMargin;
         d.copy(p).sub(c);
-        if (d.length() >= need) continue;
+        const dist = d.length();
+        const wanted = smoothMax(dist, need, BallLegSoft);
+        if (wanted - dist < 1e-4) continue;
+        const radial = dist > 1e-6 ? d.clone().divideScalar(dist) : new THREE.Vector3();
         if (hand) {
           // Mão da bola: a perna do mesmo lado é contornada por fora do joelho; a outra, pela frente (direção fixa,
           // sem a mão pular de um lado para o outro entre as pernas).
@@ -1166,13 +1179,10 @@ export class PlayerAnimator {
           if (d.lengthSq() < 1e-6) d.set(c.x - center.x, 0, c.z - center.z);
           d.normalize();
         }
-        // Distância horizontal até sair: resolve |dh + k*dir|^2 + dy^2 = need^2.
-        const dy = p.y - c.y;
-        const dh = new THREE.Vector3(p.x - c.x, 0, p.z - c.z);
-        const along = dh.dot(d);
-        const perp2 = dh.lengthSq() - along * along;
-        const k = Math.sqrt(Math.max(0, need * need - dy * dy - perp2)) - along;
-        if (k > 0) out.addScaledVector(d, k);
+        // Quanto andar na direção escolhida para a distância ao eixo crescer até `wanted` (linearizado pelo ângulo entre a
+        // direção e a saída radial; limitado para a direção quase de lado não pedir um empurrão enorme).
+        const k = (wanted - dist) / Math.max(0.35, d.dot(radial));
+        out.addScaledVector(d, k);
       }
     }
     return out;
@@ -1183,19 +1193,17 @@ export class PlayerAnimator {
   /** A mão da bola contorna as pernas: se a bola presa sob a palma entraria numa perna, a palma vai para fora dela. */
   private applyBallClearance(dt: number, input: AnimInput): void {
     const a = this.active && !this.active.fadingOut ? this.active : null;
-    // Entrada sem suavizar: com a direção fixa o empurrão já é contínuo (cresce com o quanto a bola entraria), e uma mola
-    // deixava a bola dentro da perna (atraso) ou oscilava a 60 Hz (rígida). Só a saída, a mão voltando para o clipe, é suave.
-    const kOut = 1 - Math.exp(-14 * dt);
     for (const hand of ['l', 'r'] as const) {
       const holding =
+        this.ballClearanceEnabled &&
         this.hasBall && !this.ballHeldLocal && a?.kind !== 'Shot' && hand === (a && !a.released ? a.fromHand : input.ballHand);
       const off = this.ballClearance[hand];
       const palm = this.palmWorld(hand, new THREE.Vector3());
       const target = holding
         ? this.legClearance(palm.clone().add(new THREE.Vector3(0, -BallRadius * 1.02, 0)), BallRadius, undefined, hand)
         : new THREE.Vector3();
-      if (target.lengthSq() >= off.lengthSq()) off.copy(target);
-      else off.lerp(target, kOut);
+      target.clampLength(0, BallLegHandMax);
+      off.lerp(target, 1 - Math.exp(-BallLegHandRate * dt));
       if (off.lengthSq() < 1e-6) continue;
       const pole = new THREE.Vector3(sideSign(hand), -0.3, -0.8).transformDirection(this.root.matrixWorld);
       this.reachPalm(hand, palm.add(off), 1, pole);
@@ -1210,16 +1218,19 @@ export class PlayerAnimator {
     // Drible baixo nos loops (braço da bola), entrando e saindo suave.
     const dribbling = this.hasBall && this.base.name.startsWith('Dribble_') && !a;
     const kw = 1 - Math.exp(-10 * dt);
-    this.dribbleArmWeight += ((dribbling ? 1 - this.actionWeight : 0) - this.dribbleArmWeight) * kw;
-    if (this.dribbleArmWeight > 1e-3) {
-      const hand: Hand = this.base.name.endsWith('_L') ? 'l' : 'r';
+    const baseHand: Hand = this.base.name.endsWith('_L') ? 'l' : 'r';
+    for (const hand of ['l', 'r'] as const) {
+      const target = dribbling && hand === baseHand ? 1 - this.actionWeight : 0;
+      this.dribbleArmWeight[hand] += (target - this.dribbleArmWeight[hand]) * kw;
+      const w = this.dribbleArmWeight[hand];
+      if (w <= 1e-3) continue;
       const inv = toWorld.clone().invert();
       const local = this.palmWorld(hand, new THREE.Vector3()).applyMatrix4(inv);
-      // Altura "nativa" = a atual sem o agachamento (o braço desce junto com o quadril).
-      this.lowDribblePalm(this.base.name, hand, local, local.y + this.crouch);
+      // Altura "nativa" = a atual sem o agachamento (o braço desce junto com o quadril). Alturas do loop desta mão.
+      this.lowDribblePalm(this.base.name.replace(/_[LR]$/, hand === 'l' ? '_L' : '_R'), hand, local, local.y + this.crouch);
       const s = sideSign(hand);
       const pole = new THREE.Vector3(s, -0.3, -0.8).transformDirection(toWorld);
-      this.reachPalm(hand, local.applyMatrix4(toWorld), this.dribbleArmWeight, pole);
+      this.reachPalm(hand, local.applyMatrix4(toWorld), w, pole);
     }
 
     // Sem bola, o Hold_Idle segura a bola com a direita (palma erguida na altura do peito); a esquerda já fica solta.

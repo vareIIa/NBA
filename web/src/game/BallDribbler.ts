@@ -128,7 +128,9 @@ export class BallDribbler {
         this.gripPoint(animator, this.hand, this.grip, tmp);
         // Garantia final: quando o braço não alcança (esticado, quadril baixo), a bola sai da perna mesmo longe 1–2 cm
         // da palma; atravessar a coxa é pior que um vão pequeno.
-        if (this.grip === 'dribble') tmp.add(animator.legClearance(tmp, this.radius, tmp2));
+        // Mesma regra de direção da mão (por fora do joelho do mesmo lado, pela frente da outra perna): a bola não se
+        // separa da palma para um lado diferente do que a mão foi.
+        if (this.grip === 'dribble') tmp.add(animator.legClearance(tmp, this.radius, tmp2, this.hand));
       }
       if (this.gripBlend < 1) {
         this.gripBlend = Math.min(1, this.gripBlend + dt / 0.1);
