@@ -171,7 +171,7 @@ Há **outras sessões** mexendo em `web/` ao mesmo tempo.
 
 - **Follow-through segurado no green: SAI. Não restaurar.**
   - O diretor reportou o personagem travando no ar e aprovou a remoção.
-  - Esta sessão restaurou o hold por engano no `ed48e95`. A sessão [e33a1b] está tirando de novo (a chamada em `Freestyle.release()`; `holdFollowThrough()`, `holdUntil` e o ramo do `timeScale = 0` no `PlayerAnimator.ts`), junto com a **comemoração depois da cesta** (`CelebrateClips`, `celebrate()`, `startCelebration()` e a fila no `updateAction()`; `animator.celebrate()` no `updateFlight` quando `ev.scored`).
+  - Esta sessão restaurou o hold por engano no `ed48e95`. A sessão [e33a1b] já tirou de novo (pasta de trabalho, typecheck e 69/69 testes passando) (a chamada em `Freestyle.release()`; `holdFollowThrough()`, `holdUntil` e o ramo do `timeScale = 0` no `PlayerAnimator.ts`), junto com a **comemoração depois da cesta** (`CelebrateClips`, `celebrate()`, `startCelebration()` e a fila no `updateAction()`; `animator.celebrate()` no `updateFlight` quando `ev.scored`).
   - O bloco `restArmWeight` do `PlayerAnimator.ts` (braço direito relaxado sem bola) também é de [e33a1b]: manter.
 - **Ainda não commitado desta sessão** (misturado com o trabalho em andamento das outras):
   - `main.ts`: ligação do `?lab=1` (o laboratório só funciona com ela);
