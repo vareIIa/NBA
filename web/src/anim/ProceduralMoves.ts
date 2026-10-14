@@ -60,23 +60,26 @@ export const sideSign = (hand: 'r' | 'l'): number => (hand === 'r' ? -1 : 1);
 // ------------------------------------------------------------------------------------------- behind the back
 
 export const BehindBack = {
-  release: 0.56,
-  catch: 0.95,
+  release: 0.5,
+  catch: 0.92,
   /**
-   * Centro da bola (com a mão) até a soltura; x positivo = lado da mão de origem (ver onSide). A mão puxa a bola para
-   * trás por fora do quadril, enrola atrás das nádegas na altura do quadril e empurra para baixo e para o outro lado.
+   * Centro da bola (com a mão) até a soltura; x positivo = lado da mão de origem (ver onSide). Como no jogo real: a mão
+   * puxa a bola para trás por fora da coxa, enrola atrás das pernas na altura do joelho/coxa e empurra para baixo e
+   * para o outro lado.
    */
   heldKeys: [
-    [0.0, [0.36, 0.7, 0.14]],
-    [0.14, [0.37, 0.71, -0.1]],
-    [0.28, [0.25, 0.71, -0.29]],
-    [0.42, [0.08, 0.69, -0.35]],
-    [0.56, [-0.05, 0.62, -0.31]],
+    [0.0, [0.34, 0.62, 0.16]],
+    [0.14, [0.38, 0.56, -0.06]],
+    [0.28, [0.28, 0.52, -0.26]],
+    [0.4, [0.1, 0.5, -0.32]],
+    [0.5, [-0.04, 0.46, -0.3]],
   ] as ReadonlyArray<readonly [number, V3]>,
   /** Quique atrás do calcanhar do outro pé. */
-  floor: [-0.14, BallRadius, -0.2] as V3,
+  floor: [-0.2, BallRadius, -0.12] as V3,
   /** Recepção na outra mão, à frente e do lado novo. */
-  catchPoint: [-0.36, 0.72, 0.16] as V3,
+  catchPoint: [-0.38, 0.66, 0.24] as V3,
+  /** Braço livre vem para a frente (afasta o defensor, ajuda a frear): palma à frente do peito do lado livre. */
+  offArmForward: [-0.22, 1.05, 0.42] as V3,
 };
 
 /**
@@ -94,12 +97,15 @@ export function behindBackBall(u: number, fromHand: 'r' | 'l'): V3 {
 
 export const behindBackFloor = (fromHand: 'r' | 'l'): V3 => onSide(BehindBack.floor, fromHand);
 export const behindBackCatch = (fromHand: 'r' | 'l'): V3 => onSide(BehindBack.catchPoint, fromHand);
+export const behindBackOffArm = (fromHand: 'r' | 'l'): V3 => onSide(BehindBack.offArmForward, fromHand);
 
 /** Pesos do IK dos braços no behind the back: a mão de origem leva a bola; a outra vai buscar a recepção. */
-export function behindBackArmWeights(u: number): { from: number; to: number } {
+export function behindBackArmWeights(u: number): { from: number; to: number; offArm: number } {
   const from = u <= BehindBack.release + 0.04 ? 1 : 1 - smooth((u - BehindBack.release - 0.04) / 0.25);
   const to = smooth((u - 0.55) / 0.3);
-  return { from, to };
+  // Braço livre: vai para a frente no começo e cede quando precisa receber a bola.
+  const offArm = smooth(u / 0.2) * (1 - smooth((u - 0.45) / 0.15));
+  return { from, to, offArm };
 }
 
 // ------------------------------------------------------------------------------------------- step-back

@@ -168,7 +168,9 @@ describe('Dribles procedurais', () => {
       const end = behindBackBall(BehindBack.release, hand);
       expect(Math.sign(start[0])).toBe(side); // começa do lado da mão da bola
       expect(mid[2]).toBeLessThan(-0.2); // passa atrás do quadril (z < 0 = atrás)
-      expect(mid[1]).toBeGreaterThan(0.55); // na altura do quadril, não no chão
+      // Na altura do joelho/coxa, como no jogo real (vídeo de referência), nem no chão nem no quadril.
+      expect(mid[1]).toBeGreaterThan(0.4);
+      expect(mid[1]).toBeLessThan(0.6);
       expect(end[2]).toBeLessThan(-0.25);
       expect(Math.sign(behindBackFloor(hand)[0])).toBe(-side); // quica atrás do outro calcanhar
       expect(behindBackFloor(hand)[2]).toBeLessThan(0);

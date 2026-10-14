@@ -21,3 +21,6 @@ __pycache__/
 
 # Log que o OpenSim (Tools/Captura) cria na pasta atual
 opensim.log
+
+# Vídeos de referência de terceiros (análise interna, não versionar)
+referencias/real/

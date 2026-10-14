@@ -82,12 +82,15 @@ export const MoveTimings = {
   // Hesitação: empurrão ~26 com a mesma mão; a recepção cai já no loop seguinte.
   Hesitation: { clip: 'Hesitation_R', start: f(5), release: f(26), catch: f(40), end: f(34), switchesHand: false },
   // Procedurais: o tronco vem do clipe (esticado na duração), o resto do ProceduralMoves.
+  // Behind the back: no jogo real o corpo planta baixo e sai num passo largo para o lado novo enquanto a bola enrola
+  // por trás (referências: Coach Frikki, "Behind The Back Dribble SECRETS"); o tronco do escape crossover (102_14) tem
+  // essa mecânica. A bola e as mãos vêm do ProceduralMoves.
   BehindBack: {
-    clip: 'Cross_R2L',
-    start: f(7),
+    clip: 'EscapeCross_R2L',
+    start: f(4),
     release: 0.5,
-    catch: 0.94,
-    end: f(50),
+    catch: 0.92,
+    end: f(42),
     switchesHand: true,
     procedural: 'BehindBack',
   },
