@@ -78,8 +78,11 @@ export const BehindBack = {
   floor: [-0.2, BallRadius, -0.12] as V3,
   /** Recepção na outra mão, à frente e do lado novo. */
   catchPoint: [-0.38, 0.66, 0.24] as V3,
-  /** Braço livre vem para a frente (afasta o defensor, ajuda a frear): palma à frente do peito do lado livre. */
-  offArmForward: [-0.22, 1.05, 0.42] as V3,
+  /**
+   * Braço livre vem para a frente e baixo (afasta o defensor, ajuda a frear), na altura do joelho como no vídeo do
+   * ginásio (MUvJacHl12g 89,0–89,3 s). À frente do peito (1,05 m) a mão ficava na altura do rosto com o corpo agachado.
+   */
+  offArmForward: [-0.28, 0.75, 0.4] as V3,
 };
 
 /**
@@ -101,10 +104,13 @@ export const behindBackOffArm = (fromHand: 'r' | 'l'): V3 => onSide(BehindBack.o
 
 /** Pesos do IK dos braços no behind the back: a mão de origem leva a bola; a outra vai buscar a recepção. */
 export function behindBackArmWeights(u: number): { from: number; to: number; offArm: number } {
-  const from = u <= BehindBack.release + 0.04 ? 1 : 1 - smooth((u - BehindBack.release - 0.04) / 0.25);
-  const to = smooth((u - 0.55) / 0.3);
-  // Braço livre: vai para a frente no começo e cede quando precisa receber a bola.
-  const offArm = smooth(u / 0.2) * (1 - smooth((u - 0.45) / 0.15));
+  // A mão da bola entra suave (antes pulava da pose do drible para o caminho por trás num quadro só).
+  // O drible dura ~0,45 s: rampas de menos de ~0,1 s (u 0,2) davam tranco no braço.
+  const from = u <= BehindBack.release + 0.04 ? smooth(u / 0.22) : 1 - smooth((u - BehindBack.release - 0.04) / 0.4);
+  const to = smooth((u - 0.48) / 0.4);
+  // Braço livre: vai para a frente logo no começo e fica até a recepção assumir (o alvo desliza de um para o outro);
+  // antes ele cedia antes de a recepção entrar e voltava para o clipe no meio (subia até a cabeça).
+  const offArm = smooth(u / 0.22);
   return { from, to, offArm };
 }
 

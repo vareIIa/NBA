@@ -838,6 +838,7 @@ export class PlayerAnimator {
         if (this.progress(a) < a.release) return;
         a.released = true;
         const catchLocal = toV(proc === 'BehindBack' ? behindBackCatch(a.fromHand) : stepBackCatch(a.fromHand));
+        if (proc === 'BehindBack') catchLocal.y -= this.behindBackDrop();
         const floorLocal = toV(proc === 'BehindBack' ? behindBackFloor(a.fromHand) : stepBackFloor(a.fromHand));
         this.release({
           fromHand: a.fromHand,
@@ -1416,6 +1417,17 @@ export class PlayerAnimator {
     }
   }
 
+  private btbFade: {
+    action: ActiveAction;
+    from: { hand: Hand; local: THREE.Vector3; w: number };
+    other: { hand: Hand; local: THREE.Vector3; w: number };
+  } | null = null;
+
+  /** Quanto o corpo está mais baixo que o agachamento dos procedurais (os pontos-chave do behind the back). */
+  private behindBackDrop(): number {
+    return Math.max(0, this.crouch - this.stance.crouchProcedural);
+  }
+
   private applyArms(dt: number): void {
     const a = this.active && !this.active.fadingOut ? this.active : null;
     const toWorld = this.root.matrixWorld;
@@ -1458,17 +1470,39 @@ export class PlayerAnimator {
     if (a?.timing?.procedural === 'BehindBack') {
       const s = sideSign(a.fromHand);
       const w = behindBackArmWeights(u);
-      const ball = toV(behindBackBall(u, a.fromHand));
+      // Os pontos-chave foram medidos com o agachamento dos procedurais; parado (size-up) o corpo está mais baixo.
+      const drop = new THREE.Vector3(0, -this.behindBackDrop(), 0);
+      const ball = toV(behindBackBall(u, a.fromHand)).add(drop);
       if (u < BehindBack.release) this.ballHeldLocal = ball.clone();
       // Palma por cima e por fora da bola (empurrando para baixo e para o outro lado).
       const palm = ball.clone().add(new THREE.Vector3(s * 0.05, BallRadius * 0.95, -0.03)).applyMatrix4(toWorld);
-      this.reachPalm(a.fromHand, palm, w.from, new THREE.Vector3(s, -0.2, -0.9).transformDirection(toWorld));
+      const poleFrom = new THREE.Vector3(s, -0.2, -0.9).transformDirection(toWorld);
+      this.reachPalm(a.fromHand, palm, w.from, poleFrom);
       const other = otherSide(a.fromHand);
-      const catchPalm = toV(behindBackCatch(a.fromHand)).add(new THREE.Vector3(0, BallRadius * 1.02, 0)).applyMatrix4(toWorld);
-      const offPalm = toV(behindBackOffArm(a.fromHand)).applyMatrix4(toWorld);
-      // Braço livre à frente (proteção) e depois indo receber a bola.
+      const catchPalm = toV(behindBackCatch(a.fromHand)).add(drop).add(new THREE.Vector3(0, BallRadius * 1.02, 0)).applyMatrix4(toWorld);
+      const offPalm = toV(behindBackOffArm(a.fromHand)).add(drop).applyMatrix4(toWorld);
+      // Braço livre à frente (proteção, baixo) e depois indo receber a bola, sem voltar para o clipe no meio.
       const otherTarget = offPalm.clone().lerp(catchPalm, w.to);
-      this.reachPalm(other, otherTarget, Math.max(w.to, w.offArm), new THREE.Vector3(-s, -0.3, -0.8).transformDirection(toWorld));
+      const poleOther = new THREE.Vector3(-s, -0.3, -0.8).transformDirection(toWorld);
+      this.reachPalm(other, otherTarget, Math.max(w.to, w.offArm), poleOther);
+      const inv = toWorld.clone().invert();
+      this.btbFade = {
+        action: a,
+        from: { hand: a.fromHand, local: palm.clone().applyMatrix4(inv), w: w.from },
+        other: { hand: other, local: otherTarget.clone().applyMatrix4(inv), w: Math.max(w.to, w.offArm) },
+      };
+    } else if (this.btbFade) {
+      // Fim do behind the back: os braços voltam para o drible devagar (cortar o IK de uma vez dava tranco nos dois).
+      const f = this.btbFade;
+      const k = Math.exp(-10 * dt);
+      for (const arm of [f.from, f.other]) {
+        arm.w *= k;
+        if (arm.w > 1e-3) {
+          const pole = new THREE.Vector3(sideSign(arm.hand), -0.3, -0.8).transformDirection(toWorld);
+          this.reachPalm(arm.hand, arm.local.clone().applyMatrix4(toWorld), arm.w, pole);
+        }
+      }
+      if (f.from.w < 1e-3 && f.other.w < 1e-3) this.btbFade = null;
     }
   }
 }
