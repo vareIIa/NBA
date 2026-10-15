@@ -105,6 +105,27 @@ Suba o Vite antes: `cd web; npx vite --host 127.0.0.1`. **Desligue depois**, por
 
 Não baixaram: `3ZRL43FYmKs` (entre as pernas em câmera lenta; pede login, não usar cookies do diretor) e `Pz0HP1Ly27c` (removido).
 
+**Kyrie Irving é a referência principal** (pedido do diretor em 2026-10-15: "o OPUS dos dribblers"). Baixados em
+2026-10-15, só o vídeo (sem ffmpeg no PATH o áudio veio separado e foi descartado):
+
+| Arquivo | Conteúdo e trechos |
+|---|---|
+| `GHJRCzlht7k_Kyrie Irving Crazy Handles ｜ SLOWMO.mp4` (68 s, 720x720) | Câmera lenta. **0–5 s**: de branco contra os Warriors, drible baixo de perto. **8–16 s**: de preto contra o Klay, de lado e de perto (crossover baixo, entre as pernas). **33–38 s**: de novo contra o Klay. **42–51 s**: **câmera de cima** (Rockets), a melhor para ver os pés e o pivô. **52–58 s**: de branco contra o Curry. **61–66 s**: contra os Raptors. |
+| `NSiPz8Kvuqw_Kyrie's Handles Slicing Through the Spurs in Super Slow-Motion.mp4` (38 s, 720p) | Câmera superlenta, uma posse inteira. **0–4 s**: de frente, drible com a direita. **9–10 s**: drible baixo com a esquerda. **14,4–18 s**: de lado, corpo inteiro, **infiltração muito baixa** (tronco quase horizontal, bola rente ao chão em 15,6–16,2 s): referência para a hesitação e o spin baixos. **18–23 s**: infiltração e bandeja. |
+| `Gu0dzNMAq70_Attention to Detail： Kyrie Irving.mp4` (12:45) | Análise (By Any Means Basketball). **0:36–5:54**: Ballhandling (jogos, câmera de transmissão; treino de perto em 2:24, 4:00–4:06 e 4:24; "Momentum" em 5:12–5:20). **5:54–9:18**: arremesso. **9:18–12:42**: finalização ("Overhead" em 9:54; treinos em 11:18–12:24). |
+
+Trechos já usados (comparação lado a lado no laboratório):
+
+| Drible | Vídeo e tempo |
+|---|---|
+| Crossover em movimento | `LZSlFyyCkhk` 9,0–10,9 s (Kyrie x OKC, de lado) |
+| Size-up | `LZSlFyyCkhk` 43,1–48,3 s (Kyrie x Bulls, pés) e Harden no 2K23 (`u8jYUDS2eoo` 47,7–51,0 s) |
+| Crossover parado (recepção por fora do joelho) | `fvXFeCAS3ds` 6–8 s |
+| Entre as pernas | `LZSlFyyCkhk` 164,0–165,2 s (de costas) |
+| Spin | `LZSlFyyCkhk` 86,8–88,3 s |
+| Behind the back | `MUvJacHl12g` 88,5–89,4 s (ginásio, de lado) |
+| Escape (RT) | GIF de escape moves do 2K24 em game8.co/articles/featured/1048 |
+
 **2K23 do diretor:**
 
 - `referencias/2k23/` (README com a análise).
