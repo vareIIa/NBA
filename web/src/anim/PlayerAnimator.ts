@@ -506,7 +506,8 @@ export class PlayerAnimator {
     } else if (speed < 0.35) {
       base = input.low ? 'Dribble_Low' : 'Dribble_Idle';
       clipName = loopClip(base, hand);
-    } else if (fwd < -0.5 && Math.abs(fwd) >= Math.abs(side) * 0.8) {
+    } else if (fwd < -0.25 && Math.abs(fwd) >= Math.abs(side) * 0.8) {
+      // Recuando, mesmo devagar: o loop de costas (o de andar para a frente dava passos ao contrário do corpo).
       base = 'Dribble_Back';
       clipName = loopClip(base, hand);
     } else if (Math.abs(side) > Math.abs(fwd) * 1.2 && speed < 3.2) {
@@ -1259,6 +1260,8 @@ export class PlayerAnimator {
         return;
       }
     } else {
+      // Pé que a animação arrasta rente ao chão (o recuo da CMU arrasta o pé de trás): sobe um pouco, vira passo.
+      if (toeY < 0.05 && animSpeed > 1.5) ankle.y += Math.min(0.05, (animSpeed - 1.5) * 0.02) * (1 - toeY / 0.05);
       if (brake > 0 && f.releaseT >= 0.6) f.land.addScaledVector(animVel, -brake * dt);
       else f.land.multiplyScalar(Math.exp(-12 * dt));
       ankle.add(f.land);

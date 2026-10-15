@@ -76,6 +76,7 @@ export interface FreestyleEvents {
 export const PlayerHeight = 1.96;
 const JogSpeed = 3.9; // m/s com bola, sem RT
 const SprintSpeed = 6.2; // com RT
+const RetreatSpeed = 1.4; // m/s: recuo driblando (passada do loop de costas)
 const Acceleration = 14; // m/s²
 const Deceleration = 18;
 const MoveAcceleration = 30; // durante um drible o impulso do movimento manda
@@ -104,8 +105,11 @@ function moveKindFor(move: DribbleMove): MoveKind | null {
       return 'Hesitation';
     case DribbleMove.StepBack:
     case DribbleMove.EscapeStepBack:
-    case DribbleMove.Retreat:
       return 'StepBack';
+    // Retreat (LS para trás): o diretor recua andando alguns passos para trás driblando (2K, vídeo 19.46.14 7,4–9,8 s),
+    // não com o saltinho do step-back de arremesso. Sem animação de drible: as pernas são as do loop de costas.
+    case DribbleMove.Retreat:
+      return null;
     default:
       return null;
   }
@@ -361,6 +365,8 @@ export class Freestyle {
     const forwardNow = Math.max(0, this.velocity.dot(this.facing));
     this.moveIsStepBack = kind === 'StepBack';
     this.moveCarry = spec.forwardSpeed < 0 ? new Vec3() : this.facing.scale(forwardNow * 0.9);
+    // Retreat: recua na velocidade da passada de costas (sem o arranque de 2 m/s, que virava um escorregão).
+    if (active.move === DribbleMove.Retreat) this.moveSpeed = Math.min(this.moveSpeed, RetreatSpeed);
     // Spin / half spin: o deslocamento vem do pé de pivô (root motion do animador), não de um impulso.
     if (kind === 'Spin' || kind === 'HalfSpin') {
       this.moveSpeed = 0;
@@ -368,10 +374,12 @@ export class Freestyle {
     }
     // Size-up (2K23 e jogo real): parado, com o LS solto e sem RT, o drible é no lugar; quem tira da base é o LS ou o
     // RT (escape: o mesmo comando segurando RT sai para o lado).
-    if (!this.moveIsStepBack && !this.lastSprint && this.velocity.length2D() < 0.6 && this.lastWish < 0.2) {
+    // (O retreat vem do próprio LS, que ainda não aparece em lastWish no quadro em que ele começa: fica de fora.)
+    const retreat = active.move === DribbleMove.Retreat;
+    if (!retreat && !this.moveIsStepBack && !this.lastSprint && this.velocity.length2D() < 0.6 && this.lastWish < 0.2) {
       this.moveSpeed = 0;
       this.moveCarry = new Vec3();
-    } else if (!this.moveIsStepBack && this.lastSprint && this.velocity.length2D() < 0.6 && this.lastWish < 0.2) {
+    } else if (!retreat && !this.moveIsStepBack && this.lastSprint && this.velocity.length2D() < 0.6 && this.lastWish < 0.2) {
       // Escape parado (GIF de escape moves do 2K24): reposiciona para o lado da mão nova, sem atacar para a frente.
       this.moveSpeed = Math.abs(lateral);
       this.moveDir = this.right().scale(lateral).normalized(this.facing);
