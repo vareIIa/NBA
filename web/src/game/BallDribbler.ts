@@ -131,6 +131,8 @@ export class BallDribbler {
         // Mesma regra de direção da mão (por fora do joelho do mesmo lado, pela frente da outra perna): a bola não se
         // separa da palma para um lado diferente do que a mão foi.
         if (this.grip === 'dribble') tmp.add(animator.legClearance(tmp, this.radius, tmp2, this.hand));
+        // Nunca abaixo do chão: no spin baixo a palma chega a ~20 cm e a bola presa embaixo dela entrava no piso.
+        tmp.y = Math.max(tmp.y, this.radius);
       }
       if (this.gripBlend < 1) {
         this.gripBlend = Math.min(1, this.gripBlend + dt / 0.1);
@@ -158,6 +160,7 @@ export class BallDribbler {
     }
     // O arco é cinemático: se passaria por dentro de uma perna, contorna por fora dela (a bola não atravessa o corpo).
     world.add(animator.legClearance(world, this.radius, tmp2));
+    world.y = Math.max(world.y, this.radius);
     this.position.copy(world);
     if (this.arcTime >= total) {
       this.mode = 'held';

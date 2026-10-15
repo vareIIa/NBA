@@ -160,6 +160,7 @@ const smoothMax = (x: number, min: number, soft: number) => (x + min + Math.sqrt
 // da mão nova e os pés acompanham em passos (o da frente abre, o de trás vem atrás), sem deslizar.
 const EscapeMoves = new Set<string>([...SizeUpMoves, 'EscapeCross']);
 // lead: quanto à frente (s) o passo mira; o corpo segue andando enquanto o outro pé vem, então o pé da frente abre mais.
+const SpinFreeHand = { outside: 0.3, forward: 0.35, height: 0.22 }; // m: palma do braço livre no spin (corpo)
 const HalfSpinBall = { release: 0.3, catch: 0.85 }; // frações do half spin (o giro vira em 0,5)
 const EscapeStep = { threshold: 0.12, seconds: 0.14, lead: 0.18 };
 
@@ -244,6 +245,10 @@ export class PlayerAnimator {
     crouchLow: 0.08, // o clipe baixo já é baixo
     crouchMove: 0.07, // dribles de mocap (os clipes já abaixam)
     crouchProcedural: 0.14, // behind the back / step-back (o tronco vem de um clipe mais alto)
+    // Spin baixo (Kyrie x Spurs, NSiPz8Kvuqw 15,0–16,2 s): quadril a ~40% da altura, tronco quase horizontal (~70° da
+    // vertical), cabeça na altura do quadril e bola abaixo do joelho. O clipe da CMU gira quase em pé.
+    crouchSpin: 0.34,
+    leanSpinDeg: 28,
     // m que cada pé abre para o lado parado: tornozelos a ~0,62 m (1,5x a largura dos ombros; Harden no 2K23 a 47,7 s,
     // Kyrie a 44,3 s com ~0,8 m). O clipe deixa os tornozelos a 0,34 m.
     widenIdle: 0.24,
@@ -479,6 +484,7 @@ export class PlayerAnimator {
     this.applyStance(dt, input);
     this.applyArms(dt);
     this.applyBetweenLegsArm(dt);
+    this.applySpinFreeArm(dt);
     this.applyBallClearance(dt, input);
   }
 
@@ -954,24 +960,28 @@ export class PlayerAnimator {
     let crouchTarget: number;
     if (kind === 'Shot') crouchTarget = 0;
     else if (standingMove) crouchTarget = s.crouchIdle;
+    else if (a?.timing?.turnDeg) crouchTarget = s.crouchSpin;
     else if (kind) crouchTarget = (a?.timing?.procedural ? s.crouchProcedural : s.crouchMove) + (stepBack?.crouch ?? 0);
     else if (!input.hasBall) crouchTarget = 0.03;
     else if (this.base.base === 'Dribble_Low') crouchTarget = s.crouchLow;
     else if (this.base.base === 'Dribble_Run') crouchTarget = s.crouchRun;
     else if (speed > 0.35) crouchTarget = s.crouchWalk;
     else crouchTarget = s.crouchIdle;
-    const k = 1 - Math.exp(-(stepBack ? 20 : 8) * dt);
+    const k = 1 - Math.exp(-(stepBack ? 20 : a?.timing?.turnDeg ? 12 : 8) * dt);
     this.crouch += (crouchTarget - this.crouch) * k;
 
     const shooting = kind === 'Shot';
     // A inclinação cresce com a velocidade PARA A FRENTE (indo para trás ou de lado o tronco não deita).
     const ahead = Math.max(0, input.forward);
     const base = input.hasBall ? s.leanBaseDeg + ahead * s.leanPerSpeedDeg : 4 + ahead * 2;
+    const spinning = !!a?.timing?.turnDeg;
     const leanF = shooting
       ? 0
-      : Math.min(s.leanMaxDeg, Math.max(-s.leanMaxDeg, base + input.accelForward * s.leanPerAccelDeg + (stepBack?.leanDeg ?? 0)));
+      : spinning
+        ? s.leanSpinDeg
+        : Math.min(s.leanMaxDeg, Math.max(-s.leanMaxDeg, base + input.accelForward * s.leanPerAccelDeg + (stepBack?.leanDeg ?? 0)));
     const leanR = shooting ? 0 : Math.min(s.leanMaxDeg, Math.max(-s.leanMaxDeg, input.accelRight * s.leanPerAccelDeg));
-    const kl = 1 - Math.exp(-(stepBack ? 14 : 6) * dt);
+    const kl = 1 - Math.exp(-(stepBack ? 14 : spinning ? 10 : 6) * dt);
     this.leanForward += (leanF - this.leanForward) * kl;
     this.leanRight += (leanR - this.leanRight) * kl;
 
@@ -1066,10 +1076,13 @@ export class PlayerAnimator {
     // 4) Inclinação do tronco: metade em spine_01, metade em spine_02 (as costas curvam, não dobram num ponto só).
     // +X do modelo = esquerda: girar em torno dele leva o "cima" para a frente (+Z). Em torno da frente (+Z), o
     // "cima" vai para -X = direita do modelo.
-    const left = axis.set(1, 0, 0).applyQuaternion(this.root.quaternion);
+    // Eixos do CORPO: no spin a malha gira em relação à raiz, e "para a frente" da raiz virava para trás no meio do giro.
+    const bodyQ = this.model.getWorldQuaternion(new THREE.Quaternion());
+    const left = axis.set(1, 0, 0).applyQuaternion(bodyQ);
+    const bodyForward = new THREE.Vector3(0, 0, 1).applyQuaternion(bodyQ);
     const lean = new THREE.Quaternion()
       .setFromAxisAngle(left, THREE.MathUtils.degToRad(this.leanForward * 0.5))
-      .multiply(q.setFromAxisAngle(forward, THREE.MathUtils.degToRad(this.leanRight * 0.5)));
+      .multiply(q.setFromAxisAngle(bodyForward, THREE.MathUtils.degToRad(this.leanRight * 0.5)));
     for (const name of ['spine_01', 'spine_02']) {
       const spine = this.bone(name);
       const spineWorld = spine.getWorldQuaternion(new THREE.Quaternion());
@@ -1415,6 +1428,35 @@ export class PlayerAnimator {
       const pole = new THREE.Vector3(sideSign(hand), -0.3, -0.8).transformDirection(this.root.matrixWorld);
       this.reachPalm(hand, palm.add(off), 1, pole);
     }
+  }
+
+  /**
+   * Spin baixo: o braço livre desce até perto do chão, à frente e do lado dele (equilíbrio; Kyrie x Spurs, NSiPz8Kvuqw
+   * 15,3–16,2 s, a ponta dos dedos a um palmo do chão). Livre = o que não está com a bola: o outro até a recepção.
+   */
+  private spinArm = { hand: 'l' as Hand, w: 0 };
+  private applySpinFreeArm(dt: number): void {
+    const a = this.active && !this.active.fadingOut ? this.active : null;
+    const spinning = !!a?.timing?.turnDeg && this.hasBall;
+    const A = this.spinArm;
+    if (spinning) {
+      const u = this.progress(a);
+      const catchU = a.timing!.turnBack ? HalfSpinBall.catch : (a.catch - a.start) / Math.max(1e-3, a.end - a.start);
+      const hand: Hand = u < catchU ? otherSide(a.fromHand) : a.fromHand;
+      if (hand !== A.hand) A.w = 0;
+      A.hand = hand;
+      const target = THREE.MathUtils.smoothstep(u, 0, 0.25) * (1 - THREE.MathUtils.smoothstep(u, catchU - 0.15, catchU));
+      A.w += (target - A.w) * (1 - Math.exp(-14 * dt));
+    } else {
+      A.w *= Math.exp(-10 * dt);
+    }
+    if (A.w < 1e-3) return;
+    const bodyQ = this.model.getWorldQuaternion(new THREE.Quaternion());
+    const side = sideSign(A.hand);
+    const palm = new THREE.Vector3(side * SpinFreeHand.outside, 0, SpinFreeHand.forward).applyQuaternion(bodyQ).add(this.root.position);
+    palm.y = SpinFreeHand.height;
+    const pole = new THREE.Vector3(side, -0.3, -0.8).applyQuaternion(bodyQ);
+    this.reachPalm(A.hand, palm, A.w, pole);
   }
 
   private btbFade: {
