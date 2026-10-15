@@ -401,7 +401,14 @@ export class Freestyle {
     const inMove = this.phase === 'dribble' && this.dribble.isMoveActive(now);
 
     if (this.phase === 'dribble' || this.phase === 'return' || this.phase === 'flight') {
-      const maxSpeed = (input.sprint ? SprintSpeed : JogSpeed) * this.dribble.speedScale();
+      // Velocidade pela direção em relação ao corpo: de frente corre, de lado desliza (size-up) e para trás recua mais
+      // devagar, como no jogo real (e a passada da animação acompanha, sem patinar).
+      const wishDir = wish.length2D() > 1e-3 ? wish.normalized() : this.facing;
+      const along = wishDir.dot(this.facing);
+      // Para trás: ~1,4 m/s, a passada do loop de costas (Dribble_Back anda 1,36 m/s); o diretor recua devagar, alguns
+      // passos (vídeo 19.46.14 7,4–9,8 s: ~1,5 m em 2,2 s). Mais rápido, o clipe não acompanhava e o pé escorregava.
+      const directional = along >= 0 ? 0.55 + 0.45 * along * along : 0.55 - 0.2 * -along;
+      const maxSpeed = (input.sprint ? SprintSpeed : JogSpeed) * this.dribble.speedScale() * directional;
       let target = wish.scale(maxSpeed);
       let accel = wish.length2D() > 0.1 ? Acceleration : Deceleration;
       if (inMove) {
