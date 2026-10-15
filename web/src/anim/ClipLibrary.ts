@@ -127,6 +127,32 @@ export function spinTurnAlpha(alpha: number): number {
 /** Arremesso alto (JumpShot2_R, 124_05): começa no dip e a soltura cai no tempo ideal. */
 export const JumpShotTiming = { clip: 'JumpShot2_R', dip: f(18), release: f(55), followThrough: f(61), end: f(88) };
 
+/** Tempos (s no clipe) de cada família de arremesso: dip = início, release = soltura, end = fim do follow-through. */
+export interface ShotTiming {
+  dip: number;
+  release: number;
+  end: number;
+}
+export const ShotFamilyTiming: Record<'JumpShot' | 'JumpShot2', ShotTiming> = {
+  JumpShot2: { dip: f(18), release: f(55), end: f(88) },
+  // Medido em JumpShot_R (palma no pico em 1,983 s, agachamento em 1,633 s, fim do braço em 2,600 s; convenção do animador).
+  JumpShot: { dip: f(98), release: f(119), end: f(156) },
+};
+
+/** Fase do arremesso: -1 no dip, 0 na soltura, 1 no fim do follow-through (linear em cada trecho). */
+export function shotPhase(t: number, timing: ShotTiming): number {
+  return t <= timing.release
+    ? (t - timing.release) / (timing.release - timing.dip)
+    : (t - timing.release) / (timing.end - timing.release);
+}
+
+/** Inverso de shotPhase: tempo (s) no clipe de uma família para uma fase. */
+export function shotTimeAt(phase: number, timing: ShotTiming): number {
+  return phase <= 0
+    ? timing.release + phase * (timing.release - timing.dip)
+    : timing.release + phase * (timing.end - timing.release);
+}
+
 /** Clipe de loop com a mão: "Dribble_Walk" + "r" -> "Dribble_Walk_R". */
 export const loopClip = (base: string, hand: Hand): string => `${base}_${hand.toUpperCase()}`;
 
