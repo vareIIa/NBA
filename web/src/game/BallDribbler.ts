@@ -304,9 +304,12 @@ export class BallDribbler {
     inv.copy(animator.root.matrixWorld).invert();
     const startLocal = tmp.copy(this.position).applyMatrix4(inv);
     const total = Math.min(0.75, Math.max(0.16, release.catchIn));
-    const arc = makeDribbleArc(fromThree(startLocal), fromThree(release.catchLocal), new Vec3(), total, this.radius);
+    // O arco é feito no referencial do jogador, que escala com a altura da build: o chão do quique (centro da bola a um
+    // raio do piso) vai em unidades dele, para a bola tocar o piso de verdade em qualquer tamanho.
+    const floorY = this.radius / animator.root.scale.y;
+    const arc = makeDribbleArc(fromThree(startLocal), fromThree(release.catchLocal), new Vec3(), total, floorY);
     if (release.floorLocal) {
-      arc.floorPos = fromThree(release.floorLocal).withZ(this.radius);
+      arc.floorPos = fromThree(release.floorLocal).withZ(floorY);
     } else if (!release.move) {
       arc.floorPos = arc.floorPos.add(new Vec3(0, 0.05, 0)); // núcleo: y = frente local (z do three)
     }

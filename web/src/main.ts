@@ -26,7 +26,7 @@ import { Lab } from './lab/Lab';
 import { PlayerGear } from './game/PlayerGear';
 import { BuildSave } from './build/BuildSave';
 import { DefaultBuild, archetypeName, badgePoints } from './build/BuildRules';
-import { playRatings } from './build/BuildRatings';
+import { applyDribbleRatings, bodyScaleOf, playRatings, wingspanOverModelM } from './build/BuildRatings';
 import { fitLoadout } from './build/BuildBadges';
 import { displayName, formatMeters } from './build/PlayerBuild';
 
@@ -166,7 +166,16 @@ async function boot(): Promise<void> {
       console.error('menu não carregou; abrindo o Freestyle', e);
     }
   }
-  game.setRatings(playRatings(build));
+  const ratings = playRatings(build);
+  game.setRatings(ratings);
+  // Altura e envergadura da build: o boneco escala e os braços alongam (drible, arremesso, bandeja e enterrada
+  // acompanham). ?altura=<cm> e ?envergadura=<cm além do braço do boneco> forçam (laboratório:
+  // ?lab=1&altura=224&envergadura=8). A build padrão dá escala 1 e braço 1: o jogo de antes.
+  const alturaParam = Number(params.get('altura'));
+  const heightCm = alturaParam >= 150 && alturaParam <= 240 ? alturaParam : build.body.heightCm;
+  const wingParam = params.get('envergadura');
+  const wingOverM = wingParam !== null && Math.abs(Number(wingParam)) <= 25 ? Number(wingParam) / 100 : wingspanOverModelM(build.body);
+  animator.setBodyScale(bodyScaleOf(heightCm), wingOverM);
   const badgeBudget = badgePoints(build);
   const ring = new PlayerRing(scene);
   netMesh = new NetMesh(scene, game.hoop);
@@ -412,6 +421,8 @@ async function boot(): Promise<void> {
     if (game.phase !== 'flight') netMesh.advance(dt);
     netMesh.sync();
     director!.update(dt, state.sprint, (p) => rig.project(p, window.innerWidth, window.innerHeight));
+    // A build multiplica os multiplicadores do drible que as badges montaram (energia, ritmo dos dribles, sprint).
+    applyDribbleRatings(game.dribble.modifiers, ratings);
     gameHud.update(dt);
     sampleBall();
 

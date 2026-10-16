@@ -85,22 +85,71 @@ Exemplos verificados nos testes:
 | Bandeja | rating do plano | rating do plano + (Bandeja − 85) |
 | Enterrada | 80 (FinishSpecs) | + (Enterrada − 80) |
 | Floater | 85 | Arremesso de perto |
-| Velocidade máxima driblando | ×1 | × fator de Velocidade com bola (25 → −11%, 99 → +7% em relação à padrão) |
+| Velocidade máxima driblando | ×1 | × fator de Velocidade com bola (25 → −21%, 99 → +7% em relação à padrão) |
+| Velocidade máxima sem a bola | ×1 | × fator de Velocidade (25 → −21%, 99 → +6%) |
+| Aceleração do movimento | 6,5 m/s² | × fator de Aceleração (25 → 0,80 · 99 → 1,15, normalizado pela padrão) |
+| Custo de energia dos dribles e do arranque | ×1 | × fator de Controle de bola (25 → +72% · 99 → −17% em relação à padrão), por cima das badges |
+| Velocidade dos dribles (ritmo dos clipes) | ×1 | × fator de Controle de bola (25 → −12% · 99 → +3%) |
+| Gasto de energia do sprint | ×1 | × fator de Resistência (85 → 1 · 99 → 0,82; a Resistência começa em 85) |
+| Pode enterrar | sempre | Enterrada em infiltração ≥ 55 e Impulsão ≥ 35 (regra nossa, no número do "Hangs Off One" do 2K26; fonte fraca). Sem isso, o RT perto do aro vira bandeja |
+| Estilos de enterrada, enterrada parada, pendurar e subida máxima | fixos | `dunk` (HoopsLayup.dunkAbility, sessão das enterradas): estilos chamativos com Enterrada ≥ 70, moinho com Enterrada ≥ 78 + Impulsão ≥ 65, enterrada parada com Enterrada parado ≥ 40, subida pela Impulsão |
 | Pontos de badge por categoria | DirectorBudget | Da build (0–88; a padrão dá o DirectorBudget); badges salvas descem de nível até caber |
 | Nome no HUD / tela de badges | cardoso2k / "Armador arremessador · 1,96 m" | Nome da build / arquétipo · altura |
+| Tamanho do boneco | 1,86 m sempre | Altura da build: escala = altura / 1,86 m (5'9" ≈ 0,94 · 7'4" ≈ 1,20); ver §3.2 |
+| Alcance no aro (bandeja, enterrada, pendurar) | 1,86 m | Altura da build (`animator.heightMeters` na situação da bandeja e no pendurar) |
+| Comprimento do braço | o do boneco | Envergadura acima da do boneco alonga o braço (até +12%); abaixo, fica igual (§3.2) |
 
-**Build padrão** (`DefaultBuild`, armador de 6'5" / 1,96 m): é a que vale sem nenhuma build salva. Ela dá **exatamente**
-os números de antes (teste `build padrão = Freestyle de antes do builder`). Os testes e as ferramentas do Freestyle não
-mudam.
+**Build padrão** (`DefaultBuild`, armador de 6'1" / 1,86 m, a altura do boneco que o diretor escolheu, envergadura +3"):
+é a que vale sem nenhuma build salva. Ela dá **exatamente** os números de antes (teste `build padrão = Freestyle de antes
+do builder`), com escala do corpo 1 e braço 1. Os testes e as ferramentas do Freestyle não mudam.
 
 Ainda **não** entram no Freestyle:
-- aceleração;
-- controle de bola (janela/energia do drible);
-- impulsão;
-- resistência na barra de energia;
-- requisitos de atributo das badges e das animações. No 2K26: Limitless Range pede 3PT 83/89/93/96/99; Posterizer,
-  DD 73 + Vert 65; Elite Contact Dunk, DD 96 + Vert 82.
-- altura do boneco: no Freestyle ele volta ao tamanho do modelo, porque a física e as animações são calibradas para ele.
+- defesa e rebote (Defesa interior/perímetro, Roubo, Toco, Rebotes): o Freestyle não tem defensor nem rebote disputado.
+  Eles já contam no overall, no arquétipo, no Shades Of e nos pontos de badge de Defesa; entram no jogo com o 1x1.
+- Lance livre e Precisão de passe: o Freestyle não tem lance livre nem passe.
+- requisitos de atributo das badges. O 2K publica poucos números (2K26: Limitless Range pede 3PT 83/89/93/96/99;
+  Posterizer, DD 73 + Vert 65); inventar os outros 58 seria chute. Hoje as badges seguem o orçamento por categoria.
+- envergadura menor que a do boneco no tamanho do braço (só nos atributos; §3.2).
+
+### 3.2 Altura e envergadura no corpo do jogo
+
+- **Altura:** `PlayerAnimator.setBodyScale(k)` escala a raiz do jogador; `k = altura da build / 1,86 m`. O que é do
+  referencial do jogador escala junto (malha, IK, caminhos da bola). O que estava em metros de mundo foi ajustado:
+  - tornozelo em pé;
+  - passada dos loops (velocidade de reprodução);
+  - root motion do spin;
+  - altura passada ao desenho do arremesso e da bandeja (`heightMeters`);
+  - tornozelo do arremesso e braço do pendurado;
+  - mão livre do spin;
+  - raio das pernas no desvio da bola;
+  - chão do quique no `BallDribbler`: a bola toca o piso em qualquer tamanho.
+- **Envergadura:** cada braço alonga metade da diferença para a envergadura do boneco (a da build padrão, +3"), movendo
+  o cotovelo e o punho ao longo do osso depois do mixer. **Só alonga** (até +12%).
+- **Por que o braço não encurta:** encurtar faz a mão do drible esticar o braço no limite e o cotovelo tremer.
+  Laboratório, 16 cenários:
+  - 22% mais curto: estalos +52%; parado, 0 → 51;
+  - 6% mais curto: +16%; andando, 29 → 53;
+  - 8 cm mais longo: −11%.
+- **Medição** (`tools/laboratorio.mjs` com `LAB_URL=&altura=…&envergadura=…`, mesmo build congelado). Nas três alturas
+  (5'9", 6'1" e 7'4"):
+  - 40 quiques em todas;
+  - bola sempre na mão (bola-mão 0);
+  - nenhum NaN.
+
+  Em 7'4" aparecem mais quadros de sola abaixo de −1 cm (30 → 72). É o afundamento que o clipe já tem, crescendo com o
+  corpo (mínimo −3,0 → −3,2 cm).
+- **Testes:** `?altura=<cm>&envergadura=<cm além do braço do boneco>` força o corpo no jogo e no laboratório.
+  `e2e/menu.spec.ts` confere a escala da build criada no menu e um pivô de 7'4" com braço longo driblando (crossover,
+  entre as pernas, spin) sem a bola entrar no chão nem fugir da mão.
+
+### 3.1 Testes
+
+- `web/src/build/build.test.ts`: caps do 2K25, orçamento, build padrão = números de antes (todos os fatores em 1×),
+  direção de cada fator, trava de enterrada, badges, arquétipo, Shades Of.
+- `web/src/menu/builder/*.test.ts`: tela de atributos (modelo e presets).
+- `web/e2e/menu.spec.ts`: o fluxo inteiro só com o teclado (menu → Meu Jogador → criar → corpo → atributos com preset →
+  Shades Of → Freestyle com a build salva, nome no HUD, nenhuma tecla do menu vazando para o jogo) e o `/` do
+  Playwright indo direto ao Freestyle. Rode contra um build congelado (`E2E_ORIGIN`), como o `freestyle.spec.ts`.
 
 ## 4. Arquivos
 
@@ -112,15 +161,17 @@ Ainda **não** entram no Freestyle:
 | `build/BuildBadges.ts` | Ajusta as badges salvas ao orçamento da build |
 | `build/BuildSave.ts` | Builds no `localStorage` (`garrafao.builds.v1`) e a ativa |
 | `menu/MenuFlow.ts` | Moldura, troca de telas, teclado/controle, laço do showroom |
-| `menu/Showroom.ts` | Jogador 3D no meio (câmera fixa, altura ao vivo, giro) |
+| `menu/Showroom.ts` | Jogador 3D no meio (câmera fixa; altura e envergadura ao vivo pela mesma escala do jogo; giro) |
+| `anim/PlayerAnimator.ts` (`setBodyScale`, `heightMeters`) | Altura e braço da build no corpo do jogo (§3.2) |
 | `menu/MainMenu.ts`, `BuildList.ts`, `CreatePlayer.ts`, `BodyScreen.ts`, `ShadesOf.ts`, `FormList.ts`, `menu.css` | Telas |
 | `menu/builder/` | Tela de atributos (sessão "Builder de atributos estilo 2K") |
 
 ## 5. Próximos passos
 
-1. Ligar aceleração, controle de bola, impulsão e resistência ao Freestyle, cada um com a padrão = número de hoje.
-2. Requisitos de atributo nas badges (tabela do 2K26) e nas animações de enterrada.
-3. Altura e envergadura de verdade no Freestyle: escala do boneco + alcance no aro, toco e drible.
+1. Defesa e rebote no jogo quando o 1x1 existir (o alcance do toco e do roubo pela envergadura entra aí).
+2. Afundamento da sola dos clipes (já existe no tamanho do boneco e cresce com a escala): trabalho da sessão de
+   personagem/animação.
+3. Requisitos de atributo nas badges, se acharmos a tabela completa do 2K (hoje só 6 números publicados).
 4. Minha Carreira: Cap Breakers (+5 acima do cap), progressão por uso (`09-atributos-progressao.md` §4).
 5. Antes de lançar: trocar os nomes reais do Shades Of por lendas fictícias da nossa liga (brief: liga e jogadores
    fictícios).

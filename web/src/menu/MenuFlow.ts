@@ -55,6 +55,8 @@ export class MenuFlow {
   private last = performance.now();
   private running = false;
   private readonly onKeyBound = (e: KeyboardEvent): void => this.onKey(e);
+  /** Soltar tecla também não chega ao jogo enquanto o menu está aberto (o Input veria uma soltura sem o aperto). */
+  private readonly onKeyUpBound = (e: KeyboardEvent): void => e.stopPropagation();
 
   constructor(private readonly showroom: Showroom) {
     this.root = el('div', 'mn');
@@ -91,6 +93,7 @@ export class MenuFlow {
     document.body.appendChild(this.root);
     document.body.classList.add('mn-open'); // esconde o HUD do jogo atrás do menu
     window.addEventListener('keydown', this.onKeyBound, true);
+    window.addEventListener('keyup', this.onKeyUpBound, true);
     this.renderChip();
     this.show(this.main);
     this.running = true;
@@ -185,6 +188,7 @@ export class MenuFlow {
     this.running = false;
     this.screen?.leave();
     window.removeEventListener('keydown', this.onKeyBound, true);
+    window.removeEventListener('keyup', this.onKeyUpBound, true);
     this.root.classList.add('mn-out');
     setTimeout(() => this.root.remove(), 320);
     document.body.classList.remove('mn-open');
@@ -195,6 +199,9 @@ export class MenuFlow {
   // ------------------------------------------------------------------ entrada e quadro
 
   private onKey(e: KeyboardEvent): void {
+    // O menu é dono do teclado: nenhuma tecla chega ao Input do jogo (digitar "Prestia" apertava o E = spin, que
+    // disparava quando o Freestyle começava). A digitação nos campos continua (stopPropagation não impede o padrão).
+    e.stopPropagation();
     const typing = e.target instanceof HTMLInputElement;
     // Num campo de texto, só Enter, Esc, Tab e ↑↓ navegam; o resto é digitação.
     if (typing && !['Enter', 'NumpadEnter', 'Escape', 'Tab', 'ArrowUp', 'ArrowDown'].includes(e.code)) return;
@@ -259,7 +266,7 @@ export class MenuFlow {
     this.screen?.update?.(dt);
     // O corpo do showroom segue o rascunho da tela (altura ao vivo na tela de corpo).
     const body = this.screen?.body?.() ?? this.active.body;
-    this.showroom.setHeight(body.heightCm);
+    this.showroom.setBody(body);
     this.showroom.update(dt);
     requestAnimationFrame((n) => this.frame(n));
   }

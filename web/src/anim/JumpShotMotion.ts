@@ -76,6 +76,8 @@ export class JumpShotMotion {
   private keys: [number, V3][] = [];
   private dims = { thigh: 0.43, shank: 0.5, hipHalf: 0.1, pelvisAboveHip: 0.11 };
   private ankleFlat = 0.07;
+  /** ankleFlat medido no corpo do modelo (escala 1), para a escala da build. */
+  private ankleFlat0 = 0.07;
   private readonly start = {
     ankle: { l: new THREE.Vector3(), r: new THREE.Vector3() },
     /** Tornozelos no mundo no começo (o passo de parada sai daqui, inclusive do pé no ar da corrida). */
@@ -122,6 +124,12 @@ export class JumpShotMotion {
     this.ankleFlat = Infinity;
     this.measureAnkleFlat();
     if (!Number.isFinite(this.ankleFlat)) this.ankleFlat = 0.07;
+    this.ankleFlat0 = this.ankleFlat;
+  }
+
+  /** Escala do corpo pela altura da build (PlayerAnimator.setBodyScale): o tornozelo do pé apoiado sobe junto. */
+  setBodyScale(k: number): void {
+    this.ankleFlat = this.ankleFlat0 * k;
   }
 
   private measureAnkleFlat(): void {

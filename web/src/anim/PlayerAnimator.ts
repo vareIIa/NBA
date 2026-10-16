@@ -207,6 +207,8 @@ const LegCapsules = [
   { a: 'calf_r', b: 'foot_r', r: 0.056, from: 0 },
 ];
 const BallLegMargin = 0.01; // m de folga entre a bola e a perna
+/** Faixa do comprimento do braço pela envergadura da build (setBodyScale): só alonga (ver setBodyScale). */
+const ArmScaleRange = [1, 1.12] as const;
 // Barreira macia: a bola começa a ser desviada ~5 cm antes de encostar (máximo suave entre a distância e o mínimo), em vez
 // de um empurrão que liga de repente no contato e dá tranco no braço.
 const BallLegSoft = 0.05;
@@ -415,6 +417,21 @@ export class PlayerAnimator {
   readonly footworkTuning = { split: SplitStance, weight: WeightShiftTuning };
   private restFootLocal = { l: new THREE.Quaternion(), r: new THREE.Quaternion() };
   private restAnkleY = 0.1;
+  /** Tornozelo em pé medido no corpo do modelo (escala 1); o restAnkleY segue a escala da build. */
+  private restAnkleY0 = 0.1;
+  /**
+   * Escala do corpo pela altura da build (MyPlayer Builder, docs/23): 1 = o modelo (PlayerHeightMeters). A raiz escala
+   * a malha e tudo o que é do referencial do jogador; os números em metros de mundo seguem por aqui (tornozelo em pé,
+   * passada dos loops, root motion do spin, altura passada ao arremesso e à bandeja, mão livre do spin).
+   */
+  private bodyScale = 1;
+  /**
+   * Comprimento dos braços pela envergadura da build (1 = o do modelo): o antebraço e a mão se afastam ao longo dos ossos
+   * depois do mixer (a pose crua volta a cada quadro, então não acumula). O IK mede os ossos a cada chamada.
+   */
+  private armScale = 1;
+  /** Ombro -> cotovelo -> punho no modelo (m, escala 1): a base do armScale. */
+  private armSegments0 = 0.52;
   /** Pontos da sola do tênis (vértices mais baixos da malha no bind pose), no espaço do osso do pé ou da ponta. */
   private readonly solePoints: Record<Hand, { bone: THREE.Bone; local: THREE.Vector3 }[]> = { l: [], r: [] };
   /** Todos os pontos da sola (sem amostragem), para a altura do pé plano (lowestSole): a amostra esparsa perdia a ponta mais baixa (2,5 cm). */
@@ -555,6 +572,13 @@ export class PlayerAnimator {
       this.restFootLocal[side] = rootInv.clone().multiply(this.bone(`foot_${side}`).getWorldQuaternion(new THREE.Quaternion()));
     }
     this.restAnkleY = this.bone('foot_l').getWorldPosition(new THREE.Vector3()).y;
+    this.restAnkleY0 = this.restAnkleY;
+    {
+      const P = (n: string) => this.bone(n).getWorldPosition(new THREE.Vector3());
+      const seg = P('upperarm_r').distanceTo(P('lowerarm_r')) + P('lowerarm_r').distanceTo(P('hand_r'));
+      if (seg > 0.2 && seg < 1.2) this.armSegments0 = seg;
+    }
+    const self = this;
     this.collectSolePoints();
     this.measureClipPitch();
     this.layupMotion = new LayupMotion({
@@ -565,7 +589,10 @@ export class PlayerAnimator {
       root: this.root,
       model: this.model,
       restFootLocal: (s) => this.restFootLocal[s],
-      restAnkleY: this.restAnkleY,
+      // Getter: o tornozelo em pé muda com a escala da build (setBodyScale).
+      get restAnkleY() {
+        return self.restAnkleY;
+      },
     });
     this.jumpShot = new JumpShotMotion({
       bone: (n) => this.bone(n),
@@ -711,7 +738,7 @@ export class PlayerAnimator {
     this.handHold.l = null;
     this.handHold.r = null;
     this.jumpShot.autoRelease = !waitForRelease;
-    this.jumpShot.begin(form, hand, Math.max(0.2, idealSeconds), this.ballWorld, PlayerHeightMeters, pullUp?.carry ?? null);
+    this.jumpShot.begin(form, hand, Math.max(0.2, idealSeconds), this.ballWorld, this.heightMeters, pullUp?.carry ?? null);
   }
 
   /** s até a bola chegar à soltura no desenho do arremesso (0 = chegou, ou não há jump shot tocando). */
@@ -903,7 +930,7 @@ export class PlayerAnimator {
     this.handHold.l = null;
     this.handHold.r = null;
     this.layupTime = 0;
-    this.layupMotion.begin(plan, ballWorld, PlayerHeightMeters);
+    this.layupMotion.begin(plan, ballWorld, this.heightMeters);
     this.blend(FinishInBlend);
   }
 
@@ -1114,6 +1141,7 @@ export class PlayerAnimator {
     this.restoreMixerPose();
     this.mixer.update(dt);
     this.saveMixerPose();
+    this.applyArmLength();
     this.applyLegLayer(dt, input);
     this.applyMixamoLegs(dt, input);
     this.inertial.apply(dt);
@@ -1196,12 +1224,14 @@ export class PlayerAnimator {
     const action = this.actions.get(this.base.name);
     if (action) {
       const native = LoopNativeVelocity[this.base.name] ?? LoopNativeVelocity[this.base.base];
+      // A escala da build (setBodyScale) também alonga a passada: um jogador maior anda mais por ciclo.
+      const stride = this.scale * this.bodyScale;
       const nativeSpeed = native
-        ? Math.hypot(native.right, native.forward) * this.scale
+        ? Math.hypot(native.right, native.forward) * stride
         : this.base.base === 'Walk'
-          ? 1.05 * this.scale
+          ? 1.05 * stride
           : this.base.base === 'Run'
-            ? 4.14 * this.scale
+            ? 4.14 * stride
             : 0;
       let rate = 1;
       if (nativeSpeed > 0.1) rate = Math.min(1.7, Math.max(0.7, speed / nativeSpeed));
@@ -1388,8 +1418,8 @@ export class PlayerAnimator {
       const P = this.spinPivot;
       const desired = P.rel.clone().applyAxisAngle(axis.set(0, 1, 0), this.yawOffset - P.yaw0).add(P.world);
       const delta = desired.sub(origin).setY(0);
-      // Mundo -> referencial do jogador (a malha é filha da raiz).
-      delta.applyQuaternion(this.root.quaternion.clone().invert());
+      // Mundo -> referencial do jogador (a malha é filha da raiz, que escala com a build).
+      delta.applyQuaternion(this.root.quaternion.clone().invert()).divideScalar(this.bodyScale);
       this.pivotOffset.add(delta);
     }
     this.model.position.x = this.pivotOffset.x;
@@ -1397,9 +1427,40 @@ export class PlayerAnimator {
     this.root.updateMatrixWorld(true);
   }
 
+  /** Altura do jogador em metros de mundo (o modelo × a escala da build). */
+  get heightMeters(): number {
+    return PlayerHeightMeters * this.bodyScale;
+  }
+
+  /**
+   * Escala do corpo (1 = o modelo) e envergadura além da altura (m, + = braço mais longo). Cada braço fica com metade da
+   * diferença. Chame fora de uma ação (no começo do Freestyle ou ao trocar de build).
+   */
+  setBodyScale(k: number, wingspanOverHeightM = 0): void {
+    this.bodyScale = k;
+    this.root.scale.setScalar(k);
+    this.restAnkleY = this.restAnkleY0 * k;
+    // O braço só alonga: encurtar faz a mão do drible esticar o braço no limite e o cotovelo tremer (laboratório
+    // 2026-10-16, 16 cenários: 22% mais curto = estalos +52%, parado 0 -> 51; 6% mais curto = +16%, andando 29 -> 53).
+    // Mais longo não piora (+8 cm de envergadura: estalos −11%). Envergadura menor que a do boneco fica só nos atributos.
+    this.armScale = THREE.MathUtils.clamp(1 + wingspanOverHeightM / 2 / (this.armSegments0 * k), ArmScaleRange[0], ArmScaleRange[1]);
+    this.jumpShot.setBodyScale(k);
+    this.layupMotion.setBodyScale(k, this.armScale);
+    this.root.updateMatrixWorld(true);
+  }
+
+  /** Braço mais longo ou mais curto (armScale): cotovelo e punho se afastam do osso de cima. */
+  private applyArmLength(): void {
+    if (Math.abs(this.armScale - 1) < 1e-4) return;
+    for (const side of ['l', 'r'] as const) {
+      this.bone(`lowerarm_${side}`).position.multiplyScalar(this.armScale);
+      this.bone(`hand_${side}`).position.multiplyScalar(this.armScale);
+    }
+  }
+
   /** Root motion: o deslocamento (mundo) que o jogo deve somar à posição do jogador; zera o que foi entregue. */
   takeRootMotion(): THREE.Vector3 {
-    const world = this.pivotOffset.clone().applyQuaternion(this.root.quaternion);
+    const world = this.pivotOffset.clone().multiplyScalar(this.bodyScale).applyQuaternion(this.root.quaternion);
     this.pivotOffset.set(0, 0, 0);
     return world;
   }
@@ -2604,7 +2665,7 @@ export class PlayerAnimator {
         const ab = b.clone().sub(a);
         const t = THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / Math.max(1e-9, ab.lengthSq()), 0, 1);
         c.copy(a).addScaledVector(ab, t);
-        const need = cap.r + radius + BallLegMargin;
+        const need = cap.r * this.bodyScale + radius + BallLegMargin; // perna mais grossa no jogador maior
         d.copy(p).sub(c);
         const dist = d.length();
         const wanted = smoothMax(dist, need, BallLegSoft);
@@ -2855,7 +2916,7 @@ export class PlayerAnimator {
     }
     const w = this.tweenArmWeight;
     if (w <= 1e-3) return;
-    const palm = t.local.clone().add(new THREE.Vector3(0, BallRadius * 1.02, 0)).applyMatrix4(this.root.matrixWorld);
+    const palm = t.local.clone().applyMatrix4(this.root.matrixWorld).add(new THREE.Vector3(0, BallRadius * 1.02, 0));
     const pole = new THREE.Vector3(sideSign(t.hand), -0.3, -0.8).transformDirection(this.root.matrixWorld);
     this.reachPalm(t.hand, palm, w, pole);
   }
@@ -2919,8 +2980,9 @@ export class PlayerAnimator {
     if (A.w < 1e-3) return;
     const bodyQ = this.model.getWorldQuaternion(new THREE.Quaternion());
     const side = sideSign(A.hand);
-    const palm = new THREE.Vector3(side * SpinFreeHand.outside, 0, SpinFreeHand.forward).applyQuaternion(bodyQ).add(this.root.position);
-    palm.y = SpinFreeHand.height;
+    const k = this.bodyScale;
+    const palm = new THREE.Vector3(side * SpinFreeHand.outside * k, 0, SpinFreeHand.forward * k).applyQuaternion(bodyQ).add(this.root.position);
+    palm.y = SpinFreeHand.height * k;
     const pole = new THREE.Vector3(side, -0.3, -0.8).applyQuaternion(bodyQ);
     this.reachPalm(A.hand, palm, A.w, pole);
   }

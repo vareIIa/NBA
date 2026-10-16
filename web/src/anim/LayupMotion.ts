@@ -149,6 +149,16 @@ export class LayupMotion {
     const P = (n: string) => rig.bone(n).getWorldPosition(new THREE.Vector3());
     this.dims.arm = P('upperarm_r').distanceTo(P('lowerarm_r')) + P('lowerarm_r').distanceTo(P('hand_r')) + P('hand_r').distanceTo(rig.palmWorld('r', new THREE.Vector3()));
     this.dims.shoulderAbovePelvis = P('upperarm_r').y - P('pelvis').y;
+    this.armDims0 = { arm: this.dims.arm, shoulderAbovePelvis: this.dims.shoulderAbovePelvis };
+  }
+
+  /** Braço e ombro medidos no corpo do modelo (escala 1). */
+  private armDims0 = { arm: 0.64, shoulderAbovePelvis: 0.5 };
+
+  /** Escala do corpo pela altura da build e braço pela envergadura (PlayerAnimator.setBodyScale): o pendurado acompanha. */
+  setBodyScale(k: number, arm = 1): void {
+    this.dims.arm = this.armDims0.arm * k * arm;
+    this.dims.shoulderAbovePelvis = this.armDims0.shoulderAbovePelvis * k;
   }
 
   /** Medidas do braço (para a sonda e o pendurado). */

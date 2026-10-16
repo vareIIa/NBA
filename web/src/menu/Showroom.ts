@@ -3,9 +3,7 @@
 // muda ao vivo na tela de corpo); arrastar com o mouse ou o RS gira o jogador.
 import * as THREE from 'three';
 import type { PlayerAnimator } from '../anim/PlayerAnimator';
-
-/** Altura do modelo do jogo (hoops_player.glb), em cm: medida na 1ª vez pelo topo da cabeça no idle. */
-let modelHeightCm = 0;
+import { bodyScaleOf, wingspanOverModelM } from '../build/BuildRatings';
 
 export interface ShowroomGear {
   update(dt: number): void;
@@ -19,6 +17,8 @@ export class Showroom {
   private lastX = 0;
   private targetScale = 1;
   private scale = 1;
+  /** Envergadura além da altura (m) do corpo mostrado. */
+  private wingOver = 0;
   /** Deslocamento horizontal do jogador na tela (−1 esquerda … 1 direita): telas com painel largo empurram o boneco. */
   private offset = 0;
   private targetOffset = 0;
@@ -65,14 +65,14 @@ export class Showroom {
     window.removeEventListener('pointerup', this.onUp);
     this.camera.clearViewOffset();
     for (const o of this.hidden) o.visible = true;
-    // O Freestyle ainda usa o corpo padrão (a física e as animações são da altura do modelo): a escala volta a 1.
-    this.animator.root.scale.setScalar(1);
+    // O jogo aplica a escala da build ativa logo depois (main.ts); aqui o boneco volta ao tamanho do modelo.
+    this.animator.setBodyScale(1);
   }
 
-  /** Altura que o boneco deve ter (cm). A escala é uniforme: o jogo de verdade ainda usa o corpo padrão. */
-  setHeight(heightCm: number): void {
-    if (!modelHeightCm) modelHeightCm = this.measureHeightCm();
-    this.targetScale = heightCm / modelHeightCm;
+  /** Corpo que o boneco mostra: a mesma escala do jogo (bodyScaleOf) e os braços pela envergadura. */
+  setBody(body: { heightCm: number; wingspanCm: number }): void {
+    this.targetScale = bodyScaleOf(body.heightCm);
+    this.wingOver = wingspanOverModelM(body);
   }
 
   /** Empurra o jogador para um lado da tela (as telas com painel à esquerda o põem mais à direita). */
@@ -97,7 +97,7 @@ export class Showroom {
       this.spin = wrapped + this.spinVel * dt;
     }
     root.position.copy(this.spot);
-    root.scale.setScalar(this.scale);
+    this.animator.setBodyScale(this.scale, this.wingOver);
     root.rotation.set(0, Math.atan2(this.facing.x, this.facing.z) + this.spin, 0);
     this.animator.update(dt, { right: 0, forward: 0, ballHand: 'r', hasBall: false, low: false, accelRight: 0, accelForward: 0 });
     this.gear?.update(dt);
@@ -125,18 +125,5 @@ export class Showroom {
     const offset = w < 1100 ? Math.max(this.offset, 0.55) : this.offset;
     cam.setViewOffset(w, h, -offset * w * 0.25, 0, w, h);
     cam.updateProjectionMatrix();
-  }
-
-  /** Mede a altura do boneco no idle pela caixa dos vértices já deformados pelo esqueleto (cabelo e tênis inclusos). */
-  private measureHeightCm(): number {
-    const root = this.animator.root;
-    const saved = root.scale.x;
-    root.scale.setScalar(1);
-    root.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(root, true);
-    root.scale.setScalar(saved);
-    const top = box.max.y - root.position.y;
-    // Sem malha (boneco não carregou), usa a altura do boneco padrão (1,86 m).
-    return top > 1 ? top * 100 : 186;
   }
 }

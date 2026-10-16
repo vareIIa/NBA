@@ -19,9 +19,9 @@ import {
   shadesOf,
   typicalWeightKg,
 } from './BuildRules';
-import { DefaultPlayRatings, jumpShotRating, playRatings } from './BuildRatings';
+import { DefaultPlayRatings, applyDribbleRatings, bodyScaleOf, jumpShotRating, playRatings } from './BuildRatings';
 import { fitLoadout } from './BuildBadges';
-import { DirectorBudget, validateBuild } from '../sim';
+import { DirectorBudget, neutralDribbleModifiers, validateBuild } from '../sim';
 import { DirectorLoadout } from '../game/MatchDirector';
 
 const inch = 2.54;
@@ -125,6 +125,41 @@ describe('build padrão = Freestyle de antes do builder', () => {
   it('dá o orçamento de badges de antes (DirectorBudget) e o loadout do diretor cabe nele', () => {
     expect(badgePoints(DefaultBuild)).toEqual(DirectorBudget);
     expect(fitLoadout(DirectorLoadout, badgePoints(DefaultBuild))).toEqual(DirectorLoadout);
+  });
+
+  it('tem a altura do boneco (escala do corpo 1); 5\'9" e 7\'4" ficam em ~0,94 e ~1,20', () => {
+    expect(bodyScaleOf(DefaultBuild.body.heightCm)).toBe(1);
+    expect(bodyScaleOf(69 * inch)).toBeCloseTo(0.942, 3);
+    expect(bodyScaleOf(88 * inch)).toBeCloseTo(1.202, 3);
+  });
+
+  it('dá velocidade, aceleração, drible e resistência em 1× e enterrada liberada', () => {
+    const r = DefaultPlayRatings;
+    for (const k of ['runSpeedScale', 'accelScale', 'handleEnergyScale', 'handlePlayRate', 'staminaDrainScale'] as const) {
+      expect(r[k]).toBeCloseTo(1, 10);
+    }
+    expect(r.canDunk).toBe(true);
+    const mods = neutralDribbleModifiers();
+    applyDribbleRatings(mods, r);
+    expect(mods).toEqual(neutralDribbleModifiers());
+  });
+
+  it('controle de bola, resistência, aceleração e velocidade mudam o drible e o movimento no sentido do 2K', () => {
+    const slow = playRatings({ ...DefaultBuild, attrs: { ...DefaultBuild.attrs, ballHandle: 40, acceleration: 50, speed: 50 } });
+    expect(slow.handleEnergyScale).toBeGreaterThan(1); // drible mais caro
+    expect(slow.handlePlayRate).toBeLessThan(1); // drible mais lento
+    expect(slow.accelScale).toBeLessThan(1);
+    expect(slow.runSpeedScale).toBeLessThan(1);
+    const elite = playRatings({ ...DefaultBuild, attrs: { ...DefaultBuild.attrs, ballHandle: 99, stamina: 99 } });
+    expect(elite.handleEnergyScale).toBeLessThan(1);
+    expect(elite.staminaDrainScale).toBeLessThan(1);
+  });
+
+  it('sem enterrada abaixo de Enterrada 55 ou Impulsão 35 (rascunho cru não enterra)', () => {
+    expect(playRatings(newDraft('PG')).canDunk).toBe(false);
+    expect(playRatings({ ...DefaultBuild, attrs: { ...DefaultBuild.attrs, drivingDunk: 54 } }).canDunk).toBe(false);
+    expect(playRatings({ ...DefaultBuild, attrs: { ...DefaultBuild.attrs, vertical: 34 } }).canDunk).toBe(false);
+    expect(playRatings({ ...DefaultBuild, attrs: { ...DefaultBuild.attrs, drivingDunk: 55, vertical: 35 } }).canDunk).toBe(true);
   });
 
   it('build de arremesso mais forte arremessa com rating maior e build lenta corre menos', () => {

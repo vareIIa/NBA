@@ -422,7 +422,8 @@ export function shadesOf(b: PlayerBuild, count = 3): Shade[] {
 // ------------------------------------------------------------------ build padrão e rascunho
 
 /**
- * Build padrão (sem nenhuma salva): o armador arremessador de 1,96 m que o Freestyle sempre usou. Os atributos que o
+ * Build padrão (sem nenhuma salva): o armador arremessador que o Freestyle sempre usou, na altura do boneco (1,86 m,
+ * 6'1": PlayerHeightMeters, escolhida pelo diretor em 2026-10-15), então a escala do corpo dela é 1. Os atributos que o
  * jogo lê (3PT/meia/perto 85, bandeja 85, enterrada 80) são os números que estavam fixos no código: com ela, o
  * Freestyle joga igual a antes do builder.
  */
@@ -435,7 +436,7 @@ export const DefaultBuild: PlayerBuild = Object.freeze({
   hand: 'r',
   jersey: 7,
   country: 'BR',
-  body: { heightCm: 77 * In, weightKg: 93, wingspanCm: 80 * In, shape: 'atletico' },
+  body: { heightCm: 186, weightKg: 90, wingspanCm: 186 + 3 * In, shape: 'atletico' },
   // prettier-ignore
   attrs: {
     closeShot: 85, drivingLayup: 85, drivingDunk: 80, standingDunk: 45, postControl: 45,

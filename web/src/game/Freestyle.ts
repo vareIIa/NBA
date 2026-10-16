@@ -67,7 +67,7 @@ import { type CourtLayout, makeCourtLayout } from './Court';
 import type { InputState } from './Input';
 import { approachVelocity, turnFacing } from './Movement';
 import { LayupDriver, TapMaxSeconds } from './LayupDriver';
-import { DunkRating, DunkTuning, HopStopTuning, LayupFinish, LayupGather, chooseDunk, type LayupPlan, type LayupSituation, type Side as LayupSide, chooseLayup, layupShotType, planHopStop, planStandingLayup } from '../sim/HoopsLayup';
+import { DunkRating, DunkTuning, HopStopTuning, LayupFinish, LayupGather, type LayupRequest, chooseDunk, type LayupPlan, type LayupSituation, type Side as LayupSide, chooseLayup, layupShotType, planHopStop, planStandingLayup } from '../sim/HoopsLayup';
 import { HoldMove, HoldMoveLabels, HoldState, holdFinishFor } from '../sim/HoopsHold';
 import { realizeLayupShot } from '../sim/HoopsLayupShot';
 import { DefaultPlayRatings, type PlayRatings, jumpShotRating } from '../build/BuildRatings';
@@ -107,7 +107,6 @@ export interface FreestyleEvents {
 }
 
 export { PlayerHeightMeters as PlayerHeight } from '../anim/ProceduralMoves';
-import { PlayerHeightMeters as PlayerHeight } from '../anim/ProceduralMoves';
 const JogSpeed = 3.9; // m/s com bola, sem RT
 const SprintSpeed = 6.2; // com RT
 const RetreatSpeed = 1.4; // m/s: recuo driblando (passada do loop de costas)
@@ -233,6 +232,8 @@ export class Freestyle {
   private finish: { kind: FinishType; releaseAt: number; forwardMps: number } | null = null;
   /** Bandeja pelo plano do núcleo (HoopsLayup): passadas, decolagem, voo e soltura (nba-24). A enterrada segue em `finish`. */
   readonly layup = new LayupDriver();
+  /** Bandeja/enterrada pedida pelo RS, esperando o drible deixar (layupFromStick). */
+  private stickFinish: { at: number; request: LayupRequest } | null = null;
   // Salto visual do boneco: parábola da decolagem até a aterrissagem (a física da bola segue no chão).
   private jump: { takeoffAt: number; apexDelayS: number } | null = null;
   private finishLift = 0; // m
@@ -361,7 +362,10 @@ export class Freestyle {
     if (input.sprint) this.sprintSeenAt = now;
     if (shootPressed) this.shotQueuedAt = input.shootEdgeTime;
     if (this.shotQueuedAt >= 0 && now - this.shotQueuedAt > ShotBufferSeconds) this.shotQueuedAt = -1;
-    if (this.phase !== 'dribble') this.pendingMove = null;
+    if (this.phase !== 'dribble') {
+      this.pendingMove = null;
+      this.stickFinish = null;
+    }
     if (this.phase === 'dribble') {
       this.updateProStick(input);
       this.updateTransitionDribbles(input);
@@ -372,11 +376,16 @@ export class Freestyle {
         const finish = this.finishFor(press);
         // Perto do aro: enterrada (RT) ou bandeja pelo plano; o caminho antigo (clipe) só se o plano não couber; senão
         // arremesso.
-        const dunk = this.sprintSeenAt >= press - SprintGraceSeconds;
+        const dunk = this.ratings.canDunk && this.sprintSeenAt >= press - SprintGraceSeconds;
         if (!this.tryLayup(press, input, dunk)) {
           if (finish !== null) this.beginFinish(finish, press);
           else this.beginGather(press);
         }
+      } else if (this.stickFinish && this.dribble.canCancel(now)) {
+        // RS dirigindo para a cesta (layupFromStick): bandeja/enterrada pedida, quando o drible deixar.
+        const { at, request } = this.stickFinish;
+        this.stickFinish = null;
+        if (now - at <= ShotBufferSeconds) this.tryLayup(at, input, request.command === 'dunk', request);
       } else if (this.layup.pendingAlive(now)) {
         this.updatePendingLayup(input);
       }
@@ -389,7 +398,7 @@ export class Freestyle {
       else if (!upgraded) this.updateGather(shootReleased, input.shootEdgeTime);
     }
     // Pendurado no aro depois da enterrada: soltar o X solta o aro (o corpo segue o plano até pousar).
-    if (this.layup.hanging) this.layup.updateHang(now, input.shoot);
+    if (this.layup.hanging) this.layup.updateHang(now, this.holdingRim(input));
     // A na subida fica na fila: a bola vem para a mão assim que assentar (e, pendurado no aro, quando ele pousar).
     const hangPlan = this.layup.plan?.hang ? this.layup.plan : null;
     const airborneFinish = hangPlan !== null && this.layup.time(now) < hangPlan.landAt;
@@ -470,6 +479,7 @@ export class Freestyle {
     // O núcleo espera o stick no referencial absoluto (cima = para a cesta, x = direita do jogador atacando).
     const gestures = this.proStick.update(this.now, input.proX, input.proY);
     for (const gesture of gestures) {
+      if (this.layupFromStick(gesture, input)) continue; // RS dirigindo para a cesta = bandeja/enterrada (sessão das enterradas)
       const context = makeDribbleContext({ sprint: input.sprint, moving: this.isMoving() });
       const intent = this.dribble.resolveGesture(gesture, context, this.now);
       if (intent.move === DribbleMove.None) continue;
@@ -628,9 +638,10 @@ export class Freestyle {
       // Para trás: ~1,4 m/s, a passada do loop de costas (Dribble_Back anda 1,36 m/s); o diretor recua devagar, alguns
       // passos (vídeo 19.46.14 7,4–9,8 s: ~1,5 m em 2,2 s). Mais rápido, o clipe não acompanhava e o pé escorregava.
       const directional = along >= 0 ? 0.55 + 0.45 * along * along : 0.55 - 0.2 * -along;
-      const maxSpeed = (input.sprint ? SprintSpeed : JogSpeed) * this.dribble.speedScale() * directional * this.ratings.speedScale;
+      const buildSpeed = this.ballFree() ? this.ratings.runSpeedScale : this.ratings.speedScale; // Velocidade / com bola
+      const maxSpeed = (input.sprint ? SprintSpeed : JogSpeed) * this.dribble.speedScale() * directional * buildSpeed;
       let target = wish.scale(maxSpeed);
-      let accel = Acceleration;
+      let accel = Acceleration * this.ratings.accelScale;
       if (inMove) {
         // O drible dá a direção. Lateral/frente: o impulso cresce rápido e se mantém até o fim (acelera no corte, não
         // freia). Step-back/retreat: o salto para trás acontece no meio (empurrão, voo, aterrissagem).
@@ -815,7 +826,8 @@ export class Freestyle {
   private finishFor(pressTime: number, sprint = this.sprintSeenAt >= pressTime - SprintGraceSeconds): FinishType | null {
     const rim = this.layout.rimFloorPoint;
     const toRim = rim.sub(this.position).flat().normalized(this.facing);
-    return finishKindFor(distance2D(this.position, rim), this.velocity.flat().dot(toRim), sprint);
+    // Build sem enterrada (Enterrada/Impulsão abaixo do mínimo): o RT perto do aro vira bandeja.
+    return finishKindFor(distance2D(this.position, rim), this.velocity.flat().dot(toRim), sprint && this.ratings.canDunk);
   }
 
   /** Arremesso parado que ainda não soltou: se o RT entrar até SprintGraceSeconds depois do X e der enterrada, vira enterrada. */
@@ -829,12 +841,13 @@ export class Freestyle {
 
   /** Parado perto do aro com RT: enterrada de dois pés pelo plano (duas mãos ou cock-back), se alcança o aro. */
   private tryStandingDunk(): boolean {
+    if (!this.ratings.canDunk || !this.ratings.dunk.standing) return false;
     const sit = this.layupSituation();
     if (sit.position.sub(sit.rimFloor).length2D() > DunkTuning.standMaxM) return false;
     const choice = chooseDunk({ ...sit, velocity: new Vec3() }, { command: 'dunk', sprint: false }, this.rng.nextDouble());
     if (this.layup.forceDunk !== null) choice.finish = this.layup.forceDunk;
     const plan = planStandingLayup(choice, { ...sit, velocity: new Vec3(), feet: { l: { ...sit.feet.l, planted: true }, r: { ...sit.feet.r, planted: true } } }, DunkRating);
-    if (plan.rise >= DunkTuning.riseMax - 1e-6) return false;
+    if (plan.rise >= this.ratings.dunk.riseMax - 1e-6) return false;
     this.layup.shotPress = null;
     this.beginLayup(plan, this.now);
     return true;
@@ -904,19 +917,20 @@ export class Freestyle {
         l: { pos: fromThree(feet.l.ankle).flat(), planted: feet.l.planted },
         r: { pos: fromThree(feet.r.ankle).flat(), planted: feet.r.planted },
       },
-      heightM: PlayerHeight,
+      heightM: this.animator.heightMeters, // altura da build (o boneco escala com ela)
+      dunk: this.ratings.dunk,
       baselineX: this.layout.baselineX,
     };
   }
 
   /** X perto do aro: bandeja pelo plano, ou espera se o X veio cedo. false = não é bandeja (enterrada antiga ou arremesso). */
-  private tryLayup(press: number, input: InputState, dunk = false): boolean {
+  private tryLayup(press: number, input: InputState, dunk = false, forced?: LayupRequest): boolean {
     const sit = this.layupSituation();
     // Se o X for para o arremesso, o toque dirigindo vira hop step (hopFromShotTap): guarda a corrida de agora.
-    this.layup.shotPress = { at: press, velocity: sit.velocity, lateral: this.hopLateral(input) };
-    let request = this.layup.requestFor(sit, input.sprint, input.protect, dunk);
+    if (!forced) this.layup.shotPress = { at: press, velocity: sit.velocity, lateral: this.hopLateral(input) };
+    let request = forced ?? this.layup.requestFor(sit, input.sprint, input.protect, dunk);
     // Parado (ou quase) perto do aro com RT: enterrada de dois pés.
-    if (dunk && !input.protect && sit.velocity.length2D() < 1.0 && this.tryStandingDunk()) return true;
+    if (dunk && !forced && !input.protect && sit.velocity.length2D() < 1.0 && this.tryStandingDunk()) return true;
     if (!request) return false;
     let plan = this.layup.plan_(request, sit, this.rng.nextDouble());
     // Não dá para enterrar daqui (perto demais ou não alcança o aro): bandeja.
@@ -926,31 +940,48 @@ export class Freestyle {
     }
     if (plan === null || !request) return false;
     if (plan === 'wait') {
-      this.layup.pending = { at: press, request };
+      this.layup.pending = { at: press, request, fromStick: !!forced };
       return true;
     }
-    this.beginLayup(plan, press);
+    this.beginLayup(plan, press, false, !!forced);
     return true;
+  }
+
+  /**
+   * RS no drible dirigindo para a cesta, dentro da zona: vira a bandeja/enterrada que ele pede (LayupDriver.stickRequest)
+   * em vez de um drible. Fica na fila até o drible deixar (como o X).
+   */
+  private layupFromStick(gesture: StickGesture, input: InputState): boolean {
+    if (this.layup.busy || this.phase !== 'dribble') return false;
+    const request = this.layup.stickRequest(gesture, this.layupSituation(), input.sprint, this.ratings.canDunk && this.ratings.dunk.driving);
+    if (!request) return false;
+    this.stickFinish = { at: this.now, request };
+    return true;
+  }
+
+  /** Segura o aro: X segurado ou RS segurado para baixo (2K: RT + RS baixo segurado). */
+  private holdingRim(input: InputState): boolean {
+    return input.shoot || input.proY < -0.6;
   }
 
   /** X que veio cedo: a cada quadro tenta de novo; começa quando os dois passos alcançam o aro. */
   private updatePendingLayup(input: InputState): void {
     if (!this.dribble.canCancel(this.now)) return;
     const pending = this.layup.pending!;
-    // Toque no X que esperava o aro chegar: é hop step, já (não precisa alcançar o aro).
-    if (!input.shoot && input.shootEdgeTime - pending.at < TapMaxSeconds) {
+    // Toque no X que esperava o aro chegar: é hop step, já (não precisa alcançar o aro). O pedido do RS não tem toque.
+    if (!pending.fromStick && !input.shoot && input.shootEdgeTime - pending.at < TapMaxSeconds) {
       this.layup.pending = null;
       this.beginLayup(planHopStop(this.layupSituation(), this.hopLateral(input)), pending.at, true);
       return;
     }
     const plan = this.layup.plan_(pending.request, this.layupSituation(), this.rng.nextDouble());
-    if (plan && plan !== 'wait') this.beginLayup(plan, pending.at);
+    if (plan && plan !== 'wait') this.beginLayup(plan, pending.at, false, !!pending.fromStick);
   }
 
-  private beginLayup(plan: LayupPlan, pressAt: number, hopStop = false): void {
+  private beginLayup(plan: LayupPlan, pressAt: number, hopStop = false, fromStick = false): void {
     const hand = plan.choice.hand;
     if (hopStop) this.layup.beginHopStop(plan, this.now, pressAt);
-    else this.layup.begin(plan, this.now, pressAt);
+    else this.layup.begin(plan, this.now, pressAt, fromStick);
     this.gatherTime = this.now;
     this.setLayupContext(plan);
     this.carry = null;
@@ -998,7 +1029,9 @@ export class Freestyle {
       return;
     }
     const lsSide: LayupSide | null = input.moveX > 0.3 ? 'r' : input.moveX < -0.3 ? 'l' : null;
-    const request = L.readX(this.now, input.shoot, shootPressed, input.shootEdgeTime, lsSide, this.dribbler.ballHand());
+    const request =
+      L.readX(this.now, input.shoot, shootPressed, input.shootEdgeTime, lsSide, this.dribbler.ballHand()) ??
+      L.readStick(this.now, input.proX, input.proY);
     if (request) {
       const feet = this.animator.feetState();
       const ankles = { l: fromThree(feet.l.ankle), r: fromThree(feet.r.ankle) };
@@ -1022,7 +1055,7 @@ export class Freestyle {
       this.enterHold(input);
       return;
     }
-    if (!L.released && L.time(this.now) >= L.plan!.releaseAt) this.releaseLayup(input.shoot);
+    if (!L.released && L.time(this.now) >= L.plan!.releaseAt) this.releaseLayup(this.holdingRim(input));
   }
 
   // ------------------------------------------------------------------ bola presa (hop step em fases, nba-24)
@@ -1091,10 +1124,10 @@ export class Freestyle {
         ? { gather: LayupGather.Hop, finish: LayupFinish.Floater, hand: this.dribbler.ballHand(), glass: false }
         : chooseLayup({ command: stepThrough ? 'auto' : 'hop', sprint: false }, sit, L.style, this.rng.nextDouble());
     // RT segurado perto do aro: enterrada de dois pés parada (duas mãos ou cock-back), se alcança.
-    if (this.now - this.sprintSeenAt < SprintGraceSeconds && kind !== 'floater' && !stepThrough) {
+    if (this.ratings.canDunk && this.ratings.dunk.standing && this.now - this.sprintSeenAt < SprintGraceSeconds && kind !== 'floater' && !stepThrough) {
       const dunkChoice = chooseDunk(sit, { command: 'dunk', sprint: false }, this.rng.nextDouble());
       const dunk = planStandingLayup(dunkChoice, sit, DunkRating);
-      if (dunk.rise < DunkTuning.riseMax - 1e-6) {
+      if (dunk.rise < this.ratings.dunk.riseMax - 1e-6) {
         this.beginLayup(dunk, this.now);
         return;
       }
@@ -1141,7 +1174,7 @@ export class Freestyle {
     const plan = L.plan!;
     L.released = true;
     // Enterrada com o X ainda segurado: fica pendurado no aro até soltar o X (2K).
-    if (L.hangOnRelease(xHeld, PlayerHeight)) this.events.onMove?.(L.label, 'enterrada');
+    if (L.hangOnRelease(xHeld && this.ratings.dunk.hang, this.animator.heightMeters)) this.events.onMove?.(L.label, 'enterrada');
     const context = this.context!;
     const windows = this.windows!;
     this.holdMs = finishHoldMs(ShotType.Layup, windows.idealReleaseMs, windows.perfectHalfMs);
@@ -1365,6 +1398,6 @@ export class Freestyle {
 
   /** Para o HUD: ponto acima da cabeça (núcleo). */
   headPoint(): Vec3 {
-    return this.position.withZ(PlayerHeight + 0.45);
+    return this.position.withZ(this.animator.heightMeters + 0.45);
   }
 }
