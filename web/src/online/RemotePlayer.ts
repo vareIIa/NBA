@@ -242,6 +242,26 @@ export class RemotePlayer {
     return this.animator.heightMeters;
   }
 
+  /**
+   * Defesa do outro jogador na amostra MAIS NOVA que chegou (sem o buffer da linha do tempo): mãos para cima (0..1) e
+   * altura do pulo (m). A contestação e o toco na soltura leem isto (o boneco na tela está ~100 ms atrás).
+   */
+  defenseLatest(): { handsUp: number; jump: number } {
+    const df = this.buffer.latest()?.df;
+    return df ? { handsUp: df[0], jump: df[1] } : { handsUp: 0, jump: 0 };
+  }
+
+  /** Defesa como o boneco está mostrando agora (o comando repetido no animador dele). */
+  defenseShown(): { handsUp: number; jump: number } {
+    return this.animator.defenseState();
+  }
+
+  /** A bola do outro está na mão dele, no drible (nem no arremesso nem na bandeja), e se está no quique agora. */
+  dribbleState(): { dribbling: boolean; bouncing: boolean; protect: boolean } {
+    const dribbling = this.mode === 'hand' && this.animator.actionKind() !== 'Shot';
+    return { dribbling, bouncing: dribbling && this.dribbler.mode !== 'held', protect: this.buffer.latest()?.l === 1 };
+  }
+
   /** Bola do boneco como está desenhada, ou null quando o outro não tem a bola. */
   ballWorld(out = new THREE.Vector3()): THREE.Vector3 | null {
     return this.mode === 'none' ? null : out.copy(this.ballMesh.position);
@@ -305,6 +325,15 @@ export class RemotePlayer {
           break;
         case 'gesture':
           A.playIdleGesture(cmd.name);
+          break;
+        case 'hands':
+          A.setHandsUp(cmd.up === 1);
+          break;
+        case 'contest':
+          A.playContest(cmd.h);
+          break;
+        case 'steal':
+          A.playSteal(cmd.hand);
           break;
       }
     } catch (error) {

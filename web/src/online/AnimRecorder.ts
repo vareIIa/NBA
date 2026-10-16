@@ -1,5 +1,6 @@
 // Gravador do jogador local para o boneco remoto (docs/24 §5): se pendura no PlayerAnimator e anota os comandos que o
-// jogo dá (drible, arremesso, bandeja, comemoração…) e, a cada quadro, a entrada da locomoção, a posição e a direção.
+// jogo dá (drible, arremesso, bandeja, comemoração, defesa…) e, a cada quadro, a entrada da locomoção, a posição, a
+// direção e o estado da defesa (mãos e pulo, que a contestação do outro lado lê).
 // Não lê nem muda o Freestyle. `drain(bola)` devolve o payload do envio (~20 vezes por segundo) e esvazia a fila.
 //
 // Uso:
@@ -23,10 +24,13 @@ const Recorded = [
   'holdLayup',
   'setHoldPose',
   'playIdleGesture',
+  'setHandsUp',
+  'playContest',
+  'playSteal',
 ] as const;
 type RecordedName = (typeof Recorded)[number];
 
-export type RecordableAnimator = Pick<PlayerAnimator, RecordedName | 'root' | 'layupTime' | 'ballInHand'>;
+export type RecordableAnimator = Pick<PlayerAnimator, RecordedName | 'root' | 'layupTime' | 'ballInHand' | 'defenseState'>;
 
 /** Pull-up: a velocidade do carry vai amostrada a cada CarryStep s, por CarrySpan s (o arremesso inteiro). */
 const CarryStep = 0.04;
@@ -85,6 +89,9 @@ export class AnimRecorder {
       rec.pendingHold = { pose: toWire(pose, 3), t: round(t) };
     });
     rec.wrap('playIdleGesture', (name) => rec.push({ op: 'gesture', t: rec.clock(), name }));
+    rec.wrap('setHandsUp', (up) => rec.push({ op: 'hands', t: rec.clock(), up: up ? 1 : 0 }));
+    rec.wrap('playContest', (h) => rec.push({ op: 'contest', t: rec.clock(), h: round(h, 3) }));
+    rec.wrap('playSteal', (hand) => rec.push({ op: 'steal', t: rec.clock(), hand }));
     return rec;
   }
 
@@ -126,6 +133,7 @@ export class AnimRecorder {
     const target = this.animator as unknown as Record<string, unknown>;
     const own = Object.hasOwn(target, name);
     const original = target[name] as (...args: unknown[]) => unknown;
+    if (typeof original !== 'function') return; // animador sem esse comando (falso dos testes): nada a anotar
     target[name] = (...args: unknown[]): unknown => {
       try {
         note(...(args as Parameters<PlayerAnimator[K]>));
@@ -182,6 +190,9 @@ export class AnimRecorder {
       frame.hp = this.pendingHold;
       this.pendingHold = null;
     }
+    // Defesa: só quando há alguma (o resto do tempo a amostra não cresce).
+    const d = typeof this.animator.defenseState === 'function' ? this.animator.defenseState() : null;
+    if (d && (d.handsUp > 0.01 || d.jump > 0.005)) frame.df = [round(d.handsUp, 2), round(d.jump, 3)];
     this.frame = frame;
   }
 

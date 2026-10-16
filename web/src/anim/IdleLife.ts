@@ -128,7 +128,47 @@ export class IdleLife {
   /** Último gesto (para o laboratório). */
   current = '';
 
-  constructor(private readonly rig: IdleRig) {}
+  /**
+   * Eixos da mão no espaço local do hand_*, tirados do bind (braços em T, palmas para baixo): dedos = para fora do corpo,
+   * palma = para baixo. A malha da mão inteira segue o hand_*; o osso fingers_* é filho do palm_*, que nos clipes da CMU
+   * gira até 175° (dado ruim), e o thumb_* fica quase na linha dos dedos: mirar por eles entortava a mão visível.
+   */
+  private readonly handAxes: Record<Side, { fingers: THREE.Vector3; palm: THREE.Vector3 }>;
+
+  constructor(private readonly rig: IdleRig) {
+    rig.root.updateMatrixWorld(true);
+    const rootQ = rig.root.getWorldQuaternion(new THREE.Quaternion());
+    const axes = (side: Side) => {
+      const inv = rig.bone(`hand_${side}`).getWorldQuaternion(new THREE.Quaternion()).invert();
+      const out = new THREE.Vector3(side === 'l' ? 1 : -1, 0, 0).applyQuaternion(rootQ); // +x do jogador = esquerda
+      const down = new THREE.Vector3(0, -1, 0);
+      return { fingers: out.applyQuaternion(inv).normalize(), palm: down.applyQuaternion(inv).normalize() };
+    };
+    this.handAxes = { l: axes('l'), r: axes('r') };
+  }
+
+  /**
+   * Orienta a mão inteira (não só a direção dos dedos): dedos para `fingersDir` e palma para `palmDir` (mundo), com
+   * peso. Sem o giro em volta dos dedos a palma ficava virada para fora e a mão parecia quebrada no punho.
+   */
+  private orientHand(side: Side, fingersDir: THREE.Vector3, palmDir: THREE.Vector3, weight: number): void {
+    if (weight <= 1e-3) return;
+    const hand = this.rig.bone(`hand_${side}`);
+    const ax = this.handAxes[side];
+    const basis = (f: THREE.Vector3, t: THREE.Vector3) => {
+      const x = f.clone().normalize();
+      const y = t.clone().addScaledVector(x, -t.dot(x)).normalize();
+      return new THREE.Matrix4().makeBasis(x, y, x.clone().cross(y));
+    };
+    const local = basis(ax.fingers, ax.palm);
+    const world = basis(fingersDir, palmDir);
+    // R leva os eixos locais da mão aos alvos no mundo: R = W · Lᵀ (bases ortonormais).
+    const want = new THREE.Quaternion().setFromRotationMatrix(world.multiply(local.transpose()));
+    const cur = hand.getWorldQuaternion(new THREE.Quaternion());
+    cur.slerp(want, Math.min(1, weight));
+    hand.quaternion.copy(hand.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(cur));
+    hand.updateWorldMatrix(false, true);
+  }
 
   private random(): number {
     // LCG: determinístico (o laboratório repete igual), sem depender do Math.random.
@@ -221,9 +261,10 @@ export class IdleLife {
             : fwd.clone().multiplyScalar(-0.85).addScaledVector(side3, 0.35).addScaledVector(up, -0.2).normalize();
       rig.reachPalm(side, target, this.w, pole);
       if (pose.elbow === 'out' && k > 0) {
-        // Mão na cintura: dedos para a frente, para baixo e um pouco para dentro (o polegar fica para trás).
-        const fingers = fwd.clone().multiplyScalar(0.7).addScaledVector(up, -0.6).addScaledVector(side3, -0.3).normalize();
-        rig.aimHand(side, fingers, this.w * k);
+        // Mão na cintura: palma apoiada no quadril (virada para o corpo), dedos para a frente e para baixo.
+        const fingers = fwd.clone().multiplyScalar(0.75).addScaledVector(up, -0.6).addScaledVector(side3, -0.1).normalize();
+        const palm = side3.clone().negate();
+        this.orientHand(side, fingers, palm, this.w * k);
       }
     }
     // Cabeça: gira e inclina no mundo (pescoço e cabeça dividem o movimento).

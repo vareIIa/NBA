@@ -103,7 +103,8 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/ws') {
-      // Um objeto só para o lobby inteiro; a dica 'sam' faz ele nascer na América do Sul (vale na criação).
+      // Um objeto só para o lobby inteiro. Durable Objects ainda não nascem na América do Sul: a dica 'sam' cai no leste
+      // dos EUA (docs/24 §3). Vale só na criação; se a Cloudflare abrir a região, um nome novo de objeto nasceria aqui.
       const stub = env.HUB.get(env.HUB.idFromName('hub'), { locationHint: 'sam' });
       try {
         return await stub.fetch(request);

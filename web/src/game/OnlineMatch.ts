@@ -5,6 +5,9 @@
 //   - O servidor é o juiz (Referee): check-ball, placar, rebote, limpar a bola, relógio de posse e fim.
 // Aqui ficam o que o juiz não vê: onde cada um fica no check, a defesa (sem bola, de frente para o atacante), o corpo a
 // corpo, a pegada da bola solta, a contestação no arremesso e o HUD da partida.
+// Defesa (docs/24 §6): Y/K pula com os braços esticados (contestação, toco e rebote no ar), RS para cima levanta as
+// mãos e X (Espaço/J) dá o tapa do roubo. O meu animador faz a pose e o gravador leva para o boneco do outro lado; o
+// arremessador lê o estado do defensor na soltura (contestação e toco) e o juiz sorteia o roubo (src/net/defense.ts).
 import * as THREE from 'three';
 import type { Freestyle, ShotRecord } from './Freestyle';
 import type { InputState } from './Input';
@@ -22,7 +25,8 @@ import {
   otherSide,
   shotClockLeft,
 } from '../net/protocol';
-import { Vec3, clamp, computeContest, distance2D, makeBallState, makeDefenderPose } from '../sim';
+import { BlockMinJumpM, StealCooldownMs, StealLungeM, ballExposure, blockChance, contestJumpM } from '../net/defense';
+import { Vec3, clamp, computeContest, defenderHandPosition, distance, distance2D, makeBallState, makeDefenderPose } from '../sim';
 import { fromThree } from '../units';
 import { AnimRecorder, RemotePlayer } from '../online';
 
@@ -42,6 +46,14 @@ const CheckGap = 1.7;
 /** Contestação automática pela posição: mãos todo em cima até esta distância, nada além de ContestFarM. */
 const ContestNearM = 1.4;
 const ContestFarM = 2.6;
+/** Sem levantar as mãos, a posição sozinha conta até esta fração das mãos em cima (o resto é do botão). */
+const PassiveHands = 0.4;
+/** Toco: trecho da subida da bola (s depois da soltura) que a mão do defensor ainda alcança. */
+const BlockWindowS = 0.3;
+/** Rebote no ar: sem cesta, a bola descendo este tanto (m) abaixo do aro já não entra: o erro vai para o juiz. */
+const AirMissBelowRimM = 0.3;
+/** Alcance em pé ≈ altura × isto (HoopsContest); no pulo soma a altura do pulo (pegar o rebote no ar). */
+const ReachPerHeight = 1.33;
 /** Bola estacionada do Freestyle de quem defende (debaixo do chão, parada: a física nem roda). */
 const parkedBall = (): Vec3 => new Vec3(0, 0, -3);
 
@@ -59,6 +71,8 @@ export interface OnlineMatchDeps {
   project: (p: Vec3) => { x: number; y: number; visible: boolean };
   /** Saiu do online (o jogo volta ao menu principal). */
   onExit: () => void;
+  /** [0, 1): o sorteio do toco (feito por quem arremessa). ?sorte=1 nos testes: todo toco possível sai. */
+  random?: () => number;
   sfx?: { swish(): void; ding(): void; bounce(speed: number): void };
 }
 
@@ -75,6 +89,24 @@ export class OnlineMatch {
   private releaseSent = -1;
   private claimSent = -1;
   private clearedSent = -1;
+  private resultSent = -1;
+  /** seq em que a minha bola entrou (onScore): depois disso não há erro antecipado nem toco. */
+  private scoredSeq = -1;
+  /** Toco decidido na soltura: a bola desvia quando chega à mão do defensor (relógio do jogo, s). */
+  private pendingBlock: { seq: number; at: number; vel: Vec3 } | null = null;
+  private clockS = 0;
+  private prevContest = false;
+  /** Controle ligado (a dica dos botões da defesa no HUD). */
+  private gamepad = false;
+  private prevSteal = false;
+  private handsUp = false;
+  private lastStealTry = -Infinity;
+  /** Para o debug e o e2e: a última contestação e o último toco calculados, o último evento e as contagens. */
+  private lastContest: { value: number; handsUp: number; jump: number; dist: number } | null = null;
+  private lastBlock: { dist: number; chance: number; blocked: boolean } | null = null;
+  private lastEvent: MatchEvent | null = null;
+  private readonly recentEvents: string[] = [];
+  private readonly counts = { jumps: 0, stealTries: 0, stealSent: 0, blocks: 0 };
   /** Pegada da bola solta liberada pelo juiz: 'call' = a bola é minha (rebote ofensivo); 'grab' = vem da bola do oponente. */
   private pickup: { kind: 'call' | 'grab'; from: THREE.Vector3; frames: number } | null = null;
   private prevPause = false;
@@ -149,6 +181,7 @@ export class OnlineMatch {
 
   /** Antes do game.update: congela no check/dead/pausa/fim, tira o A (pedir a bola) e injeta a pegada da bola solta. */
   filterInput(input: InputState): InputState {
+    this.gamepad = input.gamepadConnected;
     const pausePressed = !!input.pause && !this.prevPause;
     this.prevPause = !!input.pause;
     if (pausePressed) this.hud.toggleLeave();
@@ -156,10 +189,13 @@ export class OnlineMatch {
     const frozen = phase !== 'live' || this.deps.net.status !== 'open';
     let out: InputState = { ...input, call: false, pause: false };
     if (frozen) out = { ...out, moveX: 0, moveY: 0, proX: 0, proY: 0, shoot: false, sprint: false, protect: false };
+    out = this.defend(input, out, frozen);
     const p = this.pickup;
     if (p) {
       const game = this.deps.game;
       if (p.frames === 0) {
+        // Rebote ofensivo no ar: a minha bola ainda está no voo; ela sai do voo e vem para a mão daqui.
+        if (p.kind === 'call' && game.phase === 'flight') game.phase = 'loose';
         if (p.kind === 'grab') {
           // A bola vem de onde eu a via (na mão/no chão do boneco do oponente) e voa para a minha mão (fase 'return').
           game.ball = makeBallState(fromThree(p.from));
@@ -175,35 +211,40 @@ export class OnlineMatch {
     return out;
   }
 
-  /** Contestação do oponente na minha soltura (Freestyle events.contest). Automática pela posição, sem botão por ora. */
+  /**
+   * Contestação do oponente na minha soltura (Freestyle events.contest): a mão do defensor com o estado REAL dele (mãos
+   * para cima e pulo, a amostra mais nova que chegou) e, sem botão, um pouco pela posição.
+   */
   contest(): number {
     const game = this.deps.game;
-    const opp = this.oppCard;
     const d = distance2D(this.remotePos, game.position);
-    const pose = makeDefenderPose({
-      feetPosition: this.remotePos.withZ(0),
-      height: opp.heightCm / 100,
-      wingspan: opp.wingspanCm / 100,
-      handsUpAmount: clamp((ContestFarM - d) / (ContestFarM - ContestNearM), 0, 1),
-      jumpHeight: 0,
-      perimeterDefense: opp.perimeterDefense,
-    });
+    const real = this.remote.defenseLatest();
+    const handsUp = Math.max(real.handsUp, PassiveHands * clamp((ContestFarM - d) / (ContestFarM - ContestNearM), 0, 1));
     const release = game.position.withZ(this.deps.animator.heightMeters + 0.25);
-    return computeContest(pose, game.position.flat(), release, game.rimCenter()).contest;
+    const value = computeContest(this.defenderPose(handsUp, real.jump), game.position.flat(), release, game.rimCenter()).contest;
+    this.lastContest = { value: +value.toFixed(3), handsUp: +handsUp.toFixed(2), jump: +real.jump.toFixed(2), dist: +d.toFixed(2) };
+    return value;
   }
 
-  /** Freestyle soltou o arremesso (ou a bandeja/enterrada). */
+  /** Freestyle soltou o arremesso (ou a bandeja/enterrada): o juiz fica sabendo e eu vejo se tomei toco. */
   onRelease(): void {
     const s = this.state;
     if (s.phase !== 'live' || s.offense !== this.you || this.releaseSent === s.seq) return;
     this.releaseSent = s.seq;
     this.deps.net.send({ t: 'g.release', seq: s.seq });
+    this.decideBlock();
   }
 
-  /** O arremesso resolveu no Freestyle (primeiro toque no chão). */
+  /** A minha bola entrou (Freestyle onScore). */
+  onScore(): void {
+    if (this.state.offense === this.you) this.scoredSeq = this.state.seq;
+  }
+
+  /** O arremesso resolveu no Freestyle (primeiro toque no chão), se o erro não foi antecipado nem houve toco. */
   onResult(record: ShotRecord): void {
     const s = this.state;
-    if (this.releaseSent !== s.seq || s.offense !== this.you) return;
+    if (this.releaseSent !== s.seq || s.offense !== this.you || this.resultSent === s.seq) return;
+    this.resultSent = s.seq;
     this.deps.net.send({ t: 'g.result', seq: s.seq, scored: record.scored, isThree: record.isThree });
   }
 
@@ -213,8 +254,10 @@ export class OnlineMatch {
     const { game, net } = this.deps;
     const s = this.state;
     const iOwn = s.offense === this.you;
+    this.clockS += dt;
     this.remote.update(dt, nowS);
     this.remotePos = fromThree(this.remote.rootPosition(this.tmp)).withZ(0);
+    if (iOwn) this.updateShotFlight();
 
     // Defesa: sem bola, de frente para o atacante. Se a bola não é minha, o meu Freestyle nunca fica com ela.
     if (!iOwn && !this.pickup) {
@@ -272,6 +315,20 @@ export class OnlineMatch {
         remoteFeet: this.deps.project(this.remotePos),
       },
       remoteStats: this.remote.stats(),
+      lastEvent: this.lastEvent?.kind ?? null,
+      /** Últimos eventos do juiz ("steal:1", "block:0"…; o número é o lado de quem fez). */
+      events: [...this.recentEvents],
+      /** Defesa: a minha (animador), a do oponente na tela (boneco) e a que chegou pela rede; a mão mais alta (m) de cada um. */
+      defense: {
+        me: roundState(this.deps.animator.defenseState()),
+        remoteShown: roundState(this.remote.defenseShown()),
+        remoteNet: roundState(this.remote.defenseLatest()),
+        myHandY: +this.topPalmY(this.deps.animator).toFixed(2),
+        remoteHandY: +this.topPalmY(this.remote.animator).toFixed(2),
+        lastContest: this.lastContest,
+        lastBlock: this.lastBlock,
+        ...this.counts,
+      },
     };
   }
 
@@ -293,6 +350,7 @@ export class OnlineMatch {
     this.opponentGone = false;
     this.placedSeq = -1;
     this.pickup = null;
+    this.pendingBlock = null;
     this.hud.hideOver();
     this.apply(start.state, null);
   }
@@ -304,7 +362,14 @@ export class OnlineMatch {
       this.placedSeq = state.seq;
       this.placeForCheck();
     }
-    if (event?.kind === 'rebound') {
+    if (event) {
+      this.lastEvent = event;
+      this.recentEvents.push(`${event.kind}${'side' in event ? `:${event.side}` : ''}`);
+      if (this.recentEvents.length > 12) this.recentEvents.shift();
+    }
+    // Rebote e roubo: quem pegou recebe a bola (a minha voltando, ou a do oponente voando para a minha mão); quem perdeu
+    // vai para a defesa.
+    if (event?.kind === 'rebound' || event?.kind === 'steal') {
       const wasMine = prev.offense === this.you;
       if (event.side === this.you) {
         const from = wasMine ? this.deps.game.ballMesh.position.clone() : this.remote.ballWorld(new THREE.Vector3());
@@ -323,6 +388,7 @@ export class OnlineMatch {
     const arc = game.layout.spec.threePointRadius;
     const offX = arc + CheckBeyondArc;
     this.pickup = null;
+    this.pendingBlock = null;
     this.countdownShown = -1;
     if (this.state.offense === this.you) {
       game.faceTarget = null;
@@ -368,7 +434,10 @@ export class OnlineMatch {
     if (s.phase !== 'live' || s.ball !== 'loose' || this.claimSent === s.seq) return;
     const game = this.deps.game;
     const ball = this.ballCore();
-    if (!ball || ball.z > PickupHeight || distance2D(ball, game.position) > PickupRadius) return;
+    // No pulo (Y) a mão alcança o rebote no ar: o alcance em pé mais a altura do pulo.
+    const jump = this.deps.animator.defenseState().jump;
+    const reachZ = jump > 0.05 ? Math.max(PickupHeight, this.deps.animator.heightMeters * ReachPerHeight + jump - 0.15) : PickupHeight;
+    if (!ball || ball.z > reachZ || distance2D(ball, game.position) > PickupRadius) return;
     this.claimSent = s.seq;
     this.deps.net.send({ t: 'g.claim', seq: s.seq, at: [ball.x, ball.y, ball.z] });
   }
@@ -381,6 +450,145 @@ export class OnlineMatch {
     }
     const w = this.remote.ballWorld(this.ballTmp);
     return w ? fromThree(w) : null;
+  }
+
+  // ---------------------------------------------------------------- defesa
+
+  /**
+   * Sem a bola: Y pula (contestação, toco, rebote no ar). Na defesa: RS para cima levanta as mãos e X dá o tapa; o
+   * Freestyle (sem bola) não vê nenhum dos dois. No ar, o analógico não mexe o corpo até pousar.
+   */
+  private defend(input: InputState, out: InputState, frozen: boolean): InputState {
+    const game = this.deps.game;
+    const iOwn = this.state.offense === this.you;
+    const withBall = iOwn && (game.phase === 'dribble' || game.phase === 'gather');
+    const contestPressed = !!input.contest && !this.prevContest;
+    this.prevContest = !!input.contest;
+    const stealPressed = input.shoot && !this.prevSteal;
+    this.prevSteal = input.shoot;
+    if (!frozen && !withBall && contestPressed && this.deps.animator.playContest(contestJumpM(this.myCard().vertical))) this.counts.jumps++;
+    const defending = !frozen && !iOwn && !this.pickup;
+    this.setHandsUp(defending && input.proY > 0.5);
+    if (defending) {
+      if (stealPressed) this.trySteal();
+      out = { ...out, shoot: false, proX: 0, proY: 0 };
+    }
+    if (this.deps.animator.defenseState().jump > 0.01) out = { ...out, moveX: 0, moveY: 0, sprint: false };
+    return out;
+  }
+
+  private setHandsUp(up: boolean): void {
+    if (up === this.handsUp) return;
+    this.handsUp = up;
+    this.deps.animator.setHandsUp(up);
+  }
+
+  /**
+   * X na defesa: o tapa sai sempre (o boneco do outro lado vê); com a bola no drible e ao alcance (meia envergadura e o
+   * passo do bote), o juiz sorteia com a exposição que eu vi.
+   */
+  private trySteal(): void {
+    const s = this.state;
+    const now = performance.now();
+    if (s.phase !== 'live' || s.ball !== 'held' || now - this.lastStealTry < StealCooldownMs) return;
+    this.lastStealTry = now;
+    const game = this.deps.game;
+    const ball = this.ballCore();
+    const toBall = ball ? ball.sub(game.position).flat() : game.facing;
+    const right = new Vec3(-game.facing.y, game.facing.x, 0); // direita = cima × frente (eixos da Unreal)
+    this.deps.animator.playSteal(toBall.dot(right) >= 0 ? 'r' : 'l');
+    this.counts.stealTries++;
+    const dribble = this.remote.dribbleState();
+    if (!ball || !dribble.dribbling) return;
+    if (distance2D(ball, game.position) > this.myCard().wingspanCm / 200 + StealLungeM) return;
+    const exp = ballExposure({
+      ball: [ball.x, ball.y, ball.z],
+      attacker: [this.remotePos.x, this.remotePos.y],
+      defender: [game.position.x, game.position.y],
+      bouncing: dribble.bouncing,
+      protect: dribble.protect,
+    });
+    this.counts.stealSent++;
+    this.deps.net.send({ t: 'g.steal', seq: s.seq, exp: +exp.toFixed(3) });
+  }
+
+  /** Pose do oponente para a contestação e o toco (HoopsContest), com as mãos e o pulo dados. */
+  private defenderPose(handsUp: number, jump: number) {
+    const opp = this.oppCard;
+    return makeDefenderPose({
+      feetPosition: this.remotePos.withZ(0),
+      height: opp.heightCm / 100,
+      wingspan: opp.wingspanCm / 100,
+      handsUpAmount: handsUp,
+      jumpHeight: jump,
+      perimeterDefense: opp.perimeterDefense,
+    });
+  }
+
+  /**
+   * Na soltura: o defensor no ar com a mão perto da subida da bola pode dar o toco. A mão mais alta dele (pulo e mãos
+   * da amostra mais nova) contra os primeiros BlockWindowS da trajetória; o sorteio é aqui (o lance é meu). Se tocou,
+   * a bola desvia quando chega à mão (updateShotFlight). Bola saindo para baixo (enterrada) não toma toco.
+   */
+  private decideBlock(): void {
+    const game = this.deps.game;
+    const real = this.remote.defenseLatest();
+    const b0 = game.ball.position;
+    const v0 = game.ball.velocity;
+    if (real.jump < BlockMinJumpM || v0.z <= 0) return;
+    const hand = defenderHandPosition(this.defenderPose(Math.max(real.handsUp, 0.8), real.jump), game.position);
+    let best = Infinity;
+    let bestT = 0;
+    for (let t = 0.02; t <= BlockWindowS + 1e-9; t += 0.02) {
+      const p = b0.add(v0.scale(t)).add(new Vec3(0, 0, -4.905 * t * t));
+      const d = distance(hand, p);
+      if (d < best) {
+        best = d;
+        bestT = t;
+      }
+    }
+    const chance = blockChance(this.oppCard.block, best);
+    const random = this.deps.random ?? Math.random;
+    const blocked = chance > 0 && random() < chance;
+    this.lastBlock = { dist: +best.toFixed(2), chance: +chance.toFixed(2), blocked };
+    if (!blocked) return;
+    // Desvio: para longe da cesta (do defensor para o arremessador), um pouco para um lado, batida para baixo ou para fora.
+    const away = game.position.sub(this.remotePos).flat().normalized(game.facing.scale(-1));
+    const side = new Vec3(-away.y, away.x, 0).scale((Math.random() - 0.5) * 1.2);
+    const vel = away.add(side).normalized().scale(4.5 + 2 * Math.random()).withZ(-1.5 + 3 * Math.random());
+    this.pendingBlock = { seq: this.state.seq, at: this.clockS + Math.max(0.04, bestT), vel };
+  }
+
+  /** A minha bola no voo: o desvio do toco na hora certa e o erro antecipado (rebote no ar, antes do quique). */
+  private updateShotFlight(): void {
+    const s = this.state;
+    const { game, net } = this.deps;
+    const pb = this.pendingBlock;
+    if (pb && this.clockS >= pb.at) {
+      this.pendingBlock = null;
+      if (pb.seq === s.seq && this.releaseSent === s.seq && this.resultSent !== s.seq && this.scoredSeq !== s.seq && game.phase === 'flight') {
+        game.ball = makeBallState(game.ball.position, pb.vel, new Vec3(0, 18, 0));
+        this.resultSent = s.seq;
+        this.counts.blocks++;
+        net.send({ t: 'g.block', seq: s.seq });
+      }
+    }
+    if (this.releaseSent !== s.seq || this.resultSent === s.seq || this.scoredSeq === s.seq || game.phase !== 'flight') return;
+    const b = game.ball;
+    if (b.velocity.z < 0 && b.position.z < game.rimCenter().z - AirMissBelowRimM) {
+      this.resultSent = s.seq;
+      net.send({ t: 'g.result', seq: s.seq, scored: false, isThree: false });
+    }
+  }
+
+  /** O meu cartão como o servidor tem (com os ratings de defesa). */
+  private myCard(): PlayerCard {
+    return this.room.players.find((p) => p.side === this.you)?.card ?? opponentCard(this.room, otherSide(this.you));
+  }
+
+  /** Altura (m) da mão mais alta de um boneco. */
+  private topPalmY(animator: PlayerAnimator): number {
+    return Math.max(animator.palmWorld('l', this.tmp).y, animator.palmWorld('r', this.tmp).y);
   }
 
   /** Rebote defensivo: a bola precisa sair da linha de 3 antes de valer cesta. */
@@ -417,6 +625,14 @@ export class OnlineMatch {
         break;
       case 'cleared':
         if (e.side === me) this.hud.say('Bola limpa', '', 0.9, 'info');
+        break;
+      case 'steal':
+        if (e.side === me) this.hud.say('Roubo!', this.state.needsClear ? 'limpe a bola: saia da linha de 3' : '', 1.6, 'good');
+        else this.hud.say(`Roubo de ${them}`, '', 1.4, 'bad');
+        break;
+      case 'block':
+        if (e.side === me) this.hud.say('Toco!', '', 1.4, 'good');
+        else this.hud.say(`Toco de ${them}`, '', 1.4, 'bad');
         break;
       case 'shotClock':
         this.hud.say('Estouro do relógio', e.side === me ? 'bola dele' : 'bola sua', 1.8, e.side === me ? 'bad' : 'good');
@@ -467,7 +683,8 @@ export class OnlineMatch {
     // Papel (ataque/defesa) e o aviso de limpar a bola.
     if (s.phase === 'over') this.hud.setRole('');
     else if (s.offense === this.you) this.hud.setRole(s.needsClear && s.ball === 'held' ? 'Ataque · limpe a bola' : 'Ataque', s.needsClear && s.ball === 'held');
-    else this.hud.setRole(s.needsClear && s.ball === 'held' ? 'Defesa · ele precisa limpar' : 'Defesa');
+    else if (s.needsClear && s.ball === 'held') this.hud.setRole('Defesa · ele precisa limpar');
+    else this.hud.setRole(this.gamepad ? 'Defesa · Y pula · RS↑ mãos · X rouba' : 'Defesa · K pula · ↑ mãos · Espaço rouba');
     this.hud.setNet(net.rtt, net.status);
     const head = this.deps.project(this.remotePos.withZ(this.remote.heightMeters + 0.2));
     this.hud.setTag(head.x, head.y, head.visible, this.opponentName);
@@ -524,4 +741,8 @@ function opponentCard(room: RoomInfo, you: Side): PlayerCard {
       perimeterDefense: 60,
     }
   );
+}
+
+function roundState(d: { handsUp: number; jump: number }): { handsUp: number; jump: number } {
+  return { handsUp: +d.handsUp.toFixed(2), jump: +d.jump.toFixed(2) };
 }

@@ -36,6 +36,7 @@ import { type JumpShotSetup, defaultSetup, formOf } from '../shot/JumpShotSetup'
 import { JumpShotMotion, type ShotCarry } from './JumpShotMotion';
 import { pullUpForm } from '../shot/ShotForms';
 import { IdleLife } from './IdleLife';
+import { DefenseMotion, type DefenseRig } from './DefenseMotion';
 import { ArmClearance } from './ArmClearance';
 import {
   BallRadius,
@@ -49,6 +50,7 @@ import {
   behindBackCatch,
   behindBackFloor,
   behindBackOffArm,
+  behindBackTrunk,
   footStep,
   halfSpinTurn,
   sideSign,
@@ -902,6 +904,38 @@ export class PlayerAnimator {
     return this.idleLife.current;
   }
 
+  // ------------------------------------------------------------------------------------- defesa (online 1x1)
+
+  private readonly defense = new DefenseMotion();
+  private defenseRig: DefenseRig | null = null;
+
+  /** Mãos para cima na defesa (RS para cima), até mandar false. */
+  setHandsUp(up: boolean): void {
+    this.defense.setHandsUp(up);
+  }
+
+  /** Pulo de contestação/toco (Y) com os dois braços esticados; `heightM` = altura do pulo (m). false se já está no ar. */
+  playContest(heightM: number): boolean {
+    return this.defense.jump(heightM);
+  }
+
+  /** Tapa do roubo (X na defesa) com a mão `hand`. */
+  playSteal(hand: Hand): void {
+    this.defense.steal(hand);
+  }
+
+  /** Mãos para cima (0..1) e altura do pulo (m) agora: a contestação do arremessador lê isto. */
+  defenseState(): { handsUp: number; jump: number } {
+    return this.defense.state();
+  }
+
+  /** Depois dos gestos do parado: braços da defesa e o pulo (DefenseMotion). */
+  private applyDefense(dt: number): void {
+    this.defense.update(dt, this.hasBall);
+    this.defenseRig ??= { bone: (n) => this.bone(n), reachPalm: (h, target, w, pole) => this.reachPalm(h, target, w, pole), root: this.root };
+    this.defense.apply(this.defenseRig);
+  }
+
   private applyJumpShotBody(): void {
     if (this.jumpShotLive() || this.jumpShot.exiting) this.jumpShot.applyBody();
   }
@@ -1215,11 +1249,19 @@ export class PlayerAnimator {
     this.applyLayupArms();
     this.applyJumpShotArms();
     this.applyIdleLife(dt, input);
+    this.applyDefense(dt);
     if (this.armClearanceEnabled) {
-      // Behind the back: a mão da bola segue o caminho desenhado por trás do quadril (ProceduralMoves), por dentro do
-      // volume da bermuda larga; a colisão brigava com ele (estalos no antebraço). Só essa mão fica livre.
+      // Behind the back: com o tronco girando para o lado da bola e a soltura atrás do bolso, o caminho desenhado da mão
+      // já passa por fora da bermuda; a colisão vale também na mão da bola (antes ela ficava livre e o braço voltava
+      // por dentro do tronco no fim do drible) e a bola presa acompanha o que a colisão mexeu na palma.
       const a = this.active && !this.active.fadingOut ? this.active : null;
-      this.armClearance.apply(this.hasBall, dt, a?.timing?.procedural === 'BehindBack' ? a.fromHand : null);
+      const btb = a?.timing?.procedural === 'BehindBack' ? a : null;
+      const inv = this.root.matrixWorld.clone().invert();
+      // (Lido numa variável com o tipo inteiro: o TS estreita o campo para null pela atribuição no começo do quadro.)
+      const held = this.ballHeldLocal as THREE.Vector3 | null;
+      const before = btb && held ? this.palmWorld(btb.fromHand, new THREE.Vector3()).applyMatrix4(inv) : null;
+      this.armClearance.apply(this.hasBall, dt, btb && this.behindBackArmFree ? btb.fromHand : null);
+      if (btb && before && held) held.add(this.palmWorld(btb.fromHand, new THREE.Vector3()).applyMatrix4(inv).sub(before));
     }
     this.applyBallClearance(dt, input);
     const inv = this.root.matrixWorld.clone().invert();
@@ -2924,9 +2966,12 @@ export class PlayerAnimator {
           // Mão da bola: a perna do mesmo lado é contornada por fora do joelho; a outra, pela frente (direção fixa,
           // sem a mão pular de um lado para o outro entre as pernas). No entre as pernas, antes da soltura, a bola vai
           // descer e passar entre os pés: o joelho do mesmo lado também é contornado pela frente.
+          // No behind the back a bola cruza por TRÁS: depois da soltura a mão é a que recebe, e a perna do lado de onde a
+          // bola saiu é contornada por trás (pela frente, o desvio jogava a bola 8 cm para dentro da coxa na soltura).
           const sameSide = cap.a.endsWith(`_${hand}`);
           const tween = this.active?.kind === 'BetweenLegs' && !this.active.released;
-          d.copy(sameSide && !tween ? leftDir : fwdDir).multiplyScalar(sameSide && !tween ? sideSign(hand) : 1);
+          const behind = !sameSide && this.behindBackPassBehind && this.active?.timing?.procedural === 'BehindBack';
+          d.copy(sameSide && !tween ? leftDir : fwdDir).multiplyScalar(sameSide && !tween ? sideSign(hand) : behind ? -1 : 1);
         } else {
           d.y = 0;
           if (d.lengthSq() < 1e-6) d.set(c.x - center.x, 0, c.z - center.z);
@@ -3185,9 +3230,13 @@ export class PlayerAnimator {
       const designed =
         (this.dribbleArmWeight[hand] > 0.5 && (!a || !this.clearanceAtMoveStart)) ||
         (this.tweenCatch?.hand === hand && this.tweenArmWeight > 0.5);
+      // Behind the back depois da soltura: a bola está no ar (a mão de origem não segura nada até a recepção). Contando
+      // como presa, o desvio entrava na soltura com outro pole e o braço girava ~100° num quadro (e de novo ao sair).
+      const btbAir = a?.timing?.procedural === 'BehindBack' && a.released;
       const holding =
         this.ballClearanceEnabled &&
         !designed &&
+        !btbAir &&
         this.hasBall && !this.ballHeldLocal && a?.kind !== 'Shot' && hand === (a && !a.released ? a.fromHand : input.ballHand);
       const off = this.ballClearance[hand];
       const palm = this.palmWorld(hand, new THREE.Vector3());
@@ -3283,6 +3332,57 @@ export class PlayerAnimator {
     other: { hand: Hand; local: THREE.Vector3; w: number };
   } | null = null;
 
+  /** Peso do giro do tronco no behind the back (sai suave se o drible for cortado no meio). */
+  private btbTrunkW = 0;
+  private btbTrunkHand: Hand = 'r';
+  /** Liga/desliga o giro do tronco no behind the back (A/B do laboratório). */
+  behindBackTrunkEnabled = true;
+  /** true = a mão da bola fica sem a colisão dos braços no behind the back (como era antes do giro do tronco). */
+  behindBackArmFree = false;
+  /** true = no ar, a bola do behind the back contorna a perna de onde saiu por trás (legClearance). */
+  behindBackPassBehind = true;
+
+  /**
+   * Behind the back: o tronco gira e inclina para o lado da mão da bola (BehindBack.trunk), o ombro dela abre para trás e
+   * desce, e o braço alcança o caminho da bola por fora da bermuda. Dividido entre spine_01/02/03 (as costas torcem, não
+   * dobram num ponto); pescoço e cabeça desfazem parte do giro (o jogador olha para a frente). Antes dos IKs dos braços.
+   */
+  private applyBehindBackTrunk(a: ActiveAction | null, u: number, dt: number): void {
+    if (a?.timing?.procedural === 'BehindBack' && this.behindBackTrunkEnabled) {
+      this.btbTrunkW = behindBackTrunk(u);
+      this.btbTrunkHand = a.fromHand;
+    } else {
+      this.btbTrunkW *= Math.exp(-10 * dt);
+    }
+    const w = this.btbTrunkW;
+    if (w < 1e-3) return;
+    const T = BehindBack.trunk;
+    const s = sideSign(this.btbTrunkHand);
+    const deg = THREE.MathUtils.degToRad;
+    const bodyQ = this.model.getWorldQuaternion(new THREE.Quaternion());
+    const up = new THREE.Vector3(0, 1, 0);
+    const left = new THREE.Vector3(1, 0, 0).applyQuaternion(bodyQ);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(bodyQ);
+    // +X = esquerda. Giro em torno de cima com s·ângulo leva o ombro da bola para trás; em torno da frente com −s·ângulo
+    // inclina para o lado da bola; em torno da esquerda com ângulo negativo o peito sobe.
+    const R = new THREE.Quaternion()
+      .setFromAxisAngle(up, s * deg(T.yawDeg) * w)
+      .multiply(new THREE.Quaternion().setFromAxisAngle(forward, -s * deg(T.sideDeg) * w))
+      .multiply(new THREE.Quaternion().setFromAxisAngle(left, -deg(T.liftDeg) * w));
+    const turn = (names: string[], q: THREE.Quaternion) => {
+      const part = new THREE.Quaternion().slerp(q, 1 / names.length);
+      for (const name of names) {
+        const b = this.bone(name);
+        const world = b.getWorldQuaternion(new THREE.Quaternion());
+        const parent = b.parent!.getWorldQuaternion(new THREE.Quaternion()).invert();
+        b.quaternion.copy(parent.multiply(part.clone().multiply(world)));
+        b.updateWorldMatrix(false, true);
+      }
+    };
+    turn(['spine_01', 'spine_02', 'spine_03'], R);
+    turn(['neck_01', 'head'], new THREE.Quaternion().slerp(R.clone().invert(), T.headKeep));
+  }
+
   /** Quanto o corpo está mais baixo que o agachamento dos procedurais (os pontos-chave do behind the back). */
   private behindBackDrop(): number {
     return Math.max(0, this.crouch - this.stance.crouchProcedural);
@@ -3372,6 +3472,7 @@ export class PlayerAnimator {
     }
 
     // Behind the back: a mão de origem carrega a bola por trás do quadril; a outra vai buscar a recepção.
+    this.applyBehindBackTrunk(a, u, dt);
     if (a?.timing?.procedural === 'BehindBack') {
       const s = sideSign(a.fromHand);
       const w = behindBackArmWeights(u);

@@ -193,6 +193,7 @@ import {
   behindBackBall,
   behindBackCatch,
   behindBackFloor,
+  behindBackTrunk,
   footStep,
   halfSpinTurn,
 } from './ProceduralMoves';
@@ -209,15 +210,25 @@ describe('Dribles procedurais', () => {
       const end = behindBackBall(BehindBack.release, hand);
       expect(Math.sign(start[0])).toBe(side); // começa do lado da mão da bola
       expect(mid[2]).toBeLessThan(-0.2); // passa atrás do quadril (z < 0 = atrás)
-      // Na altura do joelho/coxa, como no jogo real (vídeo de referência), nem no chão nem no quadril.
-      expect(mid[1]).toBeGreaterThan(0.4);
-      expect(mid[1]).toBeLessThan(0.6);
-      expect(end[2]).toBeLessThan(-0.25);
+      // Na altura da cintura, enrolando em volta do quadril (abaixo dela a bola presa entrava na coxa e a palma não
+      // alcançava por fora da bermuda).
+      expect(mid[1]).toBeGreaterThan(0.6);
+      expect(mid[1]).toBeLessThan(0.85);
+      expect(end[2]).toBeLessThan(-0.3);
+      // Solta atrás do bolso do lado da bola: quem cruza as costas é a bola no ar, não a mão.
+      expect(Math.sign(end[0])).toBe(side);
       expect(Math.sign(behindBackFloor(hand)[0])).toBe(-side); // quica atrás do outro calcanhar
       expect(behindBackFloor(hand)[2]).toBeLessThan(0);
       expect(Math.sign(behindBackCatch(hand)[0])).toBe(-side); // a outra mão recebe na frente
       expect(behindBackCatch(hand)[2]).toBeGreaterThan(0);
     }
+  });
+
+  test('BehindBackTrunkTurnsInAndOutSmoothly', () => {
+    expect(behindBackTrunk(0)).toBe(0);
+    expect(behindBackTrunk(BehindBack.release)).toBeCloseTo(1, 6); // pico na soltura
+    expect(behindBackTrunk(BehindBack.trunk.outEnd)).toBe(0);
+    for (let u = 0; u < 1.1; u += 0.01) expect(Math.abs(behindBackTrunk(u + 0.01) - behindBackTrunk(u))).toBeLessThan(0.06);
   });
 
   test('StepBackFeetLeaveAndReturnToTheFloor', () => {

@@ -8,17 +8,19 @@ import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { Hub } from '../src/net/hub/Hub.ts';
-import { DevServerPort, MaxFrameBytes, WsPath } from '../src/net/protocol.ts';
+import { DevServerPort, MaxFrameBytes, ProtocolVersion, WsPath } from '../src/net/protocol.ts';
 
 const port = Number(process.env.PORT ?? DevServerPort);
 const verbose = process.env.MP_LOG !== '0';
 const stamp = (): string => new Date().toTimeString().slice(0, 8);
-const hub = new Hub({ log: (...args) => verbose && console.log(stamp(), ...args) });
+// HUB_SORTE=1 (só testes): todo sorteio do juiz sai a favor de quem tenta (o e2e do roubo não depende da sorte).
+const lucky = process.env.HUB_SORTE === '1';
+const hub = new Hub({ log: (...args) => verbose && console.log(stamp(), ...args), refereeRandom: lucky ? () => 0 : undefined });
 
 const http = createServer((_req, res) => {
   res.setHeader('access-control-allow-origin', '*');
   res.setHeader('content-type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify({ ok: true, server: 'garrafao-hub', ...hub.stats() }));
+  res.end(JSON.stringify({ ok: true, server: 'garrafao-hub', v: ProtocolVersion, lucky, ...hub.stats() }));
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: MaxFrameBytes });

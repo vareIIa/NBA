@@ -21,6 +21,8 @@ export interface InputState {
   proY: number;
   shoot: boolean; // X (segurar = gather, soltar = soltura)
   call?: boolean; // A (pedir a bola): com a bola solta, ela voa até a mão
+  /** Y no controle, K no teclado: na defesa do online, pulo de contestação/toco (e de rebote). */
+  contest?: boolean;
   /** P no teclado ou Start no controle: abre o menu de pausa (criador de arremesso). */
   pause?: boolean;
   pad?: PadState;
@@ -35,6 +37,7 @@ export interface InputState {
 const ButtonA = 0;
 const ButtonB = 1;
 const ButtonX = 2;
+const ButtonY = 3;
 const ButtonStart = 9;
 const PadDpad = { up: 12, down: 13, left: 14, right: 15 };
 const ButtonLT = 6;
@@ -51,6 +54,7 @@ export function applyRadialDeadZone(x: number, y: number, deadZone = DeadZone): 
 
 const ShootKeys = ['Space', 'KeyJ'];
 const CallKeys = ['KeyF']; // teclado para o A (pedir a bola)
+const ContestKeys = ['KeyK']; // teclado para o Y (pulo da defesa), ao lado do J do arremesso
 const PauseKeys = ['KeyP']; // Esc fica com os menus (badges e pausa), então a pausa usa P
 
 export class Input {
@@ -86,6 +90,7 @@ export class Input {
       proY: k('ArrowUp') - k('ArrowDown'),
       shoot: ShootKeys.some((code) => this.keys.has(code)),
       call: CallKeys.some((code) => this.keys.has(code)),
+      contest: ContestKeys.some((code) => this.keys.has(code)),
       pause: PauseKeys.some((code) => this.keys.has(code)),
       shootEdgeTime: this.shootEdgeTime,
       sprint: this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'),
@@ -121,6 +126,7 @@ export class Input {
       state.proY = -(pad.axes[3] ?? 0);
       state.shoot ||= pad.buttons[ButtonX]?.pressed ?? false;
       state.call ||= pad.buttons[ButtonA]?.pressed ?? false;
+      state.contest ||= pad.buttons[ButtonY]?.pressed ?? false;
       state.pad = {
         lx,
         ly,
