@@ -11,6 +11,8 @@ import {
   type Side,
   DunkRating,
   DunkTuning,
+  allowedDunk,
+  dunkAbility,
   chooseDunk,
   chooseLayup,
   dropHang,
@@ -353,5 +355,33 @@ describe('enterrada pelo plano e pendurado no aro', () => {
       const p = dunk(running(3.6, -2.4, 4.4, 'l'), f);
       expect(isDunkFinish(p.choice.finish)).toBe(true);
     }
+  });
+});
+
+describe('enterrada pela build (Driving Dunk, Standing Dunk, Impulsão)', () => {
+  test('a build padrão (DD 80, SD 45, Vert 70) enterra de tudo com a subida de sempre', () => {
+    const a = dunkAbility(80, 45, 70);
+    expect(a).toMatchObject({ driving: true, standing: true, flashy: true, windmill: true, hang: true });
+    expect(a.riseMax).toBeCloseTo(DunkTuning.riseMax, 6);
+  });
+
+  test('pouca enterrada troca os chamativos pelos simples; pouca impulsão não alcança o aro e vira bandeja', () => {
+    const weak = dunkAbility(60, 30, 40);
+    expect(weak.flashy).toBe(false);
+    expect(weak.standing).toBe(false);
+    expect(allowedDunk(LayupFinish.Windmill, weak)).toBe(LayupFinish.DunkOneHand);
+    expect(allowedDunk(LayupFinish.CockBack, weak)).toBe(LayupFinish.DunkTwoHand);
+    expect(allowedDunk(LayupFinish.Windmill, dunkAbility(75, 45, 70))).toBe(LayupFinish.Tomahawk);
+    const sit = { ...running(3.6, -2.4, 4.4, 'l'), dunk: weak };
+    const r = planLayup({ gather: LayupGather.Normal, finish: LayupFinish.DunkOneHand, hand: 'r', glass: false }, sit, LayupStyles.padrao, DunkRating);
+    expect(r.plan).toBeNull();
+    expect(dunkAbility(99, 99, 99).riseMax).toBeGreaterThan(DunkTuning.riseMax);
+  });
+
+  test('a enterrada pedida pelo RS vale (ou a mais simples que a build permite)', () => {
+    const sit = running(4, -2, 5, 'l');
+    expect(chooseDunk(sit, { command: 'dunk', sprint: true, finish: LayupFinish.CockBack }).finish).toBe(LayupFinish.CockBack);
+    expect(chooseDunk({ ...sit, dunk: dunkAbility(60, 45, 70) }, { command: 'dunk', sprint: true, finish: LayupFinish.CockBack }).finish).toBe(LayupFinish.DunkTwoHand);
+    expect(chooseDunk(sit, { command: 'dunk', sprint: true, finish: LayupFinish.DunkOneHand, side: 'l' }).hand).toBe('l');
   });
 });

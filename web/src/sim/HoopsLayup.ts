@@ -119,9 +119,65 @@ export type LayupCommand =
 
 export interface LayupRequest {
   command: LayupCommand;
-  /** scoop: a mão; proHop: o lado do hop; euro: o lado em que o segundo passo termina. */
+  /** scoop: a mão; proHop: o lado do hop; euro: o lado em que o segundo passo termina; dunk: a mão (uma mão). */
   side?: Side;
   sprint: boolean;
+  /** dunk: a enterrada pedida pelo RS (a habilidade pode trocar por uma mais simples). */
+  finish?: LayupFinish;
+}
+
+/**
+ * O que a build deixa enterrar (2K: requisitos de Driving Dunk, Standing Dunk e Vertical). Com a build padrão (DD 80,
+ * SD 45, Vert 70) vale tudo e a subida máxima é a de sempre.
+ */
+export interface DunkAbility {
+  /** Enterra correndo (senão é bandeja). */
+  driving: boolean;
+  /** Enterra parado, de dois pés. */
+  standing: boolean;
+  /** Tomahawk e cock-back; moinho. */
+  flashy: boolean;
+  windmill: boolean;
+  /** Fica pendurado no aro (2K: "Hangs Off One"). */
+  hang: boolean;
+  /** Subida máxima do centro de massa (m): a impulsão. */
+  riseMax: number;
+}
+
+export const DunkRequirements = {
+  /** Enterrar correndo e pendurar: o pacote mais simples do 2K26, "Hangs Off One" (o mesmo do BuildRatings.DunkMinimum). */
+  driving: { dunk: 55, vertical: 35 },
+  standing: 40,
+  flashy: 70,
+  windmill: { dunk: 78, vertical: 65 },
+  hang: { dunk: 55, vertical: 35 },
+  /** Impulsão de referência (a da build padrão): com ela a subida máxima é DunkTuning.riseMax. */
+  verticalRef: 70,
+};
+
+/** Habilidade de enterrar a partir dos atributos (0–99). */
+export function dunkAbility(drivingDunk: number, standingDunk: number, vertical: number): DunkAbility {
+  const R = DunkRequirements;
+  const jump = (v: number) => 0.85 + (0.3 * (clamp(v, 25, 99) - 25)) / 74;
+  return {
+    driving: drivingDunk >= R.driving.dunk && vertical >= R.driving.vertical,
+    standing: standingDunk >= R.standing,
+    flashy: drivingDunk >= R.flashy,
+    windmill: drivingDunk >= R.windmill.dunk && vertical >= R.windmill.vertical,
+    hang: drivingDunk >= R.hang.dunk && vertical >= R.hang.vertical,
+    riseMax: (DunkTuning.riseMax * jump(vertical)) / jump(R.verticalRef),
+  };
+}
+
+/** Troca a enterrada pela mais simples que a habilidade permite (moinho -> tomahawk -> uma mão; cock-back -> duas mãos). */
+export function allowedDunk(finish: LayupFinish, ability: DunkAbility | undefined): LayupFinish {
+  if (!ability) return finish;
+  let f = finish;
+  if (f === LayupFinish.Windmill && !ability.windmill) f = LayupFinish.Tomahawk;
+  if ((f === LayupFinish.Tomahawk || f === LayupFinish.CockBack) && !ability.flashy) {
+    f = f === LayupFinish.CockBack ? LayupFinish.DunkTwoHand : LayupFinish.DunkOneHand;
+  }
+  return f;
 }
 
 /** Pacote de bandejas (estilo): pesos da finalização escolhida pelo contexto no comando 'auto'. */
@@ -165,6 +221,8 @@ export interface LayupSituation {
   baselineX: number;
   /** Topo do aro (m); 3,05 se não vier. A enterrada sobe o quanto precisa para a bola passar por cima dele. */
   rimHeightM?: number;
+  /** O que a build deixa enterrar (sem isto: tudo, com a subida máxima de DunkTuning). */
+  dunk?: DunkAbility;
 }
 
 /**
@@ -560,8 +618,14 @@ export function chooseDunk(sit: LayupSituation, request: LayupRequest, r = 0.5):
   const speed = sit.velocity.length2D();
   const hand = request.side ?? layupHandFor(sit.position, sit.rimFloor, sit.hoopForward, sit.ballHand);
   const F = LayupFinish;
-  if (speed < 2.2) {
-    const finish = r < 0.7 ? F.DunkTwoHand : F.CockBack;
+  const slow = speed < 2.2;
+  // Pedida pelo RS: a enterrada dele (ou a mais simples que a build permite).
+  if (request.finish !== undefined && isDunkFinish(request.finish)) {
+    const finish = allowedDunk(request.finish, sit.dunk);
+    return { gather: slow ? LayupGather.Hop : LayupGather.Normal, finish, hand: isTwoHandDunk(finish) ? sit.ballHand : hand, glass: false };
+  }
+  if (slow) {
+    const finish = allowedDunk(r < 0.7 ? F.DunkTwoHand : F.CockBack, sit.dunk);
     return { gather: LayupGather.Hop, finish, hand: sit.ballHand, glass: false };
   }
   const options: [LayupFinish, number][] =
@@ -578,6 +642,7 @@ export function chooseDunk(sit: LayupSituation, request: LayupRequest, r = 0.5):
     }
     x -= w;
   }
+  finish = allowedDunk(finish, sit.dunk);
   return { gather: LayupGather.Normal, finish, hand: isTwoHandDunk(finish) ? sit.ballHand : hand, glass: false };
 }
 
@@ -751,7 +816,7 @@ export function planLayup(choice: LayupChoice, sit: LayupSituation, style: Layup
   let rise = shape.rise + (choice.gather === LayupGather.Hop ? -0.02 : 0) + clamp((speed - 4) * 0.02, -0.04, 0.05);
   if (dunk) {
     const need = dunkRise(shape, sit);
-    if (need > DunkTuning.riseMax) return { plan: null, tooFarBy: 0, tooClose: false };
+    if (need > (sit.dunk?.riseMax ?? DunkTuning.riseMax)) return { plan: null, tooFarBy: 0, tooClose: false };
     rise = Math.max(DunkTuning.riseMin, need);
   }
   const vz0 = Math.sqrt(2 * g * rise);
@@ -926,7 +991,7 @@ export function planStandingLayup(choice: LayupChoice, sit: LayupSituation, rati
   const p0 = sit.position.flat();
   const dir = rimFloor.sub(p0).flat().normalized(sit.facing);
   const dunk = isDunkFinish(choice.finish);
-  const rise = dunk ? clamp(dunkRise(shape, sit), DunkTuning.riseMin, DunkTuning.riseMax) : Math.max(0.42, shape.rise - 0.04);
+  const rise = dunk ? clamp(dunkRise(shape, sit), DunkTuning.riseMin, sit.dunk?.riseMax ?? DunkTuning.riseMax) : Math.max(0.42, shape.rise - 0.04);
   const vz0 = Math.sqrt(2 * g * rise);
   const tApex = vz0 / g;
   const tr = shape.releaseFrac * tApex;

@@ -16,6 +16,7 @@
 import { Vec3, clamp } from '../sim/HoopsMath';
 import {
   DunkRating,
+  approachAngleDeg,
   LayupFinish,
   LayupGather,
   type LayupChoice,
@@ -36,7 +37,7 @@ import {
   startHang,
 } from '../sim/HoopsLayup';
 import { HoldMove, HoldState, holdMoveForGesture } from '../sim/HoopsHold';
-import { ProStickRecognizer } from '../sim/HoopsProStick';
+import { ProStickRecognizer, type StickGesture, StickDir, StickGestureKind } from '../sim/HoopsProStick';
 
 /** Toque no X: soltou antes disso (s). */
 export const TapMaxSeconds = 0.17;
@@ -62,7 +63,7 @@ export class LayupDriver {
   private startNow = 0;
   released = false;
   /** X apertado longe demais: espera o jogador chegar. */
-  pending: { at: number; request: LayupRequest } | null = null;
+  pending: { at: number; request: LayupRequest; fromStick?: boolean } | null = null;
   /** Leitura do X durante o gather: quando apertou, quando soltou e quantas vezes apertou. */
   private x = { pressAt: 0, releasedAt: -1, presses: 0, tapHandled: false };
   /** Último aperto do X durante a bandeja/hop (o segundo aperto no hop sobe direto ao pousar, como no 2K24). */
@@ -165,7 +166,8 @@ export class LayupDriver {
     return this.pending !== null;
   }
 
-  begin(plan: LayupPlan, now: number, pressAt: number): void {
+  /** `fromStick`: pedida pelo RS (sem X apertado): o X não vira toque/toque duplo (o RS troca no gather, readStick). */
+  begin(plan: LayupPlan, now: number, pressAt: number, fromStick = false): void {
     this.plan = plan;
     this.hopStop = false;
     this.hold = null;
@@ -174,9 +176,10 @@ export class LayupDriver {
     this.released = false;
     this.pending = null;
     // Bandeja parada (saindo da bola presa): o X que finalizou não vira toque/toque duplo de novo.
-    const standing = plan.steps === 0;
-    this.x = { pressAt, releasedAt: -1, presses: standing ? 3 : 1, tapHandled: standing };
+    const noTap = plan.steps === 0 || fromStick;
+    this.x = { pressAt, releasedAt: -1, presses: noTap ? 3 : 1, tapHandled: noTap };
     this.lastPressAt = pressAt;
+    this.stick.reset();
   }
 
   /** Hop step do toque já decidido (o toque veio do arremesso ou do X que esperava): sem troca por toque duplo. */
@@ -269,6 +272,64 @@ export class LayupDriver {
     const plan = this.plan;
     if (!plan?.hang || xHeld) return;
     dropHang(plan, this.time(now));
+  }
+
+  /**
+   * RS no drible dirigindo para a cesta, dentro da zona (2K23, docs/02-controles.md §1). Sem RT: cima = bandeja; baixo =
+   * floater; lados = scoop com aquela mão (reversa vindo pela linha de fundo). Com RT (se a build enterra): cima = duas
+   * mãos; lados = uma mão com aquela mão; diagonais para baixo = tomahawk/moinho; diagonais para cima = cock-back;
+   * segurar para baixo = enterra e fica pendurado (o RS segurado na soltura). null = não é finalização (segue o drible).
+   */
+  stickRequest(gesture: StickGesture, sit: LayupSituation, sprint: boolean, canDunk: boolean): LayupRequest | null {
+    if (gesture.kind !== StickGestureKind.Flick && gesture.kind !== StickGestureKind.Hold) return null;
+    const dist = sit.position.sub(sit.rimFloor).length2D();
+    const speed = sit.velocity.length2D();
+    const toRim = sit.rimFloor.sub(sit.position).flat().normalized(sit.facing);
+    if (sit.velocity.flat().dot(toRim) < 1.5) return null;
+    const d = gesture.dir;
+    const side: Side | undefined =
+      d === StickDir.Left || d === StickDir.UpLeft || d === StickDir.DownLeft ? 'l' : d === StickDir.Right || d === StickDir.UpRight || d === StickDir.DownRight ? 'r' : undefined;
+    const dunk = sprint && canDunk;
+    let request: LayupRequest;
+    if (dunk) {
+      const F = LayupFinish;
+      const finish =
+        d === StickDir.Up || d === StickDir.Down
+          ? d === StickDir.Up ? F.DunkTwoHand : undefined
+          : d === StickDir.UpLeft || d === StickDir.UpRight
+            ? F.CockBack
+            : d === StickDir.DownLeft || d === StickDir.DownRight
+              ? speed > 4 ? F.Windmill : F.Tomahawk
+              : F.DunkOneHand;
+      request = { command: 'dunk', side, sprint, finish };
+    } else if (d === StickDir.Down) {
+      request = { command: 'floater', sprint };
+    } else if (side && (d === StickDir.Left || d === StickDir.Right)) {
+      // Vindo pela linha de fundo (de lado para o aro), o lado da linha de fundo é a reversa; senão scoop daquela mão.
+      const reverse = approachAngleDeg(sit.position, sit.rimFloor, sit.hoopForward) > 60 && chooseLayup({ command: 'reverse', sprint }, sit).hand === side;
+      request = reverse ? { command: 'reverse', sprint } : { command: 'scoop', side, sprint };
+    } else {
+      request = { command: 'auto', sprint };
+    }
+    if (dist > layupZoneM(speed, request.command)) return null;
+    return request;
+  }
+
+  /** RS no gather (antes da decolagem): switchback = euro para o lado do segundo toque; double throw = hop. */
+  readStick(now: number, proX: number, proY: number): LayupRequest | null {
+    const plan = this.plan;
+    const gestures = this.stick.update(now, proX, proY);
+    if (!plan || this.released || this.hopStop || isDunkFinish(plan.choice.finish)) return null;
+    if (this.time(now) > plan.takeoffAt - ReplanBeforeTakeoff) return null;
+    const g = plan.choice.gather;
+    for (const gesture of gestures) {
+      if (gesture.kind === StickGestureKind.Switchback && g !== LayupGather.Euro) {
+        const side: Side | undefined = gesture.dir === StickDir.Left ? 'l' : gesture.dir === StickDir.Right ? 'r' : undefined;
+        if (side) return { command: 'euro', side, sprint: false };
+      }
+      if (gesture.kind === StickGestureKind.DoubleThrow && g !== LayupGather.Hop) return { command: 'hop', sprint: false };
+    }
+    return null;
   }
 
   /** Corpo no instante: posição e velocidade do plano; o corpo olha entre a direção do movimento e o aro. */

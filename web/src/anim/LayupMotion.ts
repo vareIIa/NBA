@@ -891,8 +891,11 @@ export class LayupMotion {
       const downFrom = hang ? hang.dropAt + 0.05 : plan.releaseAt + (dunk ? 0.24 : 0.18);
       // Os braços descem até um pouco depois do pouso (o corpo já cai junto: descer antes dava a mão a ~7 m/s).
       const down = smooth(downFrom, Math.max(downFrom + 0.25, plan.landAt + 0.22), t);
-      palmShoot.lerp(this.fromBody(s * 0.3, 0.52 * H + zNow, 0.22), down);
-      palmOther.lerp(this.fromBody(-s * 0.3, 0.52 * H + zNow, 0.22), down);
+      // Desce num arco pela frente do corpo: a reta de cima da cabeça até a cintura passava rente ao ombro, o braço dobrava
+      // inteiro e o cotovelo virava (salto de ~0,4 m no floater).
+      const arc = 0.3 * Math.sin(Math.PI * down);
+      palmShoot.lerp(this.fromBody(s * 0.3, 0.52 * H + zNow, 0.22), down).addScaledVector(f.fwd, arc);
+      palmOther.lerp(this.fromBody(-s * 0.3, 0.52 * H + zNow, 0.22), down).addScaledVector(f.fwd, arc);
       nOtherNow = nOtherNow.lerp(f.up.clone().negate(), down).normalize();
       fingersOther = fingersOther.lerp(f.fwd, down).normalize();
       // De volta ao clipe/locomoção no fim.
