@@ -14,6 +14,9 @@ async function shot(page: Page, name: string): Promise<void> {
 
 async function waitForShots(page: Page, count: number): Promise<void> {
   await page.waitForFunction((n) => (window.__garrafao?.shots().length ?? 0) >= n, count, { timeout: 15_000 });
+  // Depois do arremesso a bola fica solta: o A (F no teclado) pede a bola de volta até a mão.
+  await page.waitForFunction(() => window.__garrafao?.phase() === 'loose', undefined, { timeout: 5_000 });
+  await hold(page, 'KeyF', 60);
   await page.waitForFunction(() => window.__garrafao?.phase() === 'dribble', undefined, { timeout: 5_000 });
 }
 

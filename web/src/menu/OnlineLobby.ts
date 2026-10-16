@@ -243,7 +243,9 @@ export class OnlineLobby implements MenuScreen {
     el('p', 'mn-sub', this.main, 'O servidor de salas não respondeu.');
     const box = el('div', 'ol-note', this.main);
     el('p', '', box, this.net.lastError || 'Sem conexão.');
-    el('p', '', box, 'No PC: rode "npm run server" na pasta web. Online: confira o VITE_MP_URL do deploy (docs/24).');
+    // Instrução de programador só no `npm run dev`; quem joga pelo site vê o que pode fazer.
+    if (import.meta.env.DEV) el('p', '', box, 'No PC: rode "npm run server" na pasta web. Online: confira o VITE_MP_URL do deploy (docs/24).');
+    else if (!this.net.versionMismatch) el('p', '', box, 'Confira a sua internet e tente de novo.');
     this.button('Tentar de novo', 'Conectar outra vez', () => void this.connect());
     this.button('Voltar', 'Menu principal', () => this.opts.onBack());
   }

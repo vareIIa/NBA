@@ -69,18 +69,21 @@ export const BehindBack = {
   catch: 0.92,
   /**
    * Centro da bola (com a mão) até a soltura; x positivo = lado da mão de origem (ver onSide). Como no jogo real: a mão
-   * puxa a bola para trás por fora da coxa, enrola atrás das pernas na altura do joelho/coxa e empurra para baixo e
-   * para o outro lado.
+   * puxa a bola para trás por fora da coxa, enrola em volta do quadril na altura da cintura e solta atrás do bolso do
+   * lado da bola, empurrando para baixo e para o outro lado: a bola cruza as costas no ar até o quique.
+   * Antes a mão levava a bola até o meio das costas (x −0,04) na altura da coxa: com a bermuda larga (≈41 cm de fundo)
+   * e o braço de ~0,6 m a palma não alcançava por fora e passava até 15 cm por dentro do quadril. Mais baixo (centro a
+   * ~0,55 m) a bola presa ficava dentro da cápsula da coxa do laboratório; na cintura ela passa acima da coxa.
    */
   heldKeys: [
     [0.0, [0.34, 0.62, 0.16]],
-    [0.14, [0.38, 0.56, -0.06]],
-    [0.28, [0.28, 0.52, -0.26]],
-    [0.4, [0.1, 0.5, -0.32]],
-    [0.5, [-0.04, 0.46, -0.3]],
+    [0.14, [0.38, 0.62, -0.04]],
+    [0.28, [0.34, 0.68, -0.2]],
+    [0.4, [0.29, 0.74, -0.3]],
+    [0.5, [0.26, 0.76, -0.35]],
   ] as ReadonlyArray<readonly [number, V3]>,
-  /** Quique atrás do calcanhar do outro pé. */
-  floor: [-0.2, BallRadius, -0.12] as V3,
+  /** Quique atrás do calcanhar do outro pé (bem atrás: o pé de lá fica embaixo do corpo no por trás). */
+  floor: [-0.18, BallRadius, -0.26] as V3,
   /** Recepção na outra mão, à frente e do lado novo. */
   catchPoint: [-0.38, 0.66, 0.24] as V3,
   /**
@@ -88,6 +91,17 @@ export const BehindBack = {
    * ginásio (MUvJacHl12g 89,0–89,3 s). À frente do peito (1,05 m) a mão ficava na altura do rosto com o corpo agachado.
    */
   offArmForward: [-0.28, 0.75, 0.4] as V3,
+  /** Saída do IK da mão da bola depois da soltura: começa `after` (u) depois dela e dura `len`. */
+  fromFade: { after: 0.04, len: 0.4 },
+  /**
+   * Tronco no por trás (graus no pico; ver behindBackTrunk): o ombro da mão da bola abre para trás e desce, como no
+   * jogo real. Com o tronco inclinado do size-up o ombro ficava ~45 cm à frente do caminho da bola e o braço não
+   * alcançava: a mão parava dentro da bermuda (até 15 cm).
+   * yaw: gira os ombros para o lado da bola (o ombro dela vai para trás); side: inclina para o lado da bola (o ombro
+   * desce); lift: desfaz parte da inclinação para a frente (o peito sobe e o ombro recua). inEnd/outStart/outEnd: u em
+   * que o giro chega ao pico, começa a voltar e termina de voltar.
+   */
+  trunk: { yawDeg: 30, sideDeg: 10, liftDeg: 12, headKeep: 0.7, inEnd: 0.3, outStart: 0.65, outEnd: 1.05 },
 };
 
 /**
@@ -111,12 +125,22 @@ export const behindBackOffArm = (fromHand: 'r' | 'l'): V3 => onSide(BehindBack.o
 export function behindBackArmWeights(u: number): { from: number; to: number; offArm: number } {
   // A mão da bola entra suave (antes pulava da pose do drible para o caminho por trás num quadro só).
   // O drible dura ~0,45 s: rampas de menos de ~0,1 s (u 0,2) davam tranco no braço.
-  const from = u <= BehindBack.release + 0.04 ? smooth(u / 0.22) : 1 - smooth((u - BehindBack.release - 0.04) / 0.4);
+  const F = BehindBack.fromFade;
+  const from = u <= BehindBack.release + F.after ? smooth(u / 0.22) : 1 - smooth((u - BehindBack.release - F.after) / F.len);
   const to = smooth((u - 0.48) / 0.4);
   // Braço livre: vai para a frente logo no começo e fica até a recepção assumir (o alvo desliza de um para o outro);
   // antes ele cedia antes de a recepção entrar e voltava para o clipe no meio (subia até a cabeça).
   const offArm = smooth(u / 0.22);
   return { from, to, offArm };
+}
+
+/**
+ * Quanto (0..1) do giro do tronco vale no progresso u: entra junto com a mão da bola, fica até depois da soltura (a mão
+ * ainda acompanha a bola para baixo) e sai antes da recepção, para a outra mão receber de frente.
+ */
+export function behindBackTrunk(u: number): number {
+  const T = BehindBack.trunk;
+  return smooth(u / T.inEnd) * (1 - smooth((u - T.outStart) / (T.outEnd - T.outStart)));
 }
 
 // ------------------------------------------------------------------------------------------- step-back

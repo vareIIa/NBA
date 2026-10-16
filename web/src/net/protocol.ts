@@ -6,10 +6,11 @@
 //   - Cada cliente simula o PRÓPRIO jogador (sem atraso no controle; o timing do arremesso é julgado no cliente, docs/03 §9)
 //     e manda o estado dele ~20 vezes por segundo ('st', que o servidor só repassa ao oponente).
 //   - A bola é do dono da posse: driblando, no voo e solta depois do arremesso, quem a simula é o cliente do atacante.
-//   - O servidor é o juiz: placar, posse, check-ball, relógio de posse, rebote (o primeiro pedido válido leva), vitória,
-//     queda de conexão e revanche.
+//   - O servidor é o juiz: placar, posse, check-ball, relógio de posse, rebote (o primeiro pedido válido leva), roubo
+//     (sorteado aqui, src/net/defense.ts), toco, vitória, queda de conexão e revanche.
 
-export const ProtocolVersion = 1;
+/** 2: defesa (roubo, toco, contestação com o estado do defensor) e cartão com os ratings de defesa. */
+export const ProtocolVersion = 2;
 export const WsPath = '/ws';
 /** Porta do servidor de desenvolvimento (web/server/dev.ts). */
 export const DevServerPort = 8790;
@@ -34,6 +35,14 @@ export interface PlayerCard {
   position: string;
   /** Defesa de perímetro (25–99): entra na contestação. */
   perimeterDefense: number;
+  /** Roubo, toco, impulsão e controle de bola (25–99): roubo e toco (src/net/defense.ts). Sem o campo, 60. */
+  steal?: number;
+  block?: number;
+  vertical?: number;
+  ballHandle?: number;
+  /** Níveis (0 = sem, 1–4 = Bronze–HOF) dos badges de roubo: Glove do defensor e Unpluckable do atacante. */
+  glove?: number;
+  unpluckable?: number;
 }
 
 /** Regras da partida (docs/10-modos.md: 1x1 de rua até 11, cestas de 1 e 2). */
@@ -82,6 +91,8 @@ export type MatchEvent =
   | { kind: 'noClear'; side: Side } // cesta sem limpar a bola: não vale, a bola troca
   | { kind: 'miss'; side: Side }
   | { kind: 'rebound'; side: Side; offensive: boolean }
+  | { kind: 'steal'; side: Side } // side = quem roubou (a posse troca como num rebote defensivo)
+  | { kind: 'block'; side: Side } // side = quem deu o toco (a bola fica solta)
   | { kind: 'cleared'; side: Side }
   | { kind: 'shotClock'; side: Side } // estouro do relógio de posse
   | { kind: 'deadBall'; side: Side } // bola solta sem dono por tempo demais: volta para a defesa
@@ -154,8 +165,12 @@ export type ClientMsg =
   | { t: 'st'; d: unknown }
   /** O atacante soltou o arremesso (o relógio de posse para). */
   | { t: 'g.release'; seq: number }
-  /** O arremesso resolveu (primeiro toque da bola no chão). */
+  /** O arremesso resolveu: primeiro toque da bola no chão, ou um erro que já não entra (caindo abaixo do aro sem cesta). */
   | { t: 'g.result'; seq: number; scored: boolean; isThree: boolean }
+  /** O arremesso tomou toco (o cliente do arremessador decide na soltura): a bola fica solta já. */
+  | { t: 'g.block'; seq: number }
+  /** Tapa do defensor na bola. exp = exposição da bola que ele viu (0..1); o juiz sorteia. */
+  | { t: 'g.steal'; seq: number; exp: number }
   /** Pedido da bola solta (rebote). at = onde o cliente viu a bola (núcleo, m). */
   | { t: 'g.claim'; seq: number; at: [number, number, number] }
   /** O atacante levou a bola para fora da linha de 3. */

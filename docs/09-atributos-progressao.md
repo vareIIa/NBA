@@ -28,6 +28,9 @@ O corpo usa o **mesmo mocap** com retarget por proporção; as diferenças de ga
 
 ## 3. Estilos (substituem badges)
 
+> **Substituído pela decisão D16:** o jogo usa os 64 badges do NBA 2K23. Ver `19-badges-2k23.md`. O texto abaixo fica
+> como histórico.
+
 O 2K tem dezenas de badges com níveis e fica difícil entender o que ativa o quê. Nós:
 
 - **~24 Estilos**, cada um com **efeito único, visível e explicado**.

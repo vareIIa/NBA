@@ -65,6 +65,45 @@ Para contato forte de alto impacto visual (pôster, toco em contato, queda após
 - **NBA The Run (2026)**: criticado por "não ter colisões reais". Contato **é** parte do basquete, e é onde podemos nos diferenciar.
 - **NBA 2K27**: reclamações de corpos embolados no garrafão e de bola "atravessando o corpo" no post. A bola tem colisores nos jogadores (§2), e o resolvedor tem um caso especial para 3 ou mais jogadores em contato simultâneo.
 
+## 5.1 Rede da cesta com física (versão three.js)
+
+Pedido do diretor (2026-10-14): a rede precisa reagir como na vida real, e **a bola nunca pode atravessar a rede**.
+
+Código em `web/src/sim/HoopsNet.ts` (física), `web/src/game/NetMesh.ts` (desenho) e `HoopsNet.test.ts` (testes). O
+`BallSim`, portado do C++, não mudou.
+
+**Como a rede é montada:**
+- Trama em losango, como a rede real: 12 ganchos no aro (FIBA), 6 fileiras de nós, 84 nós e 144 cordões.
+- 43 cm de comprimento e 150 g de massa.
+- A boca de baixo, em repouso, é mais estreita que a bola. Para passar, a bola abre os losangos, e é isso que faz a
+  rede "subir".
+
+**Como a física funciona:**
+- Dinâmica por posição (Verlet), com cordões de comprimento fixo e tirantes até o gancho, para a rede não esticar.
+- Os ganchos ficam pendurados logo abaixo do tubo do aro, e nenhum nó sobe acima deles. Assim nenhum cordão cruza o
+  aro, nem quando a bola levanta a rede. Isso corrigiu um bug do playtest em que, num arremesso real (a ~45°), o
+  cordão entrava 1 cm dentro do tubo.
+- Contato bola × cordão (cápsula), com massa dos dois lados.
+- Na passada final, um nó que chegou no limite do tirante não cede mais, e a correção vai toda para a bola. Com a rede
+  esticada, a bola é empurrada para fora e não passa.
+- A bola recebe a correção como velocidade, mais um arrasto de atrito (8/s) enquanto encosta na rede. Por isso ela sai
+  por baixo mais lenta e com a direção mudada.
+
+**Integração com o jogo:**
+- O `Freestyle` chama `onFlightTick` depois de cada tick do `BallSim` (120 Hz).
+- Fora do voo, a rede continua balançando sozinha até parar.
+- A rede fica abaixo do plano do aro, então não muda a detecção de cesta nem a decisão do arremesso.
+
+**Testes:**
+
+| Situação | O que o teste exige |
+|---|---|
+| Cesta limpa | A bola sai por baixo, mais de 15% mais lenta do que sem rede. |
+| Bola entrando de lado | A bola sai por baixo. |
+| Bola batendo na rede por fora | A rede cede e tira mais da metade da velocidade. |
+| 60 cestas aleatórias (ângulo e velocidade) | Nenhuma cruza um cordão: a folga entre a bola e qualquer cordão nunca fica abaixo de −12 mm. |
+| 40 arremessos reais (40–52°, 6–7 m/s, de todos os lados) e a rede em repouso | Nenhum nó passa do nível dos ganchos e nenhum cordão entra no tubo do aro. |
+
 ## 6. Performance
 
 - Até 10 jogadores + bola + árbitros: barato. O custo está em animação (Motion Matching é o mais caro → usar intervalo de busca de 2–4 frames e LOD de busca por distância da câmera).

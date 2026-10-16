@@ -62,4 +62,14 @@ export const Cenarios = {
   sem_bola_correndo: { hand: 'r', noBall: true, steps: wait(70, { moveY: 1, sprint: true }) },
   sem_bola_lado: { hand: 'r', noBall: true, steps: wait(60, { moveX: 1 }) },
   spin_na_linha: { hand: 'r', place: [2.6, 0.3], steps: [...wait(15, { moveY: 1 }), ...sweep(300, 12, { moveY: 1 }), ...wait(80, { moveY: 1, sprint: true })] },
+  // Drible parado e sai correndo (diretor, 2026-10-16: depois do escape e do por trás, um pé ficava preso no chão
+  // enquanto o corpo corria). O LS entra no meio do drible (o jogador já quer sair) ou logo depois dele.
+  escape_e_corre: { hand: 'r', steps: [...flick(0, 1, { sprint: true }), ...wait(10, { sprint: true }), ...wait(55, { moveY: 1, sprint: true })] },
+  escape_e_corre_lado: { hand: 'r', steps: [...flick(0, 1, { sprint: true }), ...wait(10, { sprint: true }), ...wait(55, { moveX: -0.7, moveY: 0.7, sprint: true })] },
+  por_tras_e_corre: { hand: 'r', steps: [...flick(-0.71, -0.71), ...wait(10), ...wait(55, { moveY: 1, sprint: true })] },
+  por_tras_e_corre_depois: { hand: 'r', steps: [...flick(-0.71, -0.71), ...wait(28), ...wait(50, { moveY: 1, sprint: true })] },
+  // Deslize lateral para o lado da mão da bola (o espelho de lado_direita) e um crossover no meio do deslize: os clipes
+  // Dribble_Side só quicam com a mão do outro lado (a bola ficava presa na mão).
+  lado_esquerda_mao_esq: { hand: 'l', steps: wait(60, { moveX: -1 }) },
+  lado_bola_cruza: { hand: 'r', steps: [...wait(30, { moveX: 1 }), ...flick(0, 1, { moveX: 1 }), ...wait(40, { moveX: 1 })] },
 };

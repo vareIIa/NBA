@@ -171,6 +171,14 @@ const CutMoves = new Set<DribbleMove>([
   DribbleMove.HesiCross,
 ]);
 const CutTurnRate = 7;
+/**
+ * Escape parado: fração do impulso para a frente do núcleo que fica (o resto do escape é de lado). Só o crossover de
+ * ataque tem os dois; com 0 ele só deslizava 1,2 m de lado, como um escape comum (diretor, 2026-10-16: "deveria se mover
+ * mais um pouquinho").
+ */
+const EscapeAttackForward = 0.6;
+/** m/s²: freada depois do escape parado com o LS solto (o embalo do impulso leva o corpo mais um pouco; 14 cortava seco). */
+const EscapeBrake = 9;
 /** Voo: depois desse tempo a bola é solta mesmo sem tocar o chão (presa na rede). */
 const FlightCapSeconds = 8;
 /** Buffer do X: um aperto que cai com o drible ainda em commit vale por este tempo (s). */
@@ -222,6 +230,8 @@ export class Freestyle {
   private moveSpeed = 0;
   private moveCarry = new Vec3(); // embalo para a frente que o drible mantém (o bom jogador acelera no corte)
   private moveIsStepBack = false;
+  /** O drible atual é um escape parado (RT sem LS): desliza de frente para a cesta, sem o giro do corte. */
+  private moveIsEscape = false;
   private lastWish = 0; // LS deste quadro (size-up: drible parado com o LS solto fica no lugar)
   private lastSprint = false; // RT deste quadro (com RT o mesmo comando vira escape e sai do lugar)
   private secondCrossAt = -1; // double cross: o segundo crossover
@@ -605,14 +615,19 @@ export class Freestyle {
     // RT (escape: o mesmo comando segurando RT sai para o lado).
     // O retreat tem seu próprio impulso de recuo e fica fora das regras do size-up parado.
     const retreat = active.move === DribbleMove.Retreat;
+    this.moveIsEscape = false;
     if (!retreat && !this.moveIsStepBack && !this.lastSprint && this.velocity.length2D() < 0.6 && this.lastWish < 0.2) {
       this.moveSpeed = 0;
       this.moveCarry = new Vec3();
     } else if (!retreat && !this.moveIsStepBack && this.lastSprint && this.velocity.length2D() < 0.6 && this.lastWish < 0.2) {
-      // Escape parado (GIF de escape moves do 2K24): reposiciona para o lado da mão nova, sem atacar para a frente.
-      this.moveSpeed = Math.abs(lateral);
-      this.moveDir = this.right().scale(lateral).normalized(this.facing);
+      // Escape parado (GIF de escape moves do 2K24): reposiciona para o lado da mão nova. O crossover de ataque guarda um
+      // pouco do ataque do núcleo (sai na diagonal, para cima do lado do defensor); os outros escapes vão só de lado.
+      const forward = lateral !== 0 ? Math.max(0, spec.forwardSpeed) * EscapeAttackForward : 0;
+      const escapeDir = this.right().scale(lateral).add(this.facing.scale(forward));
+      this.moveSpeed = escapeDir.length2D();
+      this.moveDir = escapeDir.normalized(this.facing);
       this.moveCarry = new Vec3();
+      this.moveIsEscape = true;
     }
     const label = dribbleMoveLabel(active.move);
     this.moves.push(label);
@@ -633,6 +648,8 @@ export class Freestyle {
     const now = this.now;
     const active = this.dribble.getActive();
     const inMove = this.phase === 'dribble' && this.dribble.isMoveActive(now);
+    // O escape parado acaba quando o corpo para ou o LS volta a mandar (a freada e a frente dele não ficam para depois).
+    if (!inMove && this.moveIsEscape && (this.lastWish >= 0.2 || this.velocity.length2D() < 0.05)) this.moveIsEscape = false;
 
     if (this.phase === 'dribble' || this.ballFree()) {
       // Velocidade pela direção em relação ao corpo: de frente corre, de lado desliza (size-up) e para trás recua mais
@@ -674,7 +691,8 @@ export class Freestyle {
       // No ar depois da soltura do jump shot: sem controle até pousar (como no 2K); o embalo do salto continua. Correndo
       // no ar, o corpo do arremesso deslizava e os pés pousavam longe do corpo.
       if (this.ballFree() && this.animator.shotAirborne()) target = this.velocity;
-      this.velocity = approachVelocity(this.velocity, target, dt, accel, inMove ? MoveAcceleration : Deceleration);
+      const brake = inMove ? MoveAcceleration : this.moveIsEscape && this.lastWish < 0.2 ? EscapeBrake : Deceleration;
+      this.velocity = approachVelocity(this.velocity, target, dt, accel, brake);
     } else if (this.phase === 'gather' && this.finish) {
       // Bandeja/enterrada (UE: UpdateFinish): rumo à cesta na velocidade combinada, com rampa a partir da velocidade atual
       // (sem o salto de zero para a velocidade de entrada num quadro só). Sem input até a soltura.
@@ -728,9 +746,10 @@ export class Freestyle {
       // Corte correndo (crossover, entre as pernas, por trás): depois que a bola sai da mão o corpo vira para o lado novo,
       // como no 2K. Travado até o fim do drible, o jogador corria na diagonal ainda de frente para a cesta (~0,4 s de
       // passo lateral a 4,6 m/s).
+      // O escape parado não é corte: o corpo desliza de frente (virando, a base dos pés girava junto e o pé de trás ficava).
       const move = this.dribble.getActive().move;
       const speed = this.velocity.length2D();
-      if (!CutMoves.has(move) || speed < 2 || !this.animator.moveBallReleased()) return;
+      if (!CutMoves.has(move) || this.moveIsEscape || speed < 2 || !this.animator.moveBallReleased()) return;
       const dir = this.velocity.flat().normalized(this.facing);
       if (dir.dot(this.facing) < -0.2) return;
       this.facing = turnFacing(this.facing, dir, CutTurnRate, dt);
@@ -745,7 +764,9 @@ export class Freestyle {
       const rimRight = upVector().cross(toRim).normalized();
       const lateral = dir.dot(rimRight); // + = para a direita de quem olha a cesta
       const towardBallSide = (lateral > 0) === (this.dribbler.ballHand() === 'r');
-      const strafe = !input.sprint && along < 0.55 && (along < -0.3 || !towardBallSide || speed < 2.2);
+      // Freando do escape parado com o LS solto: segue de frente para a cesta (não vira para o lado do deslize).
+      const escapeBrake = this.moveIsEscape && this.lastWish < 0.2;
+      const strafe = escapeBrake || (!input.sprint && along < 0.55 && (along < -0.3 || !towardBallSide || speed < 2.2));
       desired = strafe ? toRim : dir;
     } else if (this.ballFree() && this.faceTarget && !input.sprint) {
       // Defendendo (Online 1x1): de frente para o atacante, deslizando de lado e recuando; com RT corre virado.

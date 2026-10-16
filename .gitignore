@@ -17,7 +17,9 @@ Plugins/*/Intermediate/
 
 # Builds locais
 build/
-# ...menos o c�digo do MyPlayer Builder (regras da build do jogador, docs/23)
+# npx/npm rodados na raiz do repositório (o projeto web tem o próprio web/node_modules)
+/node_modules/
+# ...menos o código do MyPlayer Builder (regras da build do jogador, docs/23)
 !web/src/build/
 __pycache__/
 
@@ -26,6 +28,14 @@ opensim.log
 
 # Vídeos de referência de terceiros (análise interna, não versionar)
 referencias/real/
+
+# FBX brutos do Mixamo (a licença proíbe redistribuir os arquivos brutos; ver docs/18)
+Tools/Animacao/mixamo/
+# Locomoção do Mixamo já convertida: o jogo publicado leva, o repositório público não (decisão do diretor,
+# 2026-10-16; docs/24 §4.1). Sem ele o jogo usa a locomoção da CMU.
+web/public/assets/mocap/mixamo_loco.json
+# Pose tirada de vídeo de referência de terceiros (como referencias/real/): só para a comparação local (mocap.html).
+web/public/assets/mocap/kyrie_cross.json
 
 # Modelos brutos do HY 3D Studio (25–45 MB cada; as versões otimizadas ficam em web/public/assets/gear)
 web/public/assets/models_raw/

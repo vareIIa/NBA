@@ -56,6 +56,39 @@ const cB = new THREE.Vector3();
 const cN = new THREE.Vector3();
 const capSeg = new THREE.Line3();
 
+/**
+ * Avesso do tecido: o verso das faces (visto pela cava e pela boca da bermuda) usa a cor média da textura, mais escura,
+ * em vez da própria textura. A textura do HY põe faixas e debruns no verso também (vermelho dentro da cava do kit branco).
+ */
+function insideColor(m: THREE.MeshStandardMaterial): void {
+  const inside = { value: new THREE.Color(m.color).multiplyScalar(0.55) };
+  const img = m.map?.image as CanvasImageSource | undefined;
+  if (img && typeof document !== 'undefined') {
+    try {
+      const c = document.createElement('canvas');
+      c.width = c.height = 16;
+      const g = c.getContext('2d', { willReadFrequently: true })!;
+      g.drawImage(img, 0, 0, 16, 16);
+      const px = g.getImageData(0, 0, 16, 16).data;
+      let r = 0, gg = 0, b = 0, n = 0;
+      for (let i = 0; i < px.length; i += 4) if (px[i + 3] > 0) (r += px[i]), (gg += px[i + 1]), (b += px[i + 2]), n++;
+      // Média em sRGB -> linear (a cor do material é linear), escurecida como sombra de dentro da peça.
+      if (n > 0) inside.value.setRGB(r / n / 255, gg / n / 255, b / n / 255, THREE.SRGBColorSpace).multiply(m.color).multiplyScalar(0.55);
+    } catch {
+      // textura sem pixels legíveis: fica a cor do material escurecida
+    }
+  }
+  const prev = m.onBeforeCompile.bind(m);
+  m.onBeforeCompile = (shader, renderer) => {
+    prev(shader, renderer);
+    shader.uniforms.uInside = inside;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uInside;')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n  if (!gl_FrontFacing) diffuseColor.rgb = uInside;');
+  };
+  m.needsUpdate = true;
+}
+
 export class PlayerGear {
   private readonly cloth: ClothBone[] = [];
   private readonly capsules: { a: THREE.Bone; b: THREE.Bone; r: number }[] = [];
@@ -105,7 +138,10 @@ export class PlayerGear {
       // O PBR do HY deixa o tecido com cara de plástico molhado: pano é fosco e não metálico.
       // Dupla face: pela cava e pela boca da bermuda aparece o avesso do tecido (o corpo por baixo foi tirado).
       if (kind !== 'shoes')
-        for (const m of ([] as THREE.Material[]).concat(mesh.material) as THREE.MeshStandardMaterial[]) Object.assign(m, { metalness: 0, roughness: 0.85, metalnessMap: null, roughnessMap: null, side: THREE.DoubleSide });
+        for (const m of ([] as THREE.Material[]).concat(mesh.material) as THREE.MeshStandardMaterial[]) {
+          Object.assign(m, { metalness: 0, roughness: 0.85, metalnessMap: null, roughnessMap: null, side: THREE.DoubleSide });
+          insideColor(m);
+        }
       body.parent!.add(mesh);
       mesh.position.copy(body.position);
       mesh.quaternion.copy(body.quaternion);

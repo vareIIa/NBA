@@ -2,8 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { Hub, IdleTimeoutMs, ReconnectGraceMs, type Peer } from './Hub.ts';
 import { CheckMs, DeadMs, FirstCheckMs, LooseMaxMs } from './Referee.ts';
 import { type ClientMsg, type PlayerCard, ProtocolVersion, type ServerMsg, type Side, normalizeRoomCode, shotClockLeft } from '../protocol.ts';
+import {
+  GloveValues,
+  StealCooldownMs,
+  StealMaxChance,
+  UnpluckableValues,
+  ballExposure,
+  blockChance,
+  blockReachM,
+  contestJumpM,
+  stealChance,
+} from '../defense.ts';
+import { Badges } from '../../sim/HoopsBadges';
 
-const card = (name: string): PlayerCard => ({
+const card = (name: string, over: Partial<PlayerCard> = {}): PlayerCard => ({
   name,
   heightCm: 196,
   wingspanOverM: 0.05,
@@ -12,6 +24,7 @@ const card = (name: string): PlayerCard => ({
   archetype: 'Armador',
   position: 'PG',
   perimeterDefense: 70,
+  ...over,
 });
 
 class FakePeer implements Peer {
@@ -41,12 +54,12 @@ function setup(randomValues: number[] = []) {
   const hub = new Hub({ now: () => clock, random: () => (r < randomValues.length ? randomValues[r++] : 0.3) });
   let n = 0;
   const peers: FakePeer[] = [];
-  const join = (name: string, token?: string) => {
+  const join = (name: string, token?: string, over?: Partial<PlayerCard>) => {
     const peer = new FakePeer(`c${++n}`);
     peers.push(peer);
     hub.connect(peer);
     const send = (msg: ClientMsg) => hub.message(peer.id, JSON.stringify(msg));
-    send({ t: 'hello', v: ProtocolVersion, card: card(name), token });
+    send({ t: 'hello', v: ProtocolVersion, card: card(name, over), token });
     return { peer, send };
   };
   const advance = (ms: number, ping = true) => {
@@ -65,10 +78,10 @@ function setup(randomValues: number[] = []) {
 }
 
 /** Sala privada com os dois prontos: devolve os jogadores e o lado de quem ataca primeiro. */
-function privateMatch(randomValues: number[] = []) {
+function privateMatch(randomValues: number[] = [], cards: [Partial<PlayerCard>?, Partial<PlayerCard>?] = []) {
   const env = setup(randomValues);
-  const a = env.join('Ana');
-  const b = env.join('Bia');
+  const a = env.join('Ana', undefined, cards[0]);
+  const b = env.join('Bia', undefined, cards[1]);
   a.send({ t: 'room.create' });
   const code = a.peer.last('room')!.room.code;
   b.send({ t: 'room.join', code: code.toLowerCase() });
@@ -357,5 +370,162 @@ describe('Hub: queda de conexão', () => {
     expect(a.peer.last('match.state')!.event).toEqual({ kind: 'over', winner: 0, reason: 'forfeit' });
     // Na sala privada quem ficou continua lá, sozinho, esperando outro.
     expect(a.peer.last('room')!.room.players).toHaveLength(1);
+  });
+});
+
+describe('Defesa: regras do roubo e do toco (src/net/defense.ts)', () => {
+  it('os badges de roubo usam os valores do HoopsBadges', () => {
+    expect([...GloveValues]).toEqual([...Badges.Glove.values]);
+    expect([...UnpluckableValues]).toEqual([...Badges.Unpluckable.values]);
+  });
+
+  it('exposição: bola longe do corpo e do lado do defensor expõe; colada, do outro lado ou protegida, não', () => {
+    const base = { attacker: [0, 0] as const, defender: [-1, 0] as const, bouncing: true, protect: false };
+    const exposed = ballExposure({ ...base, ball: [-0.6, 0, 0.5] }); // crossover na frente, quicando
+    const close = ballExposure({ ...base, ball: [-0.2, 0, 0.7] });
+    const behind = ballExposure({ ...base, ball: [0.6, 0, 0.5] }); // do outro lado do corpo
+    const protectedBall = ballExposure({ ...base, ball: [-0.6, 0, 0.5], protect: true });
+    const held = ballExposure({ ...base, ball: [-0.6, 0, 0.5], bouncing: false });
+    const shooting = ballExposure({ ...base, ball: [-0.3, 0, 2.2], bouncing: false });
+    expect(exposed).toBeGreaterThan(0.8);
+    expect(close).toBeLessThan(exposed / 2);
+    expect(behind).toBeLessThan(exposed / 3);
+    expect(protectedBall).toBeLessThan(exposed);
+    expect(held).toBeLessThan(exposed);
+    expect(shooting).toBeLessThan(0.15);
+  });
+
+  it('chance de roubo: cresce com o rating e a exposição, os badges mexem e há teto', () => {
+    const def = card('D', { steal: 60 });
+    const att = card('A', { ballHandle: 60 });
+    expect(stealChance(def, att, 0)).toBe(0);
+    expect(stealChance(def, att, 1)).toBeGreaterThan(stealChance(def, att, 0.5));
+    expect(stealChance(card('D', { steal: 95 }), att, 1)).toBeGreaterThan(stealChance(def, att, 1));
+    expect(stealChance(def, card('A', { ballHandle: 95 }), 1)).toBeLessThan(stealChance(def, att, 1));
+    const glove = stealChance(card('D', { steal: 60, glove: 3 }), att, 0.5) / stealChance(def, att, 0.5);
+    expect(glove).toBeCloseTo(GloveValues[2], 6);
+    const unpluckable = stealChance(def, card('A', { ballHandle: 60, unpluckable: 4 }), 0.5) / stealChance(def, att, 0.5);
+    expect(unpluckable).toBeCloseTo(UnpluckableValues[3], 6);
+    expect(stealChance(card('D', { steal: 99, glove: 4 }), card('A', { ballHandle: 25 }), 1)).toBe(StealMaxChance);
+  });
+
+  it('toco: só ao alcance da mão, mais perto e com mais rating é mais provável; o pulo vem da impulsão', () => {
+    expect(blockChance(60, blockReachM(60) + 0.01)).toBe(0);
+    expect(blockChance(60, 0.05)).toBeGreaterThan(blockChance(60, 0.25));
+    expect(blockChance(95, 0.2)).toBeGreaterThan(blockChance(40, 0.2));
+    expect(blockReachM(99)).toBeGreaterThan(blockReachM(25));
+    expect(contestJumpM(99)).toBeGreaterThan(contestJumpM(25));
+    expect(contestJumpM(25)).toBeGreaterThan(0.3);
+  });
+});
+
+describe('Referee: roubo, toco e rebote no ar', () => {
+  /** Partida valendo; `defCard` vai nos dois cartões (o primeiro ataque é sorteado) e o teste usa o do defensor. */
+  function live(defCard: Partial<PlayerCard> = {}, randomValues: number[] = []) {
+    const env = privateMatch(randomValues, [defCard, defCard]);
+    env.advance(FirstCheckMs);
+    const off = env.start.state.offense;
+    const def = (1 - off) as Side;
+    return { ...env, off, def, attacker: env.players[off], defender: env.players[def] };
+  }
+
+  it('roubo: o tapa com a bola exposta rouba; a posse troca como num rebote defensivo (precisa limpar)', () => {
+    // Roubo 99 com a bola toda exposta: ~40%; o sorteio do teste dá 0,3.
+    const { a, b, def, defender, attacker } = live({ steal: 99 });
+    const s0 = state(a.peer);
+    expect(s0.phase).toBe('live');
+    defender.send({ t: 'g.steal', seq: s0.seq, exp: 1 });
+    const s = state(a.peer);
+    expect(s.offense).toBe(def);
+    expect(s.ball).toBe('held');
+    expect(s.needsClear).toBe(true);
+    expect(s.seq).toBe(s0.seq + 1);
+    expect(s.clockRunning).toBe(true);
+    expect(shotClockLeft(s, s.clockAt)).toBe(24000);
+    expect(a.peer.last('match.state')!.event).toEqual({ kind: 'steal', side: def });
+    expect(b.peer.last('match.state')!.event).toEqual({ kind: 'steal', side: def });
+    // Quem perdeu a bola não relata mais soltura nessa posse; quem roubou ataca.
+    attacker.send({ t: 'g.release', seq: s.seq });
+    expect(state(a.peer).ball).toBe('held');
+    defender.send({ t: 'g.release', seq: s.seq });
+    expect(state(a.peer).ball).toBe('air');
+    expect(state(a.peer).shooter).toBe(def);
+  });
+
+  it('roubo: bola protegida falha; o tapa seguinte espera o intervalo', () => {
+    const { a, def, defender, advance } = live({ steal: 99 });
+    const s0 = state(a.peer);
+    const before = a.peer.all('match.state').length;
+    defender.send({ t: 'g.steal', seq: s0.seq, exp: 0.2 }); // ~8% < 0,3: falha, nada muda
+    expect(state(a.peer).offense).toBe(s0.offense);
+    expect(a.peer.all('match.state').length).toBe(before);
+    defender.send({ t: 'g.steal', seq: s0.seq, exp: 1 }); // dentro do intervalo: nem sorteia
+    expect(state(a.peer).offense).toBe(s0.offense);
+    advance(StealCooldownMs);
+    defender.send({ t: 'g.steal', seq: s0.seq, exp: 1 });
+    expect(state(a.peer).offense).toBe(def);
+  });
+
+  it('roubo: do próprio atacante, de outra posse ou com a bola no ar é ignorado', () => {
+    const { a, attacker, defender } = live({ steal: 99 });
+    const s0 = state(a.peer);
+    attacker.send({ t: 'g.steal', seq: s0.seq, exp: 1 });
+    defender.send({ t: 'g.steal', seq: s0.seq - 1, exp: 1 });
+    expect(state(a.peer).offense).toBe(s0.offense);
+    attacker.send({ t: 'g.release', seq: s0.seq });
+    defender.send({ t: 'g.steal', seq: s0.seq, exp: 1 });
+    expect(state(a.peer).ball).toBe('air');
+    expect(state(a.peer).offense).toBe(s0.offense);
+  });
+
+  it('roubo: o sorteio é do juiz com os cartões (Unpluckable do atacante segura o tapa)', () => {
+    // Roubo 99 (~40% com a bola exposta) contra Unpluckable HOF (×0,4 → ~16%): o sorteio de 0,3 não rouba.
+    const { a, off, defender } = live({ steal: 99, unpluckable: 4 });
+    const s0 = state(a.peer);
+    defender.send({ t: 'g.steal', seq: s0.seq, exp: 1 });
+    expect(state(a.peer).offense).toBe(off);
+  });
+
+  it('toco: quem arremessou relata e a bola fica solta já; o rebote do defensor precisa limpar', () => {
+    const { a, b, def, attacker, defender } = live();
+    const s0 = state(a.peer);
+    attacker.send({ t: 'g.release', seq: s0.seq });
+    // Só quem arremessou relata o toco, e só com a bola no ar.
+    defender.send({ t: 'g.block', seq: s0.seq });
+    expect(state(a.peer).ball).toBe('air');
+    attacker.send({ t: 'g.block', seq: s0.seq });
+    let s = state(a.peer);
+    expect(s.ball).toBe('loose');
+    expect(s.seq).toBe(s0.seq);
+    expect(b.peer.last('match.state')!.event).toEqual({ kind: 'block', side: def });
+    // O quique depois do toco não resolve nada (a bola já está solta) nem pontua.
+    attacker.send({ t: 'g.result', seq: s0.seq, scored: true, isThree: false });
+    expect(state(a.peer).score).toEqual([0, 0]);
+    defender.send({ t: 'g.claim', seq: s0.seq, at: [6, 0, 1] });
+    s = state(a.peer);
+    expect(s.offense).toBe(def);
+    expect(s.needsClear).toBe(true);
+    expect(a.peer.last('match.state')!.event).toEqual({ kind: 'rebound', side: def, offensive: false });
+  });
+
+  it('toco antes da soltura não existe (bola na mão)', () => {
+    const { a, attacker } = live();
+    const s0 = state(a.peer);
+    attacker.send({ t: 'g.block', seq: s0.seq });
+    expect(state(a.peer).ball).toBe('held');
+  });
+
+  it('rebote no ar: o erro relatado antes do quique já solta a bola; o quique depois é ignorado', () => {
+    const { a, def, attacker, defender } = live();
+    const s0 = state(a.peer);
+    attacker.send({ t: 'g.release', seq: s0.seq });
+    attacker.send({ t: 'g.result', seq: s0.seq, scored: false, isThree: false }); // caindo abaixo do aro, sem cesta
+    expect(state(a.peer).ball).toBe('loose');
+    defender.send({ t: 'g.claim', seq: s0.seq, at: [1, 0, 2.4] }); // pega no ar
+    const s = state(a.peer);
+    expect(s.offense).toBe(def);
+    // O primeiro quique (relato da posse que acabou) não mexe em nada.
+    attacker.send({ t: 'g.result', seq: s0.seq, scored: false, isThree: false });
+    expect(state(a.peer)).toEqual(s);
   });
 });

@@ -5,7 +5,8 @@ import { type Hand, MoveTimings, type MoveKind } from '../anim/ClipLibrary';
 import { type JumpShotSetup, parseSetup } from '../shot/JumpShotSetup';
 import type { Json } from './Wire';
 
-export const PayloadVersion = 1;
+/** 2: defesa (mãos para cima, pulo de contestação, tapa do roubo) e o estado dela na amostra (df). */
+export const PayloadVersion = 2;
 export const MaxCommands = 32;
 
 export type V3 = [number, number, number];
@@ -40,6 +41,8 @@ export interface PoseSample {
   lt?: number;
   /** Pose da bola presa (setHoldPose) deste quadro. */
   hp?: { pose: Json; t: number };
+  /** Defesa (animator.defenseState): mãos para cima (0..1) e altura do pulo (m); só quando há alguma. */
+  df?: [number, number];
   ball: BallTransform | null;
 }
 
@@ -61,7 +64,11 @@ export type AnimCommand =
   | { op: 'finish'; t: number; dunk: 0 | 1; hand: Hand; timing: V3; air: number }
   | { op: 'layup'; t: number; plan: Json; ball: V3 }
   | { op: 'hold'; t: number; pose: Json; ball: V3 }
-  | { op: 'gesture'; t: number; name: string };
+  | { op: 'gesture'; t: number; name: string }
+  /** Defesa: mãos para cima (RS) liga/desliga, pulo de contestação de h m (Y) e tapa do roubo (X). */
+  | { op: 'hands'; t: number; up: 0 | 1 }
+  | { op: 'contest'; t: number; h: number }
+  | { op: 'steal'; t: number; hand: Hand };
 
 export interface Payload {
   v: number;
@@ -122,6 +129,10 @@ function sample(x: unknown): PoseSample {
     const hp = obj(o.hp);
     out.hp = { pose: hp.pose as Json, t: num(hp.t, 60) };
   }
+  if (o.df !== undefined) {
+    if (!Array.isArray(o.df) || o.df.length !== 2) throw new Invalid();
+    out.df = [num(o.df[0], 1), num(o.df[1], 2)];
+  }
   return out;
 }
 
@@ -162,6 +173,12 @@ function command(x: unknown): AnimCommand {
     case 'gesture':
       if (typeof o.name !== 'string' || o.name.length > 32) throw new Invalid();
       return { op: 'gesture', t, name: o.name };
+    case 'hands':
+      return { op: 'hands', t, up: flag(o.up) };
+    case 'contest':
+      return { op: 'contest', t, h: num(o.h, 1.5) };
+    case 'steal':
+      return { op: 'steal', t, hand: hand(o.hand) };
     default:
       throw new Invalid();
   }

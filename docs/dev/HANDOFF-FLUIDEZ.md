@@ -637,3 +637,94 @@ O Codex fez a 1ª etapa de responsividade (LS radial, freio na inversão, giro d
   Não mexido.
 - e2e contra build congelado: `E2E_ORIGIN=http://127.0.0.1:5174 npx playwright test ...` ("lab-congelado" no
   .claude/launch.json serve `Saved/lab-dist`).
+
+## 14. Escape e saída correndo: o pé preso no chão (2026-10-16)
+
+Pedido do diretor (print do crossover de ataque parado): "a perna fica presa no lugar e buga", "deveria se mover mais um
+pouquinho"; depois: "faço um behind the back e corro, o pé fica bugado no chão; a mesma coisa com o escape".
+Antes/depois: `docs/img/escape-perna-antes-depois.jpg`. Cenários novos no laboratório: `escape_e_corre`,
+`escape_e_corre_lado`, `por_tras_e_corre`, `por_tras_e_corre_depois`.
+
+### Diagnóstico
+
+- **Um pé sem vez na base do escape.** Os passos são um de cada vez e o pé do lado para onde o corpo vai era sempre
+  testado primeiro; com o corpo andando, ele já pedia outro passo quando pousava e o de trás ficava pregado até o corpo
+  parar (1,4 m atrás no crossover de ataque parado, base de 1,17 m; no por trás seguido de corrida ele nunca saía).
+- **O escape parado girava o corpo 90°.** O giro do corte (`CutMoves`, feito para o crossover correndo) ligava porque a
+  velocidade lateral do escape passa de 2 m/s; a base do escape (no referencial do jogador) girava junto.
+- **Sair correndo de um drible parado.** Os passos do escape (0,14 s) seguiam até 4 m/s (passadas de 1,5 m) e, quando a
+  base soltava, o pé era arrastado ~1,2 m pelo chão até a pose da corrida (até 15–18 m/s de deslize).
+
+### O que mudou
+
+- `PlayerAnimator.applyPlantedStance` (escape): os pés **alternam** (`plant.lastStep`) e o pé no ar **mira onde o corpo
+  vai estar** até a metade do passo (`EscapeStep.retarget`); freando, o passo mira onde o corpo vai parar (v²/2a).
+  Enquanto o corpo ainda freia, o assentamento da base espera (`standingSettleUntil`).
+- **Saída correndo** (`RunOut`, chave `runOutEnabled`): drible parado + corpo indo para a frente ≥ 1,5 m/s (ou ≥ 3,2 m/s
+  em qualquer direção) deixa de ser parado (`updateRunOut`): as pernas passam para a locomoção (a camada das pernas entra
+  em rampa) e a base entrega os pés à trava de pé (`handOffPlant`) depois que o pé no meio de um passo pousa. O pé que a
+  corrida já quer no ar fica no chão por 0,12 s como impulso (`footLock.pinned`, com a sola mais baixa no chão: preso pelo
+  tornozelo a ponta entrava 4,6 cm no piso) e depois sobe até a pose do clipe.
+- Deslize para o lado da mão da bola com os pés na base (o escape vai para o lado da mão nova): o drible é o do loop
+  parado dessa mão (`chooseBase`). Os dois `Dribble_Side` só quicam com a mão do outro lado e a bola ficava 0,6 s na mão.
+- `Freestyle`: o escape parado (`moveIsEscape`) não tem o giro do corte e, freando com o LS solto, segue de frente para a
+  cesta; o crossover de ataque parado guarda 60% do ataque para a frente do núcleo (`EscapeAttackForward`) e freia a
+  9 m/s² (`EscapeBrake`): desloca 1,52 m na diagonal (antes 1,18 m, virando de lado).
+
+### Números (laboratório a 60 Hz; "antes" = código anterior, mesmo cenário)
+
+| cenário | pé desliza máx (méd) | base máx |
+| --- | --- | --- |
+| escape_cross | 7,69 (0,94) -> 6,98 (0,52) m/s | 1,17 -> 1,14 m |
+| escape_e_corre | 13,40 (1,28) -> 6,81 (0,91) | 1,06 -> 1,08 |
+| por_tras_e_corre_depois | 13,22 (0,77) -> 7,88 (0,56) | 0,95 -> 0,92 |
+
+A/B da saída correndo (`runOutEnabled` desligado x ligado, mesmo build, os 42 cenários com bola): só os 4 cenários novos
+mudam; `escape_e_corre_lado` 18,0 -> 7,3 m/s, `por_tras_e_corre` 11,9 -> 6,5 m/s. Unitários e e2e (`movement`,
+`freestyle`) passando.
+
+### Pendências
+
+- ~~Deslize lateral comum para o lado da mão da bola~~: feito, ver a seção 15.
+- Correndo com a bola na esquerda depois do escape, a ponta do pé de impulso afunda ~2–3 cm no piso (passada do Mixamo).
+- Saindo em diagonal, as coxas encostam 1–2 cm por ~10 quadros no começo da corrida (a corrida em diagonal já faz isso).
+
+## 15. Deslize lateral para o lado da mão da bola: a bola presa na cintura (2026-10-16)
+
+Os dois `Dribble_Side` da CMU só quicam com a mão do lado oposto ao deslize (Side_R anda para a esquerda com a bola na
+direita; o espelho para a direita com a bola na esquerda). Deslizando para o lado da mão da bola o jogo tocava o Side da
+outra mão: a bola ficava parada na cintura e a mão vazia fazia o drible no ar (`lado_direita`: 1 quique em 1 s; o espelho,
+`lado_esquerda_mao_esq`: nenhum). Antes/depois: `docs/img/deslize-mao-da-bola-antes-depois.jpg`.
+
+### O que mudou
+
+- `PlayerAnimator.chooseBase`: para o lado da mão da bola o loop é o drible parado dessa mão (`Dribble_Idle_<mão>`, ou
+  `Dribble_Low` com LT) e as pernas e a pelve vêm do Side da direção (`BaseState.legs`, aplicadas por osso em
+  `applyBaseLegs`, com o tempo e a velocidade de passada próprios em `baseLegs`). Os quiques, o braço da bola, o braço de
+  guarda e o drible baixo passam a ser da mão certa porque todos leem o nome do loop. Num drible no meio do deslize a
+  camada das pernas usa as mesmas pernas, no mesmo tempo (`applyLegLayer`, `switchBase` casa a fase da passada).
+- Só até 2,3 m/s (`SideBallLegsMaxSpeed`): o Side anda 1,23 m/s e toca até 1,7x; acima disso o pé rente ao chão
+  arrastava a 9 m/s, e o corpo já vira para correr (Freestyle, 2,2 m/s). A saída desse modo é imediata (sem a histerese
+  de 0,16 s): freando de lado, as pernas seguiam dando passos com o corpo parado por 10 quadros.
+- Chave de A/B: `LAB_ANIM='{"sideBallLegsEnabled":false}'`. Cenários novos: `lado_esquerda_mao_esq`, `lado_bola_cruza`.
+
+### Números (laboratório a 60 Hz, chave desligada x ligada, mesmo build, 44 cenários com bola)
+
+Mudam 8 cenários; os outros 36 ficam iguais.
+
+| cenário | quiques | pernas cruzando | bola no corpo | pé desliza máx (méd) |
+| --- | --- | --- | --- | --- |
+| lado_direita | 1 -> 3 | 4 -> 4 q | 2 -> 0 q | 4,42 (1,03) -> 6,05 (1,06) m/s |
+| lado_esquerda_mao_esq | 0 -> 2 | 2 -> 4 | 0 -> 0 | 7,41 (1,02) -> 7,40 (1,19) |
+| lado_bola_cruza | 2 -> 3 | 17 -> 12 | 6 -> 0 | 3,84 (1,17) -> 6,05 (1,27) |
+| lado_cross_lado | 3 -> 4 | 21 -> 9 | 3 -> 0 | 6,87 (1,30) -> 8,33 (1,52) |
+
+- Estalos do braço da bola: 8 -> 31 em `lado_direita`, porque ele passou a driblar (antes segurava a bola parado). É o
+  nível de qualquer drible em movimento (`andando` 29, `lado_esquerda` 40).
+- Os picos do pé são o pé que passa rente ao chão no próprio Side (ponta a 3,7–4,4 cm, conta como apoiado no laboratório);
+  com o Side puro eles já existiam (3–4,4 m/s). Em `lado_cross_lado` o crossover acelera de lado até 3 m/s e a troca para
+  as pernas da corrida custa 2 quadros a ~8 m/s.
+- `para_e_cruza` tem um quique a menos só na janela do cenário: freando, o loop parado entra pela fase (antes entrava pela
+  recepção depois de um quadro de Side) e a bola fica 0,25 s na mão em vez de 0,12 s; estendendo o cenário o ritmo é igual.
+- Unitários (339) e e2e (`movement`, `freestyle`) passando. `tsc` acusa `e2e/_publicado.spec.ts` (arquivo de outra
+  sessão, `hub` possivelmente nulo), fora deste trabalho.

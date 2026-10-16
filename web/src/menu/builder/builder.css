@@ -291,19 +291,28 @@
 .bd-row .d.down {
   color: #ff5b5b;
 }
+/* A barra é a área de arrastar com o mouse (a linha inteira de altura); a trilha de 7 px fica no meio dela. */
 .bd-bar {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.bd-track {
   position: relative;
+  flex: 1;
   height: 7px;
   background: rgba(255, 255, 255, 0.07);
 }
 /* Teto do corpo: faixa mais clara na cor do grupo. */
-.bd-bar s {
+.bd-track s {
   position: absolute;
   inset: 0 auto 0 0;
   background: color-mix(in srgb, var(--g) 32%, transparent);
 }
 /* Valor atual: cheio na cor do grupo. */
-.bd-bar i {
+.bd-track i {
   position: absolute;
   inset: 0 auto 0 0;
   background: var(--g);
@@ -312,6 +321,29 @@
   transition: width 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
   animation: bd-grow 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   animation-delay: calc(120ms + var(--i) * 14ms);
+}
+/* Alça no fim do valor (aparece na linha escolhida e no hover: dá para arrastar). */
+.bd-track i::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -3px;
+  bottom: -4px;
+  width: 6px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 0 6px color-mix(in srgb, var(--g) 70%, transparent);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.bd-row:hover .bd-track i::after,
+.bd-row.on .bd-track i::after {
+  opacity: 1;
+}
+/* Arrastando: a barra segue o mouse sem atraso. */
+.bd-row.drag .bd-track i {
+  transition: none;
 }
 .bd-row.on {
   background: #f1f3f7;
@@ -331,11 +363,15 @@
 .bd-row.on.full .m {
   color: #b07000;
 }
-.bd-row.on .bd-bar {
+.bd-row.on .bd-track {
   background: rgba(0, 0, 0, 0.12);
 }
-.bd-row.on .bd-bar s {
+.bd-row.on .bd-track s {
   background: color-mix(in srgb, var(--g) 38%, white);
+}
+.bd-row.on .bd-track i::after {
+  background: #0b0d12;
+  box-shadow: 0 0 0 1px #fff;
 }
 .bd-row.on .d.up {
   color: #128a3e;
@@ -568,7 +604,12 @@
 .bd-badge.bump .bd-shield {
   animation: bd-bump 0.35s ease-out;
 }
+/* Preso no fim da coluna: em tela baixa a coluna rola por baixo dele, mas o botão nunca fica cortado. */
 .bd-preset-btn {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;

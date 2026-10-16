@@ -36,6 +36,7 @@ import { type JumpShotSetup, defaultSetup, formOf } from '../shot/JumpShotSetup'
 import { JumpShotMotion, type ShotCarry } from './JumpShotMotion';
 import { pullUpForm } from '../shot/ShotForms';
 import { IdleLife } from './IdleLife';
+import { DefenseMotion, type DefenseRig } from './DefenseMotion';
 import { ArmClearance } from './ArmClearance';
 import {
   BallRadius,
@@ -49,6 +50,7 @@ import {
   behindBackCatch,
   behindBackFloor,
   behindBackOffArm,
+  behindBackTrunk,
   footStep,
   halfSpinTurn,
   sideSign,
@@ -114,6 +116,8 @@ export interface BallRelease {
 interface BaseState {
   name: string; // clipe
   base: string; // "Dribble_Walk" etc.
+  /** Pernas e pelve de outro loop (camada por osso): o deslize para o lado da mão da bola (ver chooseBase). */
+  legs?: string;
 }
 
 type ActionKind = MoveKind | 'Shot' | 'Celebrate';
@@ -193,6 +197,12 @@ const MixamoBounceTau = 0.45;
 /** |frente| / velocidade: abaixo do primeiro (de lado) só CMU; acima do segundo (frente/trás) só Mixamo. */
 const MixamoAlong = [0.45, 0.75];
 const LegLayerSpeed = [0.5, 1.2]; // m/s: abaixo, as pernas do drible parado; acima, as da locomoção
+/**
+ * m/s: até aqui o deslize para o lado da mão da bola usa as pernas do Dribble_Side (com o drible do loop parado da mão).
+ * O Side anda 1,23 m/s e toca até 1,7x (~2,1 m/s): mais rápido, o pé que passa rente ao chão arrastava a 9 m/s (crossover
+ * acelerando de lado a 3 m/s). Acima disso o corpo já vira para correr (Freestyle.updateFacing, 2,2 m/s).
+ */
+const SideBallLegsMaxSpeed = 2.3;
 // Size-up parado (referências: Harden no 2K23, u8jYUDS2eoo 47,7–51,0 s; Kyrie x Bulls, LZSlFyyCkhk 43,1–48,3 s): os
 // dribles no lugar não tiram o jogador da base. Pés abertos e pregados, quadril baixo; só o quadril balança sobre eles.
 const SizeUpMoves = new Set<string>(['Cross', 'BetweenLegs', 'Hesitation', 'BehindBack']);
@@ -251,7 +261,18 @@ const EscapeMoves = new Set<string>([...SizeUpMoves, 'EscapeCross']);
 // lead: quanto à frente (s) o passo mira; o corpo segue andando enquanto o outro pé vem, então o pé da frente abre mais.
 const SpinFreeHand = { outside: 0.3, forward: 0.35, height: 0.22 }; // m: palma do braço livre no spin (corpo)
 const HalfSpinBall = { release: 0.3, catch: 0.85 }; // frações do half spin (o giro vira em 0,5)
-const EscapeStep = { threshold: 0.12, seconds: 0.14, lead: 0.18 };
+// retarget: fração do passo até a qual o pé no ar segue o alvo (o corpo acelerando); depois o alvo fica e ele pousa parado.
+const EscapeStep = { threshold: 0.12, seconds: 0.14, lead: 0.18, retarget: 0.55 };
+/**
+ * Saída correndo de um drible parado (escape, por trás, crossover, entre as pernas): com o corpo indo para a frente acima
+ * de `speed` (m/s), e com pelo menos `along` da velocidade para a frente, as pernas passam para a locomoção (camada das
+ * pernas e Mixamo) e os pés da base vão para a trava de pé (o de apoio fica no chão até a passada levantá-lo). Antes os
+ * passos do escape (0,14 s) seguiam correndo a 4 m/s, em passadas de 1,5 m, e quando a base soltava o pé era arrastado
+ * ~1,2 m pelo chão até a pose da corrida (diretor, 2026-10-16: "o pé fica bugado no chão").
+ */
+// anySpeed: em qualquer direção (diagonal, de lado) acima disso também é corrida (o escape em si anda ~2,8 m/s).
+// pushOff: s que o pé de apoio fica no chão quando a passada da corrida já o quer no ar (o impulso), antes de subir.
+const RunOut = { speed: 1.5, along: 0.6, anySpeed: 3.2, pushOff: 0.12 };
 // Comemorações depois da cesta, em ciclo.
 /** Soft IK do braço: freia nos últimos 8% do alcance (mão baixa no drible estica o braço quase todo). */
 const ArmSoftReach = 0.08;
@@ -360,8 +381,17 @@ export class PlayerAnimator {
   private hasBall = true;
   /** Camada das pernas: loop de locomoção que segue tocando nas pernas durante um drible em movimento. */
   private readonly legLayer = { clip: '', time: 0, weight: 0 };
+  /** Tempo e velocidade das pernas do loop da base quando elas vêm de outro clipe (base.legs). */
+  private readonly baseLegs = { time: 0, rate: 1 };
+  /**
+   * Deslize para o lado da mão da bola: drible do loop parado da mão, pernas do Side (base.legs). Chave de A/B do
+   * laboratório (LAB_ANIM='{"sideBallLegsEnabled":false}' volta ao Side da outra mão, com a bola presa).
+   */
+  sideBallLegsEnabled = true;
   /** O drible atual começou parado (size-up ou escape): pernas pela base plantada, não pela locomoção. */
   private moveStartedStanding = false;
+  /** Relógio em que o drible parado virou saída correndo (RunOut): a camada das pernas entra em rampa a partir daí. */
+  private runOutClock = -Infinity;
   /** Até quando (relógio) os pés continuam na base plantada depois de um drible que começou parado (o corpo freia). */
   private standingSettleUntil = 0;
   /** Base do escape: onde cada pé fica em relação ao corpo (tirado da base plantada no começo do drible). */
@@ -381,8 +411,10 @@ export class PlayerAnimator {
   private widen = 0;
   /** Trava de pé: enquanto o pé está apoiado na animação, ele fica preso no chão (mundo) e não patina. */
   private readonly footLock = {
-    l: { locked: false, pos: new THREE.Vector3(), prevAnim: new THREE.Vector3(), release: new THREE.Vector3(), releaseT: 1, land: new THREE.Vector3(), prevToe: 1 },
-    r: { locked: false, pos: new THREE.Vector3(), prevAnim: new THREE.Vector3(), release: new THREE.Vector3(), releaseT: 1, land: new THREE.Vector3(), prevToe: 1 },
+    // pinUntil: impulso da saída correndo (handOffPlant): até lá o pé fica inteiro no chão (também na altura), mesmo com o
+    // pé do clipe no ar; pinned = a altura está presa (a soltura leva o pé do chão até a altura do clipe).
+    l: { locked: false, pos: new THREE.Vector3(), prevAnim: new THREE.Vector3(), release: new THREE.Vector3(), releaseT: 1, land: new THREE.Vector3(), prevToe: 1, pinUntil: 0, pinned: false },
+    r: { locked: false, pos: new THREE.Vector3(), prevAnim: new THREE.Vector3(), release: new THREE.Vector3(), releaseT: 1, land: new THREE.Vector3(), prevToe: 1, pinUntil: 0, pinned: false },
   };
   footLockEnabled = true;
   /**
@@ -412,6 +444,10 @@ export class PlayerAnimator {
     // dur/lift: passo da tesoura (DribbleFootwork), com duração e altura próprias; 0 = passinho de ajuste normal.
     l: { pos: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1, dur: 0, lift: 0 },
     r: { pos: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1, dur: 0, lift: 0 },
+    /** Último pé que deu passo (no escape os pés alternam; null = o próximo é o do lado para onde o corpo vai). */
+    lastStep: null as Hand | null,
+    /** A base soltou os pés para a trava de pé (saída correndo): ela não mexe mais nas posições até voltar. */
+    handedOff: false,
   };
   /**
    * Footwork do drible (DribbleFootwork): base escalonada do entre as pernas, tesoura nos combos e transferência de
@@ -868,6 +904,38 @@ export class PlayerAnimator {
     return this.idleLife.current;
   }
 
+  // ------------------------------------------------------------------------------------- defesa (online 1x1)
+
+  private readonly defense = new DefenseMotion();
+  private defenseRig: DefenseRig | null = null;
+
+  /** Mãos para cima na defesa (RS para cima), até mandar false. */
+  setHandsUp(up: boolean): void {
+    this.defense.setHandsUp(up);
+  }
+
+  /** Pulo de contestação/toco (Y) com os dois braços esticados; `heightM` = altura do pulo (m). false se já está no ar. */
+  playContest(heightM: number): boolean {
+    return this.defense.jump(heightM);
+  }
+
+  /** Tapa do roubo (X na defesa) com a mão `hand`. */
+  playSteal(hand: Hand): void {
+    this.defense.steal(hand);
+  }
+
+  /** Mãos para cima (0..1) e altura do pulo (m) agora: a contestação do arremessador lê isto. */
+  defenseState(): { handsUp: number; jump: number } {
+    return this.defense.state();
+  }
+
+  /** Depois dos gestos do parado: braços da defesa e o pulo (DefenseMotion). */
+  private applyDefense(dt: number): void {
+    this.defense.update(dt, this.hasBall);
+    this.defenseRig ??= { bone: (n) => this.bone(n), reachPalm: (h, target, w, pole) => this.reachPalm(h, target, w, pole), root: this.root };
+    this.defense.apply(this.defenseRig);
+  }
+
   private applyJumpShotBody(): void {
     if (this.jumpShotLive() || this.jumpShot.exiting) this.jumpShot.applyBody();
   }
@@ -1158,6 +1226,8 @@ export class PlayerAnimator {
     this.mixer.update(dt);
     this.saveMixerPose();
     this.applyArmLength();
+    this.updateRunOut(input);
+    this.applyBaseLegs(dt);
     this.applyLegLayer(dt, input);
     this.applyMixamoLegs(dt, input);
     this.inertial.apply(dt);
@@ -1179,11 +1249,19 @@ export class PlayerAnimator {
     this.applyLayupArms();
     this.applyJumpShotArms();
     this.applyIdleLife(dt, input);
+    this.applyDefense(dt);
     if (this.armClearanceEnabled) {
-      // Behind the back: a mão da bola segue o caminho desenhado por trás do quadril (ProceduralMoves), por dentro do
-      // volume da bermuda larga; a colisão brigava com ele (estalos no antebraço). Só essa mão fica livre.
+      // Behind the back: com o tronco girando para o lado da bola e a soltura atrás do bolso, o caminho desenhado da mão
+      // já passa por fora da bermuda; a colisão vale também na mão da bola (antes ela ficava livre e o braço voltava
+      // por dentro do tronco no fim do drible) e a bola presa acompanha o que a colisão mexeu na palma.
       const a = this.active && !this.active.fadingOut ? this.active : null;
-      this.armClearance.apply(this.hasBall, dt, a?.timing?.procedural === 'BehindBack' ? a.fromHand : null);
+      const btb = a?.timing?.procedural === 'BehindBack' ? a : null;
+      const inv = this.root.matrixWorld.clone().invert();
+      // (Lido numa variável com o tipo inteiro: o TS estreita o campo para null pela atribuição no começo do quadro.)
+      const held = this.ballHeldLocal as THREE.Vector3 | null;
+      const before = btb && held ? this.palmWorld(btb.fromHand, new THREE.Vector3()).applyMatrix4(inv) : null;
+      this.armClearance.apply(this.hasBall, dt, btb && this.behindBackArmFree ? btb.fromHand : null);
+      if (btb && before && held) held.add(this.palmWorld(btb.fromHand, new THREE.Vector3()).applyMatrix4(inv).sub(before));
     }
     this.applyBallClearance(dt, input);
     const inv = this.root.matrixWorld.clone().invert();
@@ -1196,12 +1274,37 @@ export class PlayerAnimator {
     return Math.hypot(input.right, input.forward);
   }
 
+  /** Saída correndo de um drible parado (RunOut). Chave de A/B do laboratório (LAB_ANIM='{"runOutEnabled":false}'). */
+  runOutEnabled = true;
+
+  /** O corpo está saindo correndo para a frente (RunOut)? */
+  private runningOut(input: AnimInput): boolean {
+    if (!this.runOutEnabled) return false;
+    const speed = this.speedOf(input);
+    return input.hasBall && ((input.forward >= RunOut.speed && input.forward >= RunOut.along * speed) || speed >= RunOut.anySpeed);
+  }
+
+  /**
+   * Drible que começou parado e virou corrida (RunOut): deixa de ser parado. Os dribles com pernas da locomoção em
+   * movimento (legLayerMoves) passam a usá-las no meio; os outros (hesitação) seguem até o fim com as pernas da base. O
+   * assentamento depois do drible parado também acaba: quem corre já está na passada.
+   */
+  private updateRunOut(input: AnimInput): void {
+    if (!this.moveStartedStanding || !this.runningOut(input)) return;
+    const a = this.active && !this.active.fadingOut ? this.active : null;
+    if (a && !this.legLayerMoves.includes(a.kind)) return;
+    this.moveStartedStanding = false;
+    this.standingSettleUntil = 0;
+    this.runOutClock = this.clock;
+  }
+
   /** Escolhe o loop da base pela velocidade e casa a fase quando troca. */
   private chooseBase(input: AnimInput): void {
     const speed = this.speedOf(input);
     const hand = input.ballHand;
     let base: string;
     let clipName: string;
+    let legs: string | undefined;
     const fwd = input.forward;
     const side = input.right;
     if (!input.hasBall) {
@@ -1215,9 +1318,24 @@ export class PlayerAnimator {
       base = 'Dribble_Back';
       clipName = loopClip(base, hand);
     } else if (Math.abs(side) > Math.abs(fwd) * 1.2 && speed < 3.2) {
-      // Deslize lateral (size-up): Side_R anda para a esquerda com a bola na direita; o espelho para a direita.
-      base = 'Dribble_Side';
-      clipName = side < 0 ? 'Dribble_Side_R' : 'Dribble_Side_L';
+      // Deslize lateral (size-up): Side_R anda para a esquerda com a bola na direita; o espelho para a direita. Para o lado
+      // da mão da bola não há clipe: os dois só quicam com a mão do outro lado, e a bola ficava presa na cintura enquanto a
+      // mão vazia fazia o drible (lado_direita: 1 quique em 1 s). Aí o drible (tronco, braços e quiques) é o do loop parado
+      // da mão da bola e as pernas e a pelve vêm do Side da direção (base.legs). Com os pés na base plantada (o escape e a
+      // freada dele) as pernas já são da base: só o loop parado.
+      const towardBall = side < 0 ? hand === 'l' : hand === 'r';
+      const sideClip = side < 0 ? 'Dribble_Side_R' : 'Dribble_Side_L';
+      if (towardBall && this.plant.active && !this.plant.handedOff) {
+        base = 'Dribble_Idle';
+        clipName = loopClip(base, hand);
+      } else if (towardBall && this.sideBallLegsEnabled && speed < SideBallLegsMaxSpeed) {
+        base = 'Dribble_Side';
+        clipName = loopClip(input.low ? 'Dribble_Low' : 'Dribble_Idle', hand);
+        legs = sideClip;
+      } else {
+        base = 'Dribble_Side';
+        clipName = sideClip;
+      }
     } else if (input.low && speed < 1.2) {
       base = 'Dribble_Low';
       clipName = loopClip(base, hand);
@@ -1229,11 +1347,22 @@ export class PlayerAnimator {
       clipName = loopClip(base, hand);
     }
 
+    // Os Side puros não têm mão (a troca de mão não força a troca); o loop com as pernas do Side tem.
     const handChanged =
-      input.hasBall && this.base.name.startsWith('Dribble_') && !this.base.name.endsWith(hand.toUpperCase()) && base !== 'Dribble_Side';
+      input.hasBall && this.base.name.startsWith('Dribble_') && !this.base.name.endsWith(hand.toUpperCase()) && !clipName.startsWith('Dribble_Side');
     const ballChanged = NoBallLoops.has(this.base.name) === input.hasBall;
-    if (clipName !== this.base.name && (this.clock - this.baseSince >= MinStateTime || handChanged || ballChanged)) {
-      this.switchBase({ name: clipName, base }, hand);
+    const changed = clipName !== this.base.name || legs !== this.base.legs;
+    // Saindo das pernas do Side (o corpo parou, virou para correr ou passou do teto em que elas acompanham): na hora, sem a
+    // histerese. Freando de lado a 0,4 m/s, elas seguiam dando passos com o corpo parado por 10 quadros e a bola esperava.
+    const legsLeave = !!this.base.legs && legs !== this.base.legs;
+    if (changed && (this.clock - this.baseSince >= MinStateTime || handChanged || ballChanged || legsLeave)) {
+      this.switchBase({ name: clipName, base, legs }, hand);
+    }
+    // Pernas do Side (deslize para o lado da mão da bola): a passada acompanha a velocidade, como no Side puro.
+    if (this.base.legs) {
+      const native = LoopNativeVelocity[this.base.legs];
+      const nativeSpeed = native ? Math.hypot(native.right, native.forward) * this.scale * this.bodyScale : 0;
+      this.baseLegs.rate = nativeSpeed > 0.1 ? Math.min(1.7, Math.max(0.7, speed / nativeSpeed)) : 1;
     }
 
     // Velocidade de reprodução acompanha a velocidade real (a escala do modelo muda a passada).
@@ -1281,7 +1410,21 @@ export class PlayerAnimator {
     }
     // Drible em movimento: a camada das pernas manda; o loop novo entra na mesma fase da passada (senão a perna pula).
     const L = this.legLayer;
-    if (L.clip && L.weight > 0.5 && L.clip !== next.name) {
+    // Pernas que estão aparecendo agora (camada das pernas forte, pernas de outro clipe ou as do próprio loop).
+    const shownLegs = L.clip && L.weight > 0.5 ? L.clip : (this.base.legs ?? this.base.name);
+    const shownTime = L.clip && L.weight > 0.5 ? L.time : this.base.legs ? this.baseLegs.time : (from?.time ?? 0);
+    if (next.legs) {
+      // Pernas de outro clipe: o drible fica na fase dele (acima) e as pernas entram na fase da passada que aparecia.
+      this.baseLegs.time =
+        shownLegs === next.legs ? shownTime : this.actions.has(shownLegs) ? this.matchLegPhase(shownLegs, shownTime, next.legs) : 0;
+      if (L.clip) {
+        L.clip = next.legs;
+        L.time = this.baseLegs.time;
+      }
+    } else if (this.base.legs && !L.clip && this.base.legs === next.name) {
+      // Volta ao Side puro de onde vinham as pernas: segue a passada (a bola mudou de mão; o drible acompanha as pernas).
+      time = this.baseLegs.time;
+    } else if (L.clip && L.weight > 0.5 && L.clip !== next.name) {
       time = this.matchLegPhase(L.clip, L.time, next.name);
       L.clip = next.name;
       L.time = time;
@@ -1689,6 +1832,29 @@ export class PlayerAnimator {
     pelvis.updateWorldMatrix(false, true);
   }
 
+  /**
+   * Pernas e pelve do loop da base vindas de outro clipe (base.legs: o deslize para o lado da mão da bola), com o tempo
+   * próprio da passada. Durante um drible quem põe as pernas é a camada das pernas, no mesmo tempo.
+   */
+  private applyBaseLegs(dt: number): void {
+    const legs = this.base.legs;
+    if (!legs) return;
+    this.baseLegs.time += dt * this.baseLegs.rate;
+    const clip = this.actions.get(legs)?.getClip();
+    if (!clip || this.active) return;
+    const t = ((this.baseLegs.time % clip.duration) + clip.duration) % clip.duration;
+    for (const tr of this.legTracksOf(legs)) {
+      if (tr.q) {
+        const r = tr.q.evaluate(t);
+        tr.bone.quaternion.set(r[0], r[1], r[2], r[3]);
+      }
+      if (tr.p) {
+        const r = tr.p.evaluate(t);
+        tr.bone.position.set(r[0], r[1], r[2]);
+      }
+    }
+  }
+
   private applyLegLayer(dt: number, input: AnimInput): void {
     const a = this.active;
     const L = this.legLayer;
@@ -1708,13 +1874,15 @@ export class PlayerAnimator {
     const speed = this.speedOf(input);
     const target = celebrating ? 1 : THREE.MathUtils.smoothstep(speed, LegLayerSpeed[0], LegLayerSpeed[1]);
     if (!L.clip) {
-      // Começo do drible: a inertialization já suaviza a entrada, então o peso entra direto.
-      L.clip = this.base.name;
-      L.time = this.actions.get(L.clip)?.time ?? 0;
-      L.weight = target;
+      // Começo do drible: a inertialization já suaviza a entrada, então o peso entra direto. No meio do drible (saída
+      // correndo de um drible parado, RunOut) não há inertialization: o peso entra em rampa.
+      L.clip = this.base.legs ?? this.base.name;
+      L.time = this.base.legs ? this.baseLegs.time : (this.actions.get(L.clip)?.time ?? 0);
+      L.weight = a.startClock < this.runOutClock ? 0 : target;
     } else {
-      const baseAction = this.actions.get(this.base.name);
-      L.time += dt * (baseAction?.timeScale ?? 1);
+      // Pernas de outro clipe (base.legs): o tempo é o da passada delas (applyBaseLegs).
+      if (this.base.legs && L.clip === this.base.legs) L.time = this.baseLegs.time;
+      else L.time += dt * (this.actions.get(this.base.name)?.timeScale ?? 1);
       L.weight += (target - L.weight) * (1 - Math.exp(-10 * dt));
     }
     const clip = this.actions.get(L.clip)?.getClip();
@@ -1949,6 +2117,7 @@ export class PlayerAnimator {
     if (standingMove && this.escapeStance.action !== a) {
       // Começo do drible parado: guarda a base atual (pés abertos, nunca cruzados) no referencial do jogador.
       this.escapeStance.action = a;
+      this.plant.lastStep = null;
       const inv = this.root.matrixWorld.clone().invert();
       const l = this.plant.l.pos.clone().applyMatrix4(inv);
       const r = this.plant.r.pos.clone().applyMatrix4(inv);
@@ -1961,6 +2130,12 @@ export class PlayerAnimator {
       this.escapeStance.r.copy(r);
     }
     // Fim do size-up/escape: o corpo ainda freia; os pés seguem em passos até assentar (sem voltar ao clipe no meio).
+    // Enquanto ele ainda freia (o embalo do escape leva ~0,3 s), o assentamento espera: soltando a base com o corpo a
+    // 0,8 m/s, ela voltava logo depois com os pés onde o clipe estava.
+    const braking = input.forward * input.accelForward + input.right * input.accelRight < -1;
+    if (!kind && input.hasBall && this.clock < this.standingSettleUntil && speed > 0.35 && braking) {
+      this.standingSettleUntil = Math.max(this.standingSettleUntil, this.clock + 0.1);
+    }
     const settling = !kind && input.hasBall && this.clock < this.standingSettleUntil;
 
     let crouchTarget: number;
@@ -2051,6 +2226,8 @@ export class PlayerAnimator {
     // Pés na pose do clipe (já com a dobra do quadril): ponto mais baixo da sola e altura do calcanhar, base do pé plano.
     const soleL = this.lowestSole('l', footL);
     const soleR = this.lowestSole('r', footR);
+    // Quanto a sola mais baixa fica abaixo do tornozelo na pose do clipe (o impulso da saída correndo a põe no chão).
+    const soleDrop = { l: footL.getWorldPosition(v).y - soleL.h, r: footR.getWorldPosition(v).y - soleR.h };
     const riseL = this.footHeelRise('l');
     const riseR = this.footHeelRise('r');
 
@@ -2087,18 +2264,29 @@ export class PlayerAnimator {
     // Parado sem bola também: o pé seguia a orientação do clipe (ponta para baixo, calcanhar no ar) e a correção da sola
     // erguia o tornozelo, com os joelhos dobrados para compensar.
     const freeIdle = !input.hasBall && !kind && speed < 0.35 && this.base.name === FreeIdleClip;
-    const planted =
+    const plantedBase =
       freeIdle ||
       (input.hasBall &&
         ((!kind && speed < 0.35 && (this.base.base === 'Dribble_Idle' || this.base.base === 'Dribble_Low')) || standingMove || settling));
+    // Saída correndo (RunOut): a base entrega os pés para a trava de pé, mas o pé no meio de um passo pousa antes (trocado
+    // no ar, ele parava de repente: 24 cm de salto num quadro).
+    const runOut = !plantedBase && this.plant.active && this.footLockEnabled && this.runningOut(input);
+    const planted = plantedBase || (runOut && (this.plant.l.t < 1 || this.plant.r.t < 1));
     // Nos dribles do size-up os pés não seguem o clipe (a hesitação da CMU anda até 1 m com os pés): ficam pregados.
     // No escape os pés dão passos para onde o corpo vai estar (velocidade x duração do passo).
     const velocity = forward.clone().multiplyScalar(input.forward).addScaledVector(leftDir, -input.right);
+    if (braking) {
+      // Freando, o passo mira onde o corpo vai parar (v²/2a), não onde ele estaria sem frear: o último passo do escape
+      // pousava ~15 cm além e o corpo parava com o pé de trás embaixo dele.
+      const decel = -(input.forward * input.accelForward + input.right * input.accelRight) / Math.max(speed, 1e-3);
+      velocity.multiplyScalar(Math.min(1, speed / (2 * decel * EscapeStep.lead)));
+    }
     const feetMode = sizeUpMove ? 'hold' : standingMove || (settling && speed > 0.35) ? 'escape' : 'free';
+    if (runOut && !planted) this.handOffPlant(ankleL, ankleR, toeY);
     const flatFeet = this.applyPlantedStance(planted, ankleL, ankleR, dt, feetMode, velocity);
     const lockable = this.footLockEnabled && !a?.feetStart && kind !== 'Shot' && !flatFeet;
-    this.applyFootLock('l', ankleL, toeY.l, lockable, dt);
-    this.applyFootLock('r', ankleR, toeY.r, lockable, dt);
+    this.applyFootLock('l', ankleL, toeY.l, lockable, dt, soleDrop.l);
+    this.applyFootLock('r', ankleR, toeY.r, lockable, dt, soleDrop.r);
     // Pé de apoio com a sola no chão fica plano (não na ponta). Fora do arremesso, do spin e do passo procedural.
     const flatOk = this.flatFootEnabled && kind !== 'Shot' && !spinning && !a?.feetStart;
     this.flattenFoot('l', ankleL, footQL, soleL, riseL, dt, flatOk);
@@ -2431,6 +2619,36 @@ export class PlayerAnimator {
   }
 
   /**
+   * Saída correndo da base plantada (RunOut), com os dois pés no chão (o que estava no meio de um passo já pousou): cada
+   * pé fica preso pela trava de pé onde está. Se a passada da locomoção já quer aquele pé no ar, ele fica inteiro no chão
+   * por RunOut.pushOff (o impulso) e depois sobe até a pose do clipe pelo deslize da trava (0,15 s); antes ele escorregava
+   * pelo chão até lá. A base para de mexer nas posições na hora; o peso dela cai devagar como antes (orientação do pé,
+   * joelho e quadril).
+   */
+  private handOffPlant(ankleL: THREE.Vector3, ankleR: THREE.Vector3, toeY: Record<Hand, number>): void {
+    const p = this.plant;
+    for (const [side, ankle] of [
+      ['l', ankleL],
+      ['r', ankleR],
+    ] as const) {
+      const f = this.footLock[side];
+      const foot = p[side];
+      const clipInAir = toeY[side] >= 0.055 * ProceduralScale;
+      f.locked = true;
+      f.pos.copy(foot.pos);
+      f.pinned = clipInAir;
+      f.pinUntil = clipInAir ? this.clock + RunOut.pushOff : 0;
+      f.releaseT = 1;
+      f.land.set(0, 0, 0);
+      // A trava mede a velocidade do pé do clipe de um quadro para o outro: o quadro anterior era o da base (outro lugar).
+      f.prevAnim.copy(ankle);
+      f.prevToe = toeY[side];
+    }
+    p.active = false;
+    p.handedOff = true;
+  }
+
+  /**
    * Base plantada. Retorna true se os pés estão sob controle dela (alvos já escritos em ankleL/ankleR).
    * Cada pé fica numa posição fixa do chão; se a posição ideal (a do clipe, aberta) se afasta mais de 22 cm ou o corpo
    * gira, o pé levanta e anda até ela em 0,16 s (passinho de ajuste), um pé por vez.
@@ -2447,11 +2665,13 @@ export class PlayerAnimator {
     this.plantBlend += ((active ? 1 : 0) - this.plantBlend) * (1 - Math.exp(-10 * dt));
     if (!active) {
       p.active = false;
-      if (this.plantBlend < 0.02) return false;
+      // Soltou os pés para a trava de pé (handOffPlant): o peso cai sozinho, sem puxar as posições.
+      if (this.plantBlend < 0.02 || p.handedOff) return false;
     }
     if (active && !p.active) {
       // Entra na base: os pés pousam onde o clipe os pôs, no chão.
       p.active = true;
+      p.handedOff = false;
       for (const [side, ankle] of [
         ['l', ankleL],
         ['r', ankleR],
@@ -2543,10 +2763,12 @@ export class PlayerAnimator {
       return this.plantBlend > 0.5;
     }
     const gap = (side: Hand) => Math.hypot(ideals[side].x - p[side].pos.x, ideals[side].z - p[side].pos.z);
-    // Quem sai primeiro: no escape, o pé do lado para onde o corpo vai (abre) e depois o outro (vem atrás, sem cruzar);
-    // no resto, o pé mais longe de onde deveria estar.
+    // Quem sai primeiro: no escape, o pé do lado para onde o corpo vai (abre) e depois o outro (vem atrás, sem cruzar),
+    // alternando; no resto, o pé mais longe de onde deveria estar. Sem alternar, o pé da frente (testado primeiro) já
+    // precisava de outro passo quando pousava, com o corpo andando, e o de trás ficava pregado no chão até o corpo parar
+    // (1,4 m atrás no crossover de ataque parado; no por trás seguido de corrida ele nunca saía).
     const leftAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(this.root.quaternion);
-    const leftFirst = escape ? velocity.dot(leftAxis) >= 0 : gap('l') >= gap('r');
+    const leftFirst = escape ? (p.lastStep ? p.lastStep === 'r' : velocity.dot(leftAxis) >= 0) : gap('l') >= gap('r');
     const order: [Hand, THREE.Vector3][] = leftFirst ? [['l', ankleL], ['r', ankleR]] : [['r', ankleR], ['l', ankleL]];
     if (escape) {
       // O pé nunca pousa além da linha do outro (sempre um palmo de base): sem cruzar as pernas.
@@ -2570,7 +2792,12 @@ export class PlayerAnimator {
         f.to.copy(ideal);
         f.t = 0;
         stepping = true;
+        p.lastStep = side;
       }
+      // No escape o pé no ar mira onde o corpo vai estar enquanto ele acelera (o alvo do começo do passo, com o corpo ainda
+      // saindo do lugar, dava um primeiro passo de 8 cm e o corpo passava por cima do pé); da metade em diante o alvo fica,
+      // e o pé pousa parado.
+      if (escape && f.t < EscapeStep.retarget && !f.dur) f.to.copy(ideal);
       if (f.t < 1) {
         f.t = Math.min(1, f.t + dt / (f.dur || stepSeconds));
         if (f.dur) {
@@ -2600,7 +2827,7 @@ export class PlayerAnimator {
    * alvo do IK fica preso onde o pé pousou. Solta quando a animação levanta o pé ou quando a perna esticaria demais
    * (o corpo andou além do passo), e o pé volta para a animação suavemente.
    */
-  private applyFootLock(side: Hand, ankle: THREE.Vector3, toeY: number, enabled: boolean, dt: number): void {
+  private applyFootLock(side: Hand, ankle: THREE.Vector3, toeY: number, enabled: boolean, dt: number, soleDrop = 0): void {
     const f = this.footLock[side];
     const animVel = new THREE.Vector3(ankle.x - f.prevAnim.x, 0, ankle.z - f.prevAnim.z).divideScalar(Math.max(dt, 1e-4));
     const animSpeed = dt > 0 ? animVel.length() : 0;
@@ -2619,19 +2846,28 @@ export class PlayerAnimator {
     const planted = toeY < 0.055 * S && (animSpeed < 1.2 || brake > 0.5);
     if (!enabled) {
       f.locked = false;
+      f.pinned = false;
       f.releaseT = 1;
       f.land.set(0, 0, 0);
       return;
     }
     if (f.locked) {
       const stretch = Math.hypot(ankle.x - f.pos.x, ankle.z - f.pos.z);
-      if (!planted || toeY > 0.075 * S || stretch > 0.32 * S) {
+      // Impulso da saída correndo (handOffPlant): o pé fica no chão, também na altura, até a perna esticar ou o tempo
+      // acabar, mesmo com o pé do clipe já no ar; depois sobe até ele.
+      const pushing = f.pinned && this.clock < f.pinUntil;
+      if (stretch > 0.32 * S || (!pushing && (!planted || toeY > 0.075 * S))) {
         f.locked = false;
-        f.release.set(f.pos.x - ankle.x, 0, f.pos.z - ankle.z);
+        f.release.set(f.pos.x - ankle.x, f.pinned ? f.pos.y - ankle.y : 0, f.pos.z - ankle.z);
         f.releaseT = 0;
+        f.pinned = false;
       } else {
         ankle.x = f.pos.x;
         ankle.z = f.pos.z;
+        // No impulso a sola mais baixa fica no chão: com o pé do clipe apontado para baixo, preso pelo tornozelo na altura
+        // do pé plano, a ponta entrava 4–5 cm no piso; assim o calcanhar sobe, como no impulso de verdade.
+        if (pushing) ankle.y = f.pos.y = Math.max(0, soleDrop);
+        else f.pinned = false;
         return;
       }
     } else {
@@ -2730,9 +2966,12 @@ export class PlayerAnimator {
           // Mão da bola: a perna do mesmo lado é contornada por fora do joelho; a outra, pela frente (direção fixa,
           // sem a mão pular de um lado para o outro entre as pernas). No entre as pernas, antes da soltura, a bola vai
           // descer e passar entre os pés: o joelho do mesmo lado também é contornado pela frente.
+          // No behind the back a bola cruza por TRÁS: depois da soltura a mão é a que recebe, e a perna do lado de onde a
+          // bola saiu é contornada por trás (pela frente, o desvio jogava a bola 8 cm para dentro da coxa na soltura).
           const sameSide = cap.a.endsWith(`_${hand}`);
           const tween = this.active?.kind === 'BetweenLegs' && !this.active.released;
-          d.copy(sameSide && !tween ? leftDir : fwdDir).multiplyScalar(sameSide && !tween ? sideSign(hand) : 1);
+          const behind = !sameSide && this.behindBackPassBehind && this.active?.timing?.procedural === 'BehindBack';
+          d.copy(sameSide && !tween ? leftDir : fwdDir).multiplyScalar(sameSide && !tween ? sideSign(hand) : behind ? -1 : 1);
         } else {
           d.y = 0;
           if (d.lengthSq() < 1e-6) d.set(c.x - center.x, 0, c.z - center.z);
@@ -2750,7 +2989,7 @@ export class PlayerAnimator {
   /** Entre as pernas: quique entre os pés e recepção por fora do joelho do outro lado (referencial do jogador). */
   private betweenLegsPath(toHand: Hand): { floorLocal: THREE.Vector3; catchLocal: THREE.Vector3 } {
     const inv = this.root.matrixWorld.clone().invert();
-    const planted = this.plantBlend > 0.5;
+    const planted = this.plantBlend > 0.5 && !this.plant.handedOff;
     // Pé no meio de um passo (a tesoura): onde ele vai pousar, que é onde ele está quando a bola passa.
     const foot = (side: Hand) => {
       const f = this.plant[side];
@@ -2991,9 +3230,13 @@ export class PlayerAnimator {
       const designed =
         (this.dribbleArmWeight[hand] > 0.5 && (!a || !this.clearanceAtMoveStart)) ||
         (this.tweenCatch?.hand === hand && this.tweenArmWeight > 0.5);
+      // Behind the back depois da soltura: a bola está no ar (a mão de origem não segura nada até a recepção). Contando
+      // como presa, o desvio entrava na soltura com outro pole e o braço girava ~100° num quadro (e de novo ao sair).
+      const btbAir = a?.timing?.procedural === 'BehindBack' && a.released;
       const holding =
         this.ballClearanceEnabled &&
         !designed &&
+        !btbAir &&
         this.hasBall && !this.ballHeldLocal && a?.kind !== 'Shot' && hand === (a && !a.released ? a.fromHand : input.ballHand);
       const off = this.ballClearance[hand];
       const palm = this.palmWorld(hand, new THREE.Vector3());
@@ -3089,6 +3332,57 @@ export class PlayerAnimator {
     other: { hand: Hand; local: THREE.Vector3; w: number };
   } | null = null;
 
+  /** Peso do giro do tronco no behind the back (sai suave se o drible for cortado no meio). */
+  private btbTrunkW = 0;
+  private btbTrunkHand: Hand = 'r';
+  /** Liga/desliga o giro do tronco no behind the back (A/B do laboratório). */
+  behindBackTrunkEnabled = true;
+  /** true = a mão da bola fica sem a colisão dos braços no behind the back (como era antes do giro do tronco). */
+  behindBackArmFree = false;
+  /** true = no ar, a bola do behind the back contorna a perna de onde saiu por trás (legClearance). */
+  behindBackPassBehind = true;
+
+  /**
+   * Behind the back: o tronco gira e inclina para o lado da mão da bola (BehindBack.trunk), o ombro dela abre para trás e
+   * desce, e o braço alcança o caminho da bola por fora da bermuda. Dividido entre spine_01/02/03 (as costas torcem, não
+   * dobram num ponto); pescoço e cabeça desfazem parte do giro (o jogador olha para a frente). Antes dos IKs dos braços.
+   */
+  private applyBehindBackTrunk(a: ActiveAction | null, u: number, dt: number): void {
+    if (a?.timing?.procedural === 'BehindBack' && this.behindBackTrunkEnabled) {
+      this.btbTrunkW = behindBackTrunk(u);
+      this.btbTrunkHand = a.fromHand;
+    } else {
+      this.btbTrunkW *= Math.exp(-10 * dt);
+    }
+    const w = this.btbTrunkW;
+    if (w < 1e-3) return;
+    const T = BehindBack.trunk;
+    const s = sideSign(this.btbTrunkHand);
+    const deg = THREE.MathUtils.degToRad;
+    const bodyQ = this.model.getWorldQuaternion(new THREE.Quaternion());
+    const up = new THREE.Vector3(0, 1, 0);
+    const left = new THREE.Vector3(1, 0, 0).applyQuaternion(bodyQ);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(bodyQ);
+    // +X = esquerda. Giro em torno de cima com s·ângulo leva o ombro da bola para trás; em torno da frente com −s·ângulo
+    // inclina para o lado da bola; em torno da esquerda com ângulo negativo o peito sobe.
+    const R = new THREE.Quaternion()
+      .setFromAxisAngle(up, s * deg(T.yawDeg) * w)
+      .multiply(new THREE.Quaternion().setFromAxisAngle(forward, -s * deg(T.sideDeg) * w))
+      .multiply(new THREE.Quaternion().setFromAxisAngle(left, -deg(T.liftDeg) * w));
+    const turn = (names: string[], q: THREE.Quaternion) => {
+      const part = new THREE.Quaternion().slerp(q, 1 / names.length);
+      for (const name of names) {
+        const b = this.bone(name);
+        const world = b.getWorldQuaternion(new THREE.Quaternion());
+        const parent = b.parent!.getWorldQuaternion(new THREE.Quaternion()).invert();
+        b.quaternion.copy(parent.multiply(part.clone().multiply(world)));
+        b.updateWorldMatrix(false, true);
+      }
+    };
+    turn(['spine_01', 'spine_02', 'spine_03'], R);
+    turn(['neck_01', 'head'], new THREE.Quaternion().slerp(R.clone().invert(), T.headKeep));
+  }
+
   /** Quanto o corpo está mais baixo que o agachamento dos procedurais (os pontos-chave do behind the back). */
   private behindBackDrop(): number {
     return Math.max(0, this.crouch - this.stance.crouchProcedural);
@@ -3178,6 +3472,7 @@ export class PlayerAnimator {
     }
 
     // Behind the back: a mão de origem carrega a bola por trás do quadril; a outra vai buscar a recepção.
+    this.applyBehindBackTrunk(a, u, dt);
     if (a?.timing?.procedural === 'BehindBack') {
       const s = sideSign(a.fromHand);
       const w = behindBackArmWeights(u);

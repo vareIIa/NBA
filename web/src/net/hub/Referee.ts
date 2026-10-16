@@ -1,7 +1,9 @@
-// Juiz do 1x1 (roda no servidor): placar, posse, check-ball, relógio de posse, rebote, limpar a bola e vitória.
-// Puro (sem rede nem relógio próprio): o Hub dá o relógio e repassa os relatos dos clientes; cada mudança sai por emit.
-// Os relatos trazem o seq da posse: um relato atrasado de uma posse que já acabou é ignorado.
-import { type MatchEvent, type MatchRules, type MatchState, type Side, otherSide, shotClockLeft } from '../protocol.ts';
+// Juiz do 1x1 (roda no servidor): placar, posse, check-ball, relógio de posse, rebote, roubo, toco, limpar a bola e
+// vitória. Puro (sem rede nem relógio próprio): o Hub dá o relógio, o sorteio e os cartões e repassa os relatos dos
+// clientes; cada mudança sai por emit. Os relatos trazem o seq da posse: um relato atrasado de uma posse que já acabou
+// é ignorado.
+import { type MatchEvent, type MatchRules, type MatchState, type PlayerCard, type Side, otherSide, shotClockLeft } from '../protocol.ts';
+import { StealCooldownMs, stealChance } from '../defense.ts';
 
 /** Contagem do primeiro check (os clientes ainda carregam o boneco do oponente). */
 export const FirstCheckMs = 5000;
@@ -12,6 +14,25 @@ export const DeadMs = 1800;
 /** Bola solta sem ninguém pegar por este tempo: volta para a defesa (presa na rede, jogadores longe). */
 export const LooseMaxMs = 10000;
 
+export interface RefereeOptions {
+  /** Cartão de cada lado (ratings e badges do roubo). Sem cartão, os valores médios. */
+  card?: (side: Side) => PlayerCard | null;
+  /** [0, 1): o sorteio do roubo. */
+  random?: () => number;
+}
+
+/** Cartão médio (um lado sem cartão: só nos testes). */
+const PlainCard: PlayerCard = {
+  name: '',
+  heightCm: 196,
+  wingspanOverM: 0,
+  wingspanCm: 200,
+  overall: 60,
+  archetype: '',
+  position: '',
+  perimeterDefense: 60,
+};
+
 export class Referee {
   readonly state: MatchState;
   readonly rules: MatchRules;
@@ -20,13 +41,19 @@ export class Referee {
   /** Quem ataca no check que vem depois do dead. */
   private nextOffense: Side = 0;
   private looseSince = 0;
+  private readonly card: (side: Side) => PlayerCard | null;
+  private readonly random: () => number;
+  /** Último tapa de cada lado (ms): um por StealCooldownMs. */
+  private readonly lastSteal: [number, number] = [-Infinity, -Infinity];
 
   // Sem "parameter properties": o Node roda este arquivo só apagando os tipos (o servidor de desenvolvimento não tem
   // bundler), e elas não são apagáveis.
-  constructor(rules: MatchRules, firstOffense: Side, now: () => number, emit: (event: MatchEvent | null) => void) {
+  constructor(rules: MatchRules, firstOffense: Side, now: () => number, emit: (event: MatchEvent | null) => void, opts: RefereeOptions = {}) {
     this.rules = rules;
     this.now = now;
     this.emit = emit;
+    this.card = opts.card ?? (() => null);
+    this.random = opts.random ?? Math.random;
     this.state = {
       phase: 'check',
       phaseEndsAt: 0,
@@ -128,14 +155,36 @@ export class Referee {
     const s = this.state;
     if (!this.live(seq) || s.ball !== 'loose') return false;
     const offensive = side === s.shooter;
-    s.offense = side;
-    s.ball = 'held';
-    s.needsClear = this.rules.clearBall && !offensive;
-    s.shooter = null;
-    s.seq++;
-    s.clockMs = this.fullClock();
-    this.runClock(true);
+    this.giveBall(side, !offensive);
     this.emit({ kind: 'rebound', side, offensive });
+    return true;
+  }
+
+  /**
+   * Tapa do defensor na bola (na mão do atacante). `exposure` = o que ele viu (0..1, ballExposure); o juiz sorteia com
+   * os cartões dos dois. Roubou: a posse troca como num rebote defensivo (precisa limpar). true = roubou.
+   */
+  steal(side: Side, seq: number, exposure: number): boolean {
+    const s = this.state;
+    if (!this.live(seq) || side === s.offense || s.ball !== 'held') return false;
+    const now = this.now();
+    if (now - this.lastSteal[side] < StealCooldownMs) return false;
+    this.lastSteal[side] = now;
+    const exp = Number.isFinite(exposure) ? exposure : 0;
+    const chance = stealChance(this.card(side) ?? PlainCard, this.card(s.offense) ?? PlainCard, exp);
+    if (!(this.random() < chance)) return false;
+    this.giveBall(side, true);
+    this.emit({ kind: 'steal', side });
+    return true;
+  }
+
+  /** O arremesso de `side` tomou toco (quem arremessou relata): a bola fica solta já, sem esperar o quique. */
+  block(side: Side, seq: number): boolean {
+    const s = this.state;
+    if (!this.live(seq) || side !== s.offense || s.ball !== 'air') return false;
+    s.ball = 'loose';
+    this.looseSince = this.now();
+    this.emit({ kind: 'block', side: otherSide(side) });
     return true;
   }
 
@@ -201,6 +250,18 @@ export class Referee {
     s.clockMs = shotClockLeft(s, now);
     s.clockAt = now;
     s.clockRunning = run && this.rules.shotClock > 0;
+  }
+
+  /** A bola passa para `side` (rebote ou roubo): posse nova, relógio cheio. */
+  private giveBall(side: Side, defensive: boolean): void {
+    const s = this.state;
+    s.offense = side;
+    s.ball = 'held';
+    s.needsClear = this.rules.clearBall && defensive;
+    s.shooter = null;
+    s.seq++;
+    s.clockMs = this.fullClock();
+    this.runClock(true);
   }
 
   private toDead(nextOffense: Side): void {

@@ -63,6 +63,8 @@ export class NetClient {
   id = '';
   /** Último erro de conexão (para a tela do lobby). */
   lastError = '';
+  /** O servidor está noutra versão do protocolo (o site em que o jogador está ficou para trás de uma publicação). */
+  versionMismatch = false;
   /**
    * Último estado da partida que chegou, com ou sem alguém ouvindo: quem monta a partida depois do match.start (o boneco
    * do oponente leva alguns segundos para carregar) começa daqui e não perde a mudança de fase que veio no meio.
@@ -266,6 +268,7 @@ export class NetClient {
       case 'error':
         if (msg.code !== 'rate_limit') console.warn('multiplayer:', msg.code, msg.message);
         this.lastError = msg.message;
+        if (msg.code === 'version') this.onVersionMismatch();
         break;
     }
     this.dispatch(msg);
@@ -274,6 +277,33 @@ export class NetClient {
   private dispatch(msg: ServerMsg): void {
     const set = this.handlers.get(msg.t);
     if (set) for (const h of [...set]) h(msg);
+  }
+
+  /**
+   * Versão diferente da do servidor: quase sempre é uma aba aberta antes de uma publicação nova. Recarrega a página (o
+   * index.html não fica em cache, então vem o jogo novo, com o mesmo ?sala=). No máximo uma vez por minuto: se o próprio
+   * site estiver desatualizado, recarregar não adianta e o jogador vê a mensagem em vez de um loop.
+   */
+  private onVersionMismatch(): void {
+    this.versionMismatch = true;
+    const key = 'garrafao.versionReloadAt';
+    let last = 0;
+    try {
+      last = Number(sessionStorage.getItem(key) ?? 0);
+    } catch {
+      // sem sessionStorage (janela privada, dados bloqueados): recarrega mesmo assim, uma vez por carregamento
+    }
+    if (Date.now() - last < 60_000) {
+      this.lastError = 'O jogo deste endereço está numa versão diferente da sala. Tente de novo em alguns minutos.';
+      return;
+    }
+    try {
+      sessionStorage.setItem(key, String(Date.now()));
+    } catch {
+      // idem
+    }
+    this.lastError = 'O jogo foi atualizado: recarregando…';
+    location.reload();
   }
 
   private ping(): void {

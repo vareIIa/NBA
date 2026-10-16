@@ -137,7 +137,10 @@ async function boot(): Promise<void> {
     onFloorBounce: (speed) => sfx.bounce(speed),
     onRim: () => sfx.rim(),
     onBoard: () => sfx.rim(),
-    onScore: () => sfx.swish(),
+    onScore: () => {
+      sfx.swish();
+      online?.onScore();
+    },
     onResult: (record) => {
       director?.onResult(record);
       online?.onResult(record);
@@ -216,6 +219,8 @@ async function boot(): Promise<void> {
         myName: playerName,
         project: (p) => rig.project(p, window.innerWidth, window.innerHeight),
         sfx,
+        // ?sorte=1 (testes): todo toco possível no MEU arremesso sai (o sorteio do toco é de quem arremessa).
+        random: params.get('sorte') === '1' ? () => 0 : undefined,
         // Saiu da partida: volta ao menu principal (sem o código do convite, para não entrar de novo na sala).
         onExit: () => {
           const query = new URLSearchParams(location.search);

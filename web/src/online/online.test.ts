@@ -71,6 +71,20 @@ class FakeAnimator {
     this.calls.push('gesture');
     return true;
   }
+  df = { handsUp: 0, jump: 0 };
+  setHandsUp(up: boolean): void {
+    this.calls.push(`hands:${up}`);
+  }
+  playContest(h: number): boolean {
+    this.calls.push(`contest:${h}`);
+    return true;
+  }
+  playSteal(hand: string): void {
+    this.calls.push(`steal:${hand}`);
+  }
+  defenseState(): { handsUp: number; jump: number } {
+    return this.df;
+  }
 }
 
 function recorded(): { fake: FakeAnimator; anim: RecordableAnimator; rec: AnimRecorder; clock: { t: number } } {
@@ -292,5 +306,39 @@ describe('AnimRecorder', () => {
       console.warn = warn;
     }
     expect(fake.calls).toEqual(['layup']);
+  });
+});
+
+describe('Defesa no gravador e no payload', () => {
+  it('anota mãos para cima, pulo e tapa; a amostra leva o estado da defesa só quando há', () => {
+    const { fake, anim, rec } = recorded();
+    anim.setHandsUp(true);
+    anim.playContest(0.5512);
+    anim.playSteal('l');
+    expect(fake.calls).toEqual(['hands:true', 'contest:0.5512', 'steal:l']);
+    fake.df = { handsUp: 0.8, jump: 0.31 };
+    anim.update(1 / 60, input({ hasBall: false }));
+    const d = JSON.parse(JSON.stringify(rec.drain(null)));
+    const ok = decodePayload(d)!;
+    expect(ok.c).toEqual([
+      { op: 'hands', t: 100, up: 1 },
+      { op: 'contest', t: 100, h: 0.551 },
+      { op: 'steal', t: 100, hand: 'l' },
+    ]);
+    expect(ok.s.df).toEqual([0.8, 0.31]);
+    fake.df = { handsUp: 0, jump: 0 };
+    anim.update(1 / 60, input({ hasBall: false }));
+    expect(decodePayload(JSON.parse(JSON.stringify(rec.drain(null))))!.s.df).toBeUndefined();
+  });
+
+  it('recusa defesa estragada', () => {
+    const { anim, rec } = recorded();
+    anim.update(1 / 60, input());
+    const d = JSON.parse(JSON.stringify(rec.drain(null)));
+    expect(decodePayload({ ...d, c: [{ op: 'steal', t: 1, hand: 'x' }] })).toBeNull();
+    expect(decodePayload({ ...d, c: [{ op: 'contest', t: 1, h: 9 }] })).toBeNull();
+    expect(decodePayload({ ...d, s: { ...d.s, df: [0.5] } })).toBeNull();
+    expect(decodePayload({ ...d, s: { ...d.s, df: [0.5, Number.POSITIVE_INFINITY] } })).toBeNull();
+    expect(decodePayload({ ...d, c: [{ op: 'hands', t: 1, up: 1 }] })?.c).toEqual([{ op: 'hands', t: 1, up: 1 }]);
   });
 });

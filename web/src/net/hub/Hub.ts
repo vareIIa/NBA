@@ -31,6 +31,8 @@ export interface HubOptions {
   now?: () => number;
   /** [0, 1): códigos de sala, cara ou coroa do primeiro ataque. */
   random?: () => number;
+  /** [0, 1): o sorteio do juiz (roubo). Padrão: o random. */
+  refereeRandom?: () => number;
   log?: (...args: unknown[]) => void;
 }
 
@@ -93,6 +95,12 @@ export function sanitizeCard(raw: unknown): PlayerCard {
     archetype: cleanText(c.archetype, 40, ''),
     position: cleanText(c.position, 4, ''),
     perimeterDefense: Math.round(clampNum(c.perimeterDefense, 25, 99, 60)),
+    steal: Math.round(clampNum(c.steal, 25, 99, 60)),
+    block: Math.round(clampNum(c.block, 25, 99, 60)),
+    vertical: Math.round(clampNum(c.vertical, 25, 99, 60)),
+    ballHandle: Math.round(clampNum(c.ballHandle, 25, 99, 60)),
+    glove: Math.round(clampNum(c.glove, 0, 4, 0)),
+    unpluckable: Math.round(clampNum(c.unpluckable, 0, 4, 0)),
   };
 }
 
@@ -131,11 +139,13 @@ export class Hub {
   private queue: Player[] = [];
   private readonly now: () => number;
   private readonly random: () => number;
+  private readonly refereeRandom: () => number;
   private readonly log: (...args: unknown[]) => void;
 
   constructor(opts: HubOptions = {}) {
     this.now = opts.now ?? (() => Date.now());
     this.random = opts.random ?? Math.random;
+    this.refereeRandom = opts.refereeRandom ?? this.random;
     this.log = opts.log ?? (() => undefined);
   }
 
@@ -220,6 +230,8 @@ export class Hub {
       case 'g.result':
       case 'g.claim':
       case 'g.cleared':
+      case 'g.block':
+      case 'g.steal':
         return this.report(player, msg);
       default:
         return this.error(conn, 'bad_message', `tipo desconhecido: ${String((msg as { t: unknown }).t)}`);
@@ -432,7 +444,10 @@ export class Hub {
     room.lastFirstOffense = first;
     room.ready = [false, false];
     room.rematch = [false, false];
-    room.referee = new Referee(room.rules, first, this.now, (event) => this.onMatchEvent(room, event));
+    room.referee = new Referee(room.rules, first, this.now, (event) => this.onMatchEvent(room, event), {
+      card: (side) => room.seats[side]?.card ?? null,
+      random: this.refereeRandom,
+    });
     // O match.start já leva o estado do primeiro check (com a contagem): o evento 'start' do juiz não sai à parte.
     room.starting = true;
     room.referee.start();
@@ -480,7 +495,7 @@ export class Hub {
     if (other?.conn) this.raw(other.conn, text);
   }
 
-  private report(player: Player, msg: Extract<ClientMsg, { t: 'g.release' | 'g.result' | 'g.claim' | 'g.cleared' }>): void {
+  private report(player: Player, msg: Extract<ClientMsg, { t: 'g.release' | 'g.result' | 'g.claim' | 'g.cleared' | 'g.block' | 'g.steal' }>): void {
     const room = player.room;
     const ref = room?.referee;
     if (!room || !ref) return;
@@ -498,6 +513,12 @@ export class Hub {
         return;
       case 'g.cleared':
         ref.cleared(side, seq);
+        return;
+      case 'g.block':
+        ref.block(side, seq);
+        return;
+      case 'g.steal':
+        ref.steal(side, seq, clampNum(msg.exp, 0, 1, 0));
         return;
     }
   }
