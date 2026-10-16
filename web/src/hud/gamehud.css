@@ -1,0 +1,498 @@
+/* HUD de gameplay (ver GameHud.ts). Medidas tiradas do vídeo do diretor (848x480) e escaladas para 1080p. */
+.gh {
+  --gh-font: Bahnschrift, 'DIN Condensed', 'Arial Narrow', 'Segoe UI', sans-serif;
+  --gh-yellow: #f6b81a;
+  --gh-green: #2fd25a;
+  --gh-red: #c8202a;
+  --gh-gold: #b9a12a;
+  --gh-steel: #9fb0c4;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--gh-font);
+  font-stretch: condensed;
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ topo direito */
+.gh-top {
+  position: absolute;
+  top: 26px;
+  right: 3.2vw;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.gh-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 64px;
+}
+
+/* Faixa de avisos: paralelogramo que sai de trás do losango, à esquerda. */
+.gh-ribbon {
+  position: absolute;
+  right: calc(100% - 26px);
+  top: 6px;
+  height: 52px;
+  width: max-content;
+  min-width: 300px;
+  padding: 0 44px 0 30px;
+  display: flex;
+  align-items: center;
+  clip-path: polygon(16px 0, 100% 0, 100% 100%, 0 100%);
+  opacity: 0;
+  transform: translateX(40px);
+  transition:
+    opacity 0.12s,
+    transform 0.18s;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+}
+.gh-ribbon.show {
+  opacity: 1;
+  transform: none;
+  animation: gh-ribbon-in 0.22s ease-out;
+}
+@keyframes gh-ribbon-in {
+  from {
+    clip-path: polygon(calc(100% - 16px) 0, 100% 0, 100% 100%, calc(100% - 32px) 100%);
+  }
+  to {
+    clip-path: polygon(16px 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+.gh-ribbon-text {
+  position: relative;
+  z-index: 1;
+}
+/* Brilho que corre por cima da faixa. */
+.gh-ribbon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.28) 45%, transparent 60%);
+  background-size: 250% 100%;
+  animation: gh-shine 1.4s linear infinite;
+}
+@keyframes gh-shine {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+.gh-ribbon.badge {
+  background: linear-gradient(180deg, #d0353b 0%, #a3191f 55%, #7e1015 100%);
+  font-size: 24px;
+  padding-left: 50px;
+}
+.gh-ribbon.grade {
+  background: linear-gradient(180deg, #cdb53a 0%, #a8902a 55%, #7b6a1b 100%);
+  font-size: 19px;
+}
+.gh-ribbon.grade.negative {
+  background: linear-gradient(180deg, #8d8f96 0%, #5f6168 60%, #45474d 100%);
+}
+.gh-ribbon.timing {
+  font-size: 18px;
+  line-height: 1.12;
+  padding-left: 34px;
+}
+.gh-ribbon.timing.excellent {
+  background: linear-gradient(180deg, #2f9a45 0%, #1f7a33 60%, #155c25 100%);
+}
+.gh-ribbon.timing.good {
+  background: linear-gradient(180deg, #6f8f2c 0%, #54701d 60%, #3d5414 100%);
+}
+.gh-ribbon.timing.slight {
+  background: linear-gradient(180deg, #a8862a 0%, #84671b 60%, #5f4a12 100%);
+}
+.gh-ribbon.timing.bad {
+  background: linear-gradient(180deg, #b13a2e 0%, #8a2219 60%, #631510 100%);
+}
+.gh-timing.excellent {
+  color: #6dff6a;
+}
+.gh-timing.good {
+  color: #d6ff6a;
+}
+.gh-timing.slight {
+  color: #ffd84a;
+}
+.gh-timing.bad {
+  color: #ff8a73;
+}
+.gh-coverage {
+  color: #f3d34a;
+}
+.gh-coverage b {
+  color: #f3d34a;
+}
+
+/* Losango (nota do teammate / ícone do badge). */
+.gh-diamond {
+  position: absolute;
+  left: -32px;
+  top: 2px;
+  width: 60px;
+  height: 60px;
+  z-index: 3;
+}
+.gh-diamond::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, #1a2533 0%, #070a0f 100%);
+  border: 3px solid #c9d3de;
+  box-shadow:
+    0 0 0 2px #3f86d8,
+    0 0 10px rgba(80, 150, 255, 0.55);
+}
+.gh-diamond.badge::before {
+  border-color: #9aa3ad;
+  box-shadow: 0 0 0 2px #2b2f36;
+}
+.gh-diamond.timing::before {
+  box-shadow:
+    0 0 0 2px #3f86d8,
+    0 0 14px rgba(120, 255, 150, 0.6);
+}
+.gh-diamond.flash::before {
+  animation: gh-diamond-flash 0.6s ease-out;
+}
+@keyframes gh-diamond-flash {
+  0% {
+    background: #fff;
+  }
+  100% {
+    background: linear-gradient(135deg, #1a2533 0%, #070a0f 100%);
+  }
+}
+.gh-diamond-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gh-diamond-face .gh-icon {
+  width: 36px;
+  height: 36px;
+}
+.gh-grade {
+  font-weight: 900;
+  font-size: 34px;
+  font-stretch: normal;
+  font-family: 'Arial Black', var(--gh-font);
+  letter-spacing: -0.04em;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* Cartão preto: nome e PTS/REB/AST/3P%. */
+.gh-card {
+  position: relative;
+  height: 56px;
+  min-width: 330px;
+  padding: 5px 18px 0 42px;
+  background: linear-gradient(180deg, #0b0b0d 0%, #000 100%);
+  border: 2px solid #6b6f78;
+  border-left: none;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  overflow: hidden;
+}
+.gh-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #e9edf2;
+  line-height: 18px;
+}
+.gh-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gh-stat-label {
+  color: #f4f4f4;
+}
+.gh-stat-value {
+  color: var(--gh-yellow);
+  margin-right: 9px;
+}
+.gh-stat-value:last-child {
+  margin-right: 0;
+}
+.gh-stats > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Varredura vermelha por trás das estatísticas. */
+.gh-sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 60%;
+  background: linear-gradient(90deg, transparent 0%, rgba(205, 25, 25, 0.85) 55%, rgba(255, 70, 40, 0.95) 85%, transparent 100%);
+  opacity: 0;
+  z-index: 0;
+}
+.gh-sweep.run {
+  animation: gh-sweep 0.55s ease-out;
+}
+@keyframes gh-sweep {
+  0% {
+    left: -60%;
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    left: 105%;
+    opacity: 0;
+  }
+}
+
+/* Raio por cima do cartão (takeover ganhando carga ou ativo). */
+.gh-bolt {
+  position: absolute;
+  top: -7px;
+  left: 34px;
+  right: 8px;
+  height: 16px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 4;
+}
+.gh-bolt.on {
+  opacity: 1;
+  animation: gh-bolt 0.18s steps(2) infinite;
+}
+.gh-bolt svg {
+  width: 100%;
+  height: 100%;
+}
+.gh-bolt polyline {
+  fill: none;
+  stroke: #cfe0ff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 3px #5f8dff) drop-shadow(0 0 6px #3d5bff);
+}
+@keyframes gh-bolt {
+  0% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(-1);
+  }
+}
+
+/* ------------------------------------------------------------------ quadradinhos do takeover */
+.gh-takeover {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  margin-right: 86px;
+}
+.gh-slot {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  background: #1a1210;
+  border: 2px solid #3a2a22;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.gh-slot-team {
+  border-style: dashed;
+  border-color: #7b6c63;
+  background: #0d0d0d;
+}
+.gh-slot-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  background: linear-gradient(180deg, #ff5a2a 0%, #d0261c 60%, #8e1410 100%);
+  transition: height 0.35s ease-out;
+}
+.gh-slot-icon {
+  position: absolute;
+  inset: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #e7e7e7;
+}
+.gh-slot.round .gh-slot-icon {
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #6b7079 0%, #3a3e45 70%);
+  border: 2px solid #c9ced6;
+}
+.gh-slot-team .gh-slot-icon {
+  color: #e9c08a;
+}
+.gh-slot .gh-icon {
+  width: 80%;
+  height: 80%;
+}
+
+/* Fogo: o quadradinho cheio brilha; ativo, pega fogo. */
+.gh-slot-fire {
+  position: absolute;
+  inset: -6px;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at 50% 100%, rgba(255, 190, 70, 0.95) 0%, rgba(255, 90, 20, 0.6) 35%, transparent 70%),
+    radial-gradient(ellipse at 25% 90%, rgba(255, 140, 30, 0.7) 0%, transparent 45%),
+    radial-gradient(ellipse at 75% 90%, rgba(255, 140, 30, 0.7) 0%, transparent 45%);
+  mix-blend-mode: screen;
+}
+.gh-slot.full {
+  border-color: #f2a03a;
+  box-shadow:
+    0 0 6px #ff9a2a,
+    inset 0 0 6px rgba(255, 150, 40, 0.6);
+}
+.gh-slot.active {
+  overflow: visible;
+  border-color: #ffd27a;
+  box-shadow:
+    0 0 10px #ff8a1a,
+    0 0 18px #ff4a12,
+    inset 0 0 8px rgba(255, 170, 60, 0.8);
+  animation: gh-fire-glow 0.5s ease-in-out infinite alternate;
+}
+.gh-slot.active .gh-slot-fire {
+  opacity: 1;
+  animation: gh-flicker 0.28s steps(3) infinite;
+}
+@keyframes gh-flicker {
+  0% {
+    transform: translateY(0) scaleY(1);
+  }
+  50% {
+    transform: translateY(-2px) scaleY(1.12);
+  }
+  100% {
+    transform: translateY(-1px) scaleY(0.95);
+  }
+}
+@keyframes gh-fire-glow {
+  from {
+    filter: brightness(1);
+  }
+  to {
+    filter: brightness(1.25);
+  }
+}
+
+/* ------------------------------------------------------------------ placar */
+.gh-score {
+  position: absolute;
+  right: 4.4vw;
+  bottom: 3.6vh;
+  width: 300px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.gh-score-art {
+  height: 48px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.9) 100%),
+    linear-gradient(110deg, #e7f6ff 0%, #a8e3f2 35%, #70d0e6 60%, #c1f0d8 100%);
+}
+.gh-score-names {
+  display: grid;
+  grid-template-columns: 1fr 1fr 40px;
+  background: #101114;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 2px 8px;
+}
+.gh-score-nums {
+  display: grid;
+  grid-template-columns: 1fr 1fr 40px;
+  align-items: center;
+  background: #fff;
+}
+.gh-score-num {
+  font-family: 'Segoe UI', var(--gh-font);
+  font-weight: 300;
+  font-size: 42px;
+  line-height: 50px;
+  padding-left: 10px;
+  color: #fff;
+  background: #121317;
+}
+.gh-score-num + .gh-score-num {
+  background: #fff;
+  color: #1b1c20;
+}
+.gh-clock {
+  text-align: center;
+  font-weight: 800;
+  font-size: 22px;
+  color: #d4142a;
+}
+.gh-clock.low {
+  animation: gh-clock 0.5s steps(2) infinite;
+}
+@keyframes gh-clock {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ------------------------------------------------------------------ embaixo do jogador */
+.gh-plate {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition: opacity 0.2s;
+}
+.gh-plate-bar {
+  width: 92px;
+  height: 7px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.8);
+  box-shadow: 0 0 0 1px rgba(255, 220, 120, 0.4);
+}
+.gh-plate-energy {
+  height: 100%;
+  background: linear-gradient(180deg, #ffe27a 0%, #f2b21a 100%);
+}
+.gh-plate-energy.low {
+  background: linear-gradient(180deg, #ff8a6a 0%, #d0301c 100%);
+}
+.gh-plate-name {
+  order: 2;
+  font-size: 15px;
+  font-weight: 700;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 4px #000;
+}

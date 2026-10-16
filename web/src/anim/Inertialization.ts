@@ -48,6 +48,13 @@ export class Inertializer {
   private duration = 0.2;
   /** Meia-vida (s) da velocidade da pose antiga enquanto ela é extrapolada. */
   decayHalfLife = 0.06;
+  /**
+   * Limites da velocidade extrapolada (rad/s e m/s). A velocidade sai da diferença entre os dois últimos quadros: um
+   * salto de 1 cm num quadro de 7 ms (144 Hz) vira 1,4 m/s, e a pose antiga extrapolada girava longe (o joelho ia 37 cm
+   * para trás na troca de loop correndo).
+   */
+  maxAngularSpeed = 12;
+  maxLinearSpeed = 2;
   private primed = false;
 
   constructor(bones: Bone[]) {
@@ -72,8 +79,21 @@ export class Inertializer {
     for (const t of this.tracks) {
       t.srcQ.copy(t.prevQ);
       t.srcP.copy(t.prevP);
-      t.srcW.copy(t.velW);
-      t.srcV.copy(t.velP);
+      t.srcW.copy(t.velW).clampLength(0, this.maxAngularSpeed);
+      t.srcV.copy(t.velP).clampLength(0, this.maxLinearSpeed);
+    }
+  }
+
+  /**
+   * A pose que saiu na tela foi escrita por cima do mixer depois do apply (IK da bandeja, por exemplo): ela vira a origem
+   * da próxima transição, parada (velocidade zero). Sem isso a transição partia da pose crua do clipe e o corpo pulava.
+   */
+  capture(): void {
+    for (const t of this.tracks) {
+      t.prevQ.copy(t.bone.quaternion);
+      t.prevP.copy(t.bone.position);
+      t.velW.set(0, 0, 0);
+      t.velP.set(0, 0, 0);
     }
   }
 

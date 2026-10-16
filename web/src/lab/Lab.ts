@@ -36,6 +36,29 @@ export interface LabMetrics {
   ballBodyFrames: number; // quadros com sobreposição > 1 cm
   ballBodyWorst: { part: string; frame: number; depth: number; mode: string } | null;
   ballBodyByMode: Record<string, number>; // quadros com bola no corpo por estado da bola (presa / no ar)
+  // Flicks (o que o olho vê como "pulo" ou "sumiço"): segunda diferença da posição entre quadros (m/s²). Um salto de
+  // 4 cm num quadro já passa de 140 m/s²; o quadro do quique (a bola inverte no chão) não conta.
+  ballKinkFrames: number; // bola mudando de trajetória de repente
+  ballKinkMax: number;
+  ballKinkWorst: { frame: number; accel: number; mode: string } | null;
+  palmKinkFrames: number; // palma da mão da bola saltando
+  palmKinkMax: number;
+  bodyKinkFrames: number; // pelve (o corpo inteiro) saltando
+  bodyKinkMax: number;
+  yawKinkFrames: number; // giro do corpo (yaw da malha) mudando de repente
+  nanFrames: number; // osso com matriz inválida: a malha some no quadro
+  kinkFramesList: number[]; // quadros com qualquer flick (para abrir os prints certos)
+  // Saltos (independente da frequência): um ponto do corpo ou a bola sai mais de 3 cm da trajetória num quadro (segunda
+  // diferença da posição, em m). É o que o olho vê como "piscar"; o quique da bola não conta.
+  snapFrames: number;
+  snapMax: number; // m
+  snapWorst: { frame: number; part: string; cm: number } | null;
+  // Pé na ponta: quadros de apoio (ponta < 4,5 cm do chão) com o calcanhar > 3 cm acima do pé plano. Um passo tem um
+  // pouco de calcanhar no ar no fim (heel-off, sequência curta); o errado é a ponta durante o apoio inteiro (sequência longa).
+  supportFrames: number; // quadros de apoio (somando os dois pés)
+  heelUpFrames: number; // desses, com o calcanhar > 3 cm acima do plano
+  heelUpMax: number; // m: maior altura do calcanhar acima do plano no apoio
+  heelRunMaxMs: number; // ms: maior sequência contínua de apoio na ponta (por pé)
 }
 
 /** Cápsula de um segmento do corpo: do osso `a` ao osso `b`; o raio sai da malha (mediana dos vértices do osso). */
@@ -118,6 +141,10 @@ export class Lab {
   private prevFoot = { l: new THREE.Vector3(), r: new THREE.Vector3() };
   private prevQ = new Map<string, THREE.Quaternion>();
   private prevW = new Map<string, number>();
+  /** Últimas posições (mundo) da bola, da palma da bola e da pelve, e o yaw da malha: para os flicks. */
+  private readonly hist = { ball: [] as THREE.Vector3[], palm: [] as THREE.Vector3[], body: [] as THREE.Vector3[], yaw: [] as number[], bounce: [] as boolean[] };
+  /** Últimas posições (mundo) dos pontos vigiados para os saltos. */
+  private readonly snapHist = new Map<string, THREE.Vector3[]>();
   private m: LabMetrics = Lab.emptyMetrics();
   private readonly labels: HTMLDivElement[] = [];
   private readonly flagsLabel = document.createElement('div');
@@ -177,6 +204,23 @@ export class Lab {
       ballBodyFrames: 0,
       ballBodyWorst: null,
       ballBodyByMode: {},
+      ballKinkFrames: 0,
+      ballKinkMax: 0,
+      ballKinkWorst: null,
+      palmKinkFrames: 0,
+      palmKinkMax: 0,
+      bodyKinkFrames: 0,
+      bodyKinkMax: 0,
+      yawKinkFrames: 0,
+      nanFrames: 0,
+      kinkFramesList: [],
+      snapFrames: 0,
+      snapMax: 0,
+      snapWorst: null,
+      supportFrames: 0,
+      heelUpFrames: 0,
+      heelUpMax: 0,
+      heelRunMaxMs: 0,
     };
   }
 
@@ -186,6 +230,8 @@ export class Lab {
   private soleVerts: [THREE.SkinnedMesh, number][] = [];
   /** Estado do último quadro (para o letreiro do render). */
   private frameFlags = { legGap: 0, sole: 0, ballBody: 0, legPair: '', ballPart: '' };
+  /** Quadros seguidos com o pé na ponta, por pé (para a sequência longa). */
+  private heelRun = { l: 0, r: 0 };
 
   /** Vértices cujo maior peso é o osso dado (índices do osso pelo nome). */
   private verticesOf(names: Set<string>): [THREE.SkinnedMesh, number][] {
@@ -309,6 +355,94 @@ export class Lab {
     this.frameFlags = { legGap, sole, ballBody, legPair, ballPart };
   }
 
+  /** Flicks: salto de posição entre quadros (segunda diferença) da bola, da palma da bola, da pelve e do yaw. */
+  private measureKinks(dt: number): void {
+    const m = this.m;
+    const h = this.hist;
+    const d = this.game.dribbler;
+    const keep = <T>(list: T[], x: T) => {
+      list.push(x);
+      if (list.length > 3) list.shift();
+    };
+    keep(h.ball, this.game.ballMesh.position.clone());
+    keep(h.palm, this.animator.palmWorld(d.ballHand(), new THREE.Vector3()));
+    keep(h.body, this.animator.bone('pelvis').getWorldPosition(new THREE.Vector3()));
+    const yawQ = this.animator.model.getWorldQuaternion(new THREE.Quaternion());
+    keep(h.yaw, new THREE.Euler().setFromQuaternion(yawQ, 'YXZ').y);
+    keep(h.bounce, d.bounces.length > 0);
+    let bad = false;
+    this.animator.root.traverse((o) => {
+      if (!(o as THREE.Bone).isBone) return;
+      if (!o.matrixWorld.elements.every(Number.isFinite)) bad = true;
+    });
+    if (bad) {
+      m.nanFrames++;
+      m.kinkFramesList.push(m.frames);
+    }
+    if (h.ball.length < 3) return;
+    const accel = (list: THREE.Vector3[]) => list[2].clone().sub(list[1]).sub(list[1]).add(list[0]).length() / (dt * dt);
+    let kink = false;
+    // A bola no quique (este quadro ou o anterior) inverte de verdade: fica de fora. Só com a bola no drible.
+    if (this.game.phase === 'dribble' && !h.bounce[1] && !h.bounce[2]) {
+      const a = accel(h.ball);
+      m.ballKinkMax = Math.max(m.ballKinkMax, a);
+      if (a > 140) {
+        m.ballKinkFrames++;
+        kink = true;
+        const mode = this.animator.ballHeldLocal ? 'procedural' : d.mode;
+        if (!m.ballKinkWorst || a > m.ballKinkWorst.accel) m.ballKinkWorst = { frame: m.frames, accel: Math.round(a), mode };
+      }
+    }
+    const pa = accel(h.palm);
+    m.palmKinkMax = Math.max(m.palmKinkMax, pa);
+    if (pa > 200) {
+      m.palmKinkFrames++;
+      kink = true;
+    }
+    const ba = accel(h.body);
+    m.bodyKinkMax = Math.max(m.bodyKinkMax, ba);
+    if (ba > 60) {
+      m.bodyKinkFrames++;
+      kink = true;
+    }
+    const wrap = (x: number) => Math.atan2(Math.sin(x), Math.cos(x));
+    const yawAcc = Math.abs(wrap(h.yaw[2] - h.yaw[1]) - wrap(h.yaw[1] - h.yaw[0])) / (dt * dt);
+    if (THREE.MathUtils.radToDeg(yawAcc) > 20000) {
+      m.yawKinkFrames++;
+      kink = true;
+    }
+    if (kink && m.kinkFramesList.length < 60) m.kinkFramesList.push(m.frames);
+    // Saltos: segunda diferença em metros (não divide por dt²), para pontos que o olho acompanha.
+    let snapped = false;
+    const points: [string, THREE.Vector3][] = [
+      ['pelve', h.body[2]],
+      ['cabeça', this.animator.bone('head').getWorldPosition(new THREE.Vector3())],
+      ['mão_e', this.animator.palmWorld('l', new THREE.Vector3())],
+      ['mão_d', this.animator.palmWorld('r', new THREE.Vector3())],
+      ['pé_e', this.animator.bone('foot_l').getWorldPosition(new THREE.Vector3())],
+      ['pé_d', this.animator.bone('foot_r').getWorldPosition(new THREE.Vector3())],
+      ['joelho_e', this.animator.bone('calf_l').getWorldPosition(new THREE.Vector3())],
+      ['joelho_d', this.animator.bone('calf_r').getWorldPosition(new THREE.Vector3())],
+    ];
+    points.push(['bola', h.ball[2]]);
+    // A bola no quique (quadro atual, anterior ou o seguinte ao chão) e fora do drible não conta, mas entra no histórico.
+    const ballSkip = this.game.phase !== 'dribble' || h.bounce[1] || h.bounce[2];
+    for (const [part, pos] of points) {
+      let list = this.snapHist.get(part);
+      if (!list) this.snapHist.set(part, (list = []));
+      list.push(pos.clone());
+      if (list.length > 3) list.shift();
+      if (list.length < 3 || (part === 'bola' && ballSkip)) continue;
+      const d = list[2].clone().sub(list[1]).sub(list[1]).add(list[0]).length();
+      m.snapMax = Math.max(m.snapMax, d);
+      if (d > 0.03) {
+        snapped = true;
+        if (!m.snapWorst || d * 100 > m.snapWorst.cm) m.snapWorst = { frame: m.frames, part, cm: +(d * 100).toFixed(1) };
+      }
+    }
+    if (snapped) m.snapFrames++;
+  }
+
   /** Raios das cápsulas medidos na malha (para conferir). */
   capsuleRadii(): Record<string, number> {
     if (!this.meshes.length) this.setupBody();
@@ -324,6 +458,9 @@ export class Lab {
     this.footMarks.clear();
     this.prevQ.clear();
     this.prevW.clear();
+    for (const list of Object.values(this.hist)) list.length = 0;
+    this.snapHist.clear();
+    this.heelRun = { l: 0, r: 0 };
   }
 
   metrics(): LabMetrics {
@@ -334,10 +471,20 @@ export class Lab {
     };
   }
 
+  /**
+   * Frequência da simulação (Hz). Os cenários contam quadros de 1/60 s; com 144 Hz cada um vira 2,4 passos de 1/144 s
+   * (monitor de 144 Hz, onde o jogo roda com dt de 7 ms), com 30 Hz meio passo de 1/30 s.
+   */
+  hz = 60;
+  private hzDebt = 0;
+
   /** Avança n quadros de 1/60 s com a entrada dada (campos omitidos = soltos). */
   step(n: number, partial: Partial<InputState> = {}): void {
-    const dt = 1 / 60;
-    for (let i = 0; i < n; i++) {
+    const dt = 1 / this.hz;
+    this.hzDebt += (n * this.hz) / 60;
+    const steps = Math.floor(this.hzDebt + 1e-9);
+    this.hzDebt -= steps;
+    for (let i = 0; i < steps; i++) {
       this.clock += dt;
       const shoot = partial.shoot ?? false;
       if (shoot !== this.prevShoot) this.shootEdge = this.clock;
@@ -387,6 +534,18 @@ export class Lab {
         }
       }
       prev.copy(toe);
+      // Pé na ponta: só conta com o pé de apoio (ponta < 4,5 cm); a sequência zera quando o pé sai do chão ou assenta.
+      const support = toe.y < 0.045;
+      const rise = support ? this.animator.footHeelRise(side) : 0;
+      if (support) {
+        m.supportFrames++;
+        m.heelUpMax = Math.max(m.heelUpMax, rise);
+      }
+      if (support && rise > 0.03) {
+        m.heelUpFrames++;
+        this.heelRun[side]++;
+        m.heelRunMaxMs = Math.max(m.heelRunMaxMs, (this.heelRun[side] * dt * 1000));
+      } else this.heelRun[side] = 0;
     }
     // Estalos: aceleração angular de cada osso (mundo).
     const q = new THREE.Quaternion();
@@ -419,6 +578,7 @@ export class Lab {
       m.ballGapMax = Math.max(m.ballGapMax, Math.max(0, palm.distanceTo(d.position) - 0.13));
     }
     m.bounces += d.bounces.length;
+    this.measureKinks(dt);
     this.measureBody();
     // Rastros.
     const push = (list: THREE.Vector3[], p: THREE.Vector3) => {
@@ -428,6 +588,44 @@ export class Lab {
     push(this.trailBall, this.game.ballMesh.position);
     push(this.trailR, this.animator.palmWorld('r', v));
     push(this.trailL, this.animator.palmWorld('l', v));
+  }
+
+  /**
+   * Desenha uma vista só, na tela inteira e sem rastros nem letreiros (vídeos do laboratório: tools/video-lab.mjs).
+   * 'jogo' usa a câmera do jogo (a que o diretor vê).
+   */
+  renderSingle(kind: 'jogo' | 'back' | 'side' | 'front' | 'top', gameCamera: THREE.Camera): void {
+    for (const line of this.lines) line.visible = false;
+    this.footMarks.visible = false;
+    for (const label of this.labels) label.style.display = 'none';
+    this.flagsLabel.style.display = 'none';
+    const size = this.renderer.getSize(new THREE.Vector2());
+    this.renderer.setScissorTest(false);
+    this.renderer.setViewport(0, 0, size.x, size.y);
+    if (kind === 'jogo') {
+      this.renderer.render(this.scene, gameCamera);
+      return;
+    }
+    const cam = this.cameras[0];
+    cam.aspect = size.x / size.y;
+    cam.updateProjectionMatrix();
+    this.placeCamera(cam, kind);
+    this.renderer.render(this.scene, cam);
+  }
+
+  private placeCamera(cam: THREE.PerspectiveCamera, kind: 'back' | 'side' | 'front' | 'top'): void {
+    const root = this.animator.root;
+    const pos = root.position;
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(root.quaternion);
+    const left = new THREE.Vector3(1, 0, 0).applyQuaternion(root.quaternion);
+    const target = pos.clone().add(new THREE.Vector3(0, 0.8, 0));
+    cam.up.set(0, 1, 0);
+    if (kind === 'back') cam.position.copy(pos).addScaledVector(fwd, -3.6).add(new THREE.Vector3(0, 1.9, 0));
+    if (kind === 'side') cam.position.copy(pos).addScaledVector(left, -3.4).add(new THREE.Vector3(0, 1.0, 0));
+    if (kind === 'front') cam.position.copy(pos).addScaledVector(fwd, 3.6).add(new THREE.Vector3(0, 1.2, 0));
+    if (kind === 'top') cam.position.copy(pos).add(new THREE.Vector3(0, 5.2, 0)).addScaledVector(fwd, -0.01);
+    if (kind === 'top') cam.up.copy(fwd);
+    cam.lookAt(kind === 'top' ? pos : target);
   }
 
   /** Desenha as 4 vistas lado a lado (2 x 2) no canvas do jogo. */
@@ -440,11 +638,9 @@ export class Lab {
     const size = this.renderer.getSize(new THREE.Vector2());
     const w = Math.floor(size.x / 2);
     const h = Math.floor(size.y / 2);
-    const root = this.animator.root;
-    const pos = root.position;
-    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(root.quaternion);
-    const left = new THREE.Vector3(1, 0, 0).applyQuaternion(root.quaternion);
-    const target = pos.clone().add(new THREE.Vector3(0, 0.8, 0));
+    for (const label of this.labels) label.style.display = '';
+    this.flagsLabel.style.display = '';
+    this.footMarks.visible = true;
     this.renderer.setScissorTest(true);
     Views.forEach((view, i) => {
       const cam = this.cameras[i];
@@ -452,12 +648,7 @@ export class Lab {
       cam.updateProjectionMatrix();
       const x = (i % 2) * w;
       const y = i < 2 ? h : 0; // three conta o viewport de baixo para cima
-      if (view.kind === 'back') cam.position.copy(pos).addScaledVector(fwd, -3.6).add(new THREE.Vector3(0, 1.9, 0));
-      if (view.kind === 'side') cam.position.copy(pos).addScaledVector(left, -3.4).add(new THREE.Vector3(0, 1.0, 0));
-      if (view.kind === 'front') cam.position.copy(pos).addScaledVector(fwd, 3.6).add(new THREE.Vector3(0, 1.2, 0));
-      if (view.kind === 'top') cam.position.copy(pos).add(new THREE.Vector3(0, 5.2, 0)).addScaledVector(fwd, -0.01);
-      if (view.kind === 'top') cam.up.copy(fwd);
-      cam.lookAt(view.kind === 'top' ? pos : target);
+      this.placeCamera(cam, view.kind);
       this.renderer.setViewport(x, y, w, h);
       this.renderer.setScissor(x, y, w, h);
       this.renderer.render(this.scene, cam);

@@ -32,8 +32,11 @@ function applyWorldRotation(bone: Bone, worldRot: Quaternion, boneWorld: Quatern
  * Resolve a cadeia upper -> lower -> end para end chegar em target (mundo). Precisa das matrizes do mundo em dia
  * (chamar updateMatrixWorld antes); atualiza as do upper para baixo no fim. Retorna a distância que sobrou.
  * poleHint: direção (mundo) para onde o joelho deve apontar se a perna estiver reta demais para dar o plano.
+ * soft: fração do comprimento da cadeia em que ela "freia" antes de esticar (soft IK). Perto da extensão total o ângulo do
+ * cotovelo/joelho muda muito para um deslocamento pequeno do alvo; com o freio exponencial a cadeia nunca chega reta e
+ * o alvo que se afasta não vira estalo (o alvo fica a até alguns milímetros).
  */
-export function solveTwoBoneIK(upper: Bone, lower: Bone, end: Bone, target: Vector3, poleHint?: Vector3): number {
+export function solveTwoBoneIK(upper: Bone, lower: Bone, end: Bone, target: Vector3, poleHint?: Vector3, soft = 0): number {
   upper.getWorldPosition(a);
   lower.getWorldPosition(b);
   end.getWorldPosition(c);
@@ -41,7 +44,11 @@ export function solveTwoBoneIK(upper: Bone, lower: Bone, end: Bone, target: Vect
   const lab = ab.subVectors(b, a).length();
   const lcb = bc.subVectors(c, b).length();
   const eps = 1e-4;
-  const lat = Math.min(Math.max(at.subVectors(target, a).length(), eps), lab + lcb - eps);
+  const chain = lab + lcb;
+  let lat = Math.max(at.subVectors(target, a).length(), eps);
+  const softLen = soft * chain;
+  if (softLen > 0 && lat > chain - softLen) lat = chain - softLen * Math.exp(-(lat - (chain - softLen)) / softLen);
+  lat = Math.min(lat, chain - eps);
 
   ac.subVectors(c, a);
   const acLen = Math.max(ac.length(), eps);
@@ -111,6 +118,10 @@ export function applyPole(upper: Bone, lower: Bone, target: Vector3, pole: Vecto
   pe.subVectors(el, sh).addScaledVector(dir, -el.clone().sub(sh).dot(dir));
   pp.copy(pole).addScaledVector(dir, -pole.dot(dir));
   if (pe.lengthSq() < 1e-10 || pp.lengthSq() < 1e-10) return;
+  // Cadeia quase reta: o lado do cotovelo fica mal definido (pe minúsculo vira de lado entre quadros); o pole perde força.
+  const bend = Math.sqrt(pe.lengthSq()) / Math.max(1e-6, el.distanceTo(sh));
+  weight *= Math.min(1, Math.max(0, (bend - 0.04) / 0.16));
+  if (weight <= 0) return;
   pe.normalize();
   pp.normalize();
   let angle = Math.acos(Math.min(1, Math.max(-1, pe.dot(pp))));

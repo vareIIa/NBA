@@ -4,9 +4,12 @@ import { Bone, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
 import {
   type ClipsFile,
+  contactFrames,
   crossedFrames,
+  dribbleHandShape,
   dribblePhase,
   frameAtPhase,
+  framesToNext,
   framesToNextPeak,
   moveClipFor,
   spinTurnAlpha,
@@ -88,6 +91,44 @@ describe('Fase e eventos do drible', () => {
       const frames = framesToNextPeak(info, 'r', v)!;
       expect(frames / 60).toBeGreaterThan(0.12);
       expect(frames).toBeLessThan(info.frames);
+    }
+  });
+
+  test('DesignedHandCurveIsSmoothAndHitsValleysAndPeaks', () => {
+    // A mão da bola nos loops segue uma curva desenhada no ritmo do clipe: 0 nos vales, 1 nos picos, sem degraus.
+    for (const name of ['Dribble_Idle_R', 'Dribble_Walk_R', 'Dribble_Run_R', 'Dribble_Back_R', 'Dribble_Low_R']) {
+      const c = clips[name];
+      for (const v of c.valleys_r) expect(dribbleHandShape(c, 'r', v)!).toBeCloseTo(0, 6);
+      for (const p of c.peaks_r) expect(dribbleHandShape(c, 'r', p)!).toBeCloseTo(1, 6);
+      let prev = dribbleHandShape(c, 'r', 0)!;
+      for (let f = 0.1; f < c.frames - 1; f += 0.1) {
+        const h = dribbleHandShape(c, 'r', f)!;
+        expect(h).toBeGreaterThanOrEqual(0);
+        expect(h).toBeLessThanOrEqual(1);
+        expect(Math.abs(h - prev)).toBeLessThan(0.08); // 1/10 de quadro: sem salto
+        prev = h;
+      }
+    }
+  });
+
+  test('BallLeavesTheHandOnTheWayDownAndIsCaughtOnTheWayUp', () => {
+    // Soltura na descida (mão empurrando, não parada no vale) e recepção na subida; a bola fica no ar entre 0,12 s e um ciclo.
+    for (const name of ['Dribble_Idle_R', 'Dribble_Walk_R', 'Dribble_Run_R']) {
+      const c = clips[name];
+      const n = c.frames - 1;
+      const { release, catch: catches } = contactFrames(c, 'r', 0.5, 0.65);
+      expect(release.length).toBe(c.valleys_r.length);
+      for (const r of release) {
+        expect(dribbleHandShape(c, 'r', r)!).toBeCloseTo(0.5, 3);
+        expect(dribbleHandShape(c, 'r', r + 0.5)!).toBeLessThan(0.5); // descendo
+        const air = framesToNext(catches, r, n)!;
+        expect(air / 60).toBeGreaterThan(0.12);
+        expect(air).toBeLessThan(n);
+      }
+      for (const k of catches) {
+        expect(dribbleHandShape(c, 'r', k)!).toBeCloseTo(0.65, 3);
+        expect(dribbleHandShape(c, 'r', k + 0.5)!).toBeGreaterThan(0.65); // subindo
+      }
     }
   });
 
@@ -204,8 +245,9 @@ describe('Dribles procedurais', () => {
 
   test('SkilledDribbleHeightsFromResearch', () => {
     // Hirata et al. (ISBS 2011): recepção a 40,3% e soltura a 32,5% da altura.
-    expect(SkilledDribble.catchHeight).toBeCloseTo(0.79, 2);
-    expect(SkilledDribble.releaseHeight).toBeCloseTo(0.637, 2);
+    // 40,3% e 32,5% da altura do jogador (1,86 m).
+    expect(SkilledDribble.catchHeight).toBeCloseTo(0.75, 2);
+    expect(SkilledDribble.releaseHeight).toBeCloseTo(0.6045, 2);
   });
 
   test('BounceSplitMatchesWoodRestitution', () => {

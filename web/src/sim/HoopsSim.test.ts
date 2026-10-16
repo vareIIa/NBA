@@ -26,6 +26,7 @@ import {
   defaultBallSimConfig,
   defaultDribbleEnergyConfig,
   defaultGatherCarryTuning,
+  defaultProStickConfig,
   defaultShotTuning,
   degToRad,
   dirFromVector,
@@ -402,7 +403,7 @@ describe('Drible', () => {
 
 /** Alimenta o reconhecedor com uma sequência (x, y) a 60 Hz e guarda todos os gestos. */
 class StickFeed {
-  readonly recognizer = new ProStickRecognizer();
+  constructor(readonly recognizer = new ProStickRecognizer()) {}
   time = 0;
   readonly all: StickGesture[] = [];
 
@@ -489,6 +490,78 @@ describe('Pro Stick e dribles', () => {
     slow.sample(0, 0, 30); // 500 ms depois: não é combo
     slow.flick(1, 0);
     expect(slow.hasKind(StickGestureKind.DoubleThrow)).toBe(false);
+  });
+
+  test('StickEarlyFlickOnTheEdge', () => {
+    // Flick na borda: sai ~33 ms depois de o stick chegar à zona ativa, ainda fora do centro, e não sai de novo na volta.
+    const feed = new StickFeed();
+    feed.sample(0, 1, 3);
+    expect(feed.all.filter((g) => g.kind === StickGestureKind.Flick).length).toBe(1);
+    expect(feed.has(StickGestureKind.Flick, StickDir.Up)).toBe(true);
+    feed.sample(0, 0, 1);
+    expect(feed.all.filter((g) => g.kind === StickGestureKind.Flick).length).toBe(1);
+
+    // Segurado (não para baixo): o drible sai na borda uma vez; o Hold continua sendo emitido para quem o usa.
+    const held = new StickFeed();
+    held.sample(1, 0, 20);
+    held.sample(0, 0, 1);
+    expect(held.all.filter((g) => g.kind === StickGestureKind.Flick).length).toBe(1);
+    expect(held.has(StickGestureKind.Hold, StickDir.Right)).toBe(true);
+
+    // Para baixo espera a volta ao centro (segurar para baixo = arremesso pelo Pro Stick, docs/02 §1).
+    const down = new StickFeed();
+    down.sample(0, -1, 3);
+    expect(down.hasKind(StickGestureKind.Flick)).toBe(false);
+    down.sample(0, 0, 1);
+    expect(down.has(StickGestureKind.Flick, StickDir.Down)).toBe(true);
+
+    // Giro rápido não dispara o flick na borda; giro lento que parou na borda sai marcado (afterEarlyFlick).
+    const spin = new StickFeed();
+    spin.rotate(0, -300, 18);
+    expect(spin.hasKind(StickGestureKind.Flick)).toBe(false);
+    const pause = new StickFeed();
+    pause.sample(1, 0, 3);
+    pause.rotate(0, 300, 18);
+    const rotation = pause.all.find((g) => g.kind === StickGestureKind.Rotation);
+    expect(rotation?.afterEarlyFlick).toBe(true);
+    expect(pause.has(StickGestureKind.Flick, StickDir.Right)).toBe(true);
+
+    // Giro completo sai no meio do gesto (passou de 230°), uma vez só.
+    const midSpin = new StickFeed();
+    midSpin.rotate(0, -300, 18);
+    const rotations = midSpin.all.filter((g) => g.kind === StickGestureKind.Rotation);
+    expect(rotations.length).toBe(1);
+    expect(rotations[0].time).toBeLessThan(midSpin.time - 3 / 60);
+
+    // Desligado: volta a ser lido só na volta ao centro.
+    const legacy = new StickFeed(new ProStickRecognizer({ ...defaultProStickConfig(), earlyFlick: false }));
+    legacy.sample(0, 1, 3);
+    expect(legacy.hasKind(StickGestureKind.Flick)).toBe(false);
+    legacy.sample(0, 0, 1);
+    expect(legacy.has(StickGestureKind.Flick, StickDir.Up)).toBe(true);
+  });
+
+  test('RotationAfterEarlyFlickNeverMakesTwoMoves', () => {
+    const context = makeDribbleContext();
+    const rotation = (time: number, startTime: number) =>
+      makeStickGesture({ kind: StickGestureKind.Rotation, time, startTime, afterEarlyFlick: true });
+
+    // O crossover do flick na borda começou em 0,03; o giro chega antes do 1º quique: troca pelo spin.
+    const early = new DribbleController();
+    early.request(DribbleMove.Crossover, 0.03);
+    const swap = early.resolveGesture(rotation(0.1, 0), context, 0.1);
+    expect(swap.move).toBe(DribbleMove.Spin);
+    expect(swap.redirect).toBe(true);
+
+    // Chega depois do quique: descartado (o toque já virou o crossover).
+    const late = new DribbleController();
+    late.request(DribbleMove.Crossover, 0.03);
+    expect(late.resolveGesture(rotation(0.3, 0), context, 0.3).move).toBe(DribbleMove.None);
+
+    // O drible ativo é de um toque anterior: o giro é um comando novo, como sempre.
+    const older = new DribbleController();
+    older.request(DribbleMove.Crossover, 0);
+    expect(older.resolveGesture(rotation(0.3, 0.1), context, 0.3).move).toBe(DribbleMove.Spin);
   });
 
   test('GesturesMapToTwoKMoves', () => {

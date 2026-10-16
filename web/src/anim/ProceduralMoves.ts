@@ -17,10 +17,15 @@ export type V3 = [number, number, number];
 
 export const BallRadius = 0.119;
 
-/** Alturas (m) do centro da bola no drible de jogador bom, para um jogador de 1,96 m (Hirata et al., 2011). */
+/** Altura do jogador (m). Era 1,96; o diretor pediu 1,86 (2026-10-15: alto demais, drible "quebrado"). */
+export const PlayerHeightMeters = 1.86;
+/** Os pontos-chave dos procedurais (abaixo) foram medidos num jogador de 1,96 m: escala para a altura atual. */
+export const ProceduralScale = PlayerHeightMeters / 1.96;
+
+/** Alturas (m) do centro da bola no drible de jogador bom, proporcionais à altura (Hirata et al., 2011). */
 export const SkilledDribble = {
-  catchHeight: 0.403 * 1.96, // 0,79 m
-  releaseHeight: 0.325 * 1.96, // 0,64 m
+  catchHeight: 0.403 * PlayerHeightMeters, // 0,75 m
+  releaseHeight: 0.325 * PlayerHeightMeters, // 0,60 m
   contactSeconds: 0.39,
 };
 

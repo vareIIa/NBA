@@ -32,63 +32,6 @@ body {
   pointer-events: none;
 }
 
-#title {
-  position: absolute;
-  top: 16px;
-  left: 20px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  font-size: 20px;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-}
-
-#title span {
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  font-size: 13px;
-  opacity: 0.7;
-  margin-left: 8px;
-}
-
-#stats {
-  position: absolute;
-  top: 18px;
-  right: 20px;
-  padding: 6px 12px;
-  background: var(--panel);
-  border-radius: 6px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-#energy {
-  position: absolute;
-  left: 20px;
-  bottom: 20px;
-  width: 220px;
-}
-
-#energy-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  opacity: 0.8;
-  margin-bottom: 4px;
-}
-
-#energy-bar {
-  height: 8px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-#energy-fill {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, #2ec6ff, #3dff7a);
-}
-
 /* Medidor vertical ao lado do jogador (estilo do jogo de referência). */
 #meter {
   position: absolute;
@@ -145,51 +88,9 @@ body {
   background: var(--late);
 }
 
-#banner {
-  position: absolute;
-  left: 50%;
-  top: 9%;
-  transform: translate(-50%, -8px) scale(0.96);
-  text-align: center;
-  opacity: 0;
-  transition:
-    opacity 0.15s,
-    transform 0.15s;
-}
-
-#banner.show {
-  opacity: 1;
-  transform: translate(-50%, 0) scale(1);
-}
-
-#banner-main {
-  font-size: 46px;
-  font-weight: 900;
-  font-style: italic;
-  letter-spacing: 0.04em;
-  text-shadow: 0 3px 16px rgba(0, 0, 0, 0.7);
-}
-
-#banner-sub {
-  margin-top: 2px;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  opacity: 0.9;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
-}
-
-#banner.green #banner-main,
-#banner.make #banner-main {
-  color: var(--green);
-}
-#banner.miss #banner-main {
-  color: var(--late);
-}
-
 #pad {
   position: absolute;
-  right: 20px;
+  left: 20px;
   bottom: 20px;
   font-size: 12px;
   opacity: 0.7;

@@ -1,43 +1,45 @@
-// Criador de arremesso: conteúdo da aba "Arremessos" do menu de pausa. Layout do 2K sem a linha de timing: cartões de
-// família à esquerda (cada um abre a lista de opções), painel de velocidade e mistura à direita, faixa de arremessos
-// salvos embaixo. Trabalha numa cópia (ShotEditor): só Salvar, Equipar e Apagar gravam no JumpShotStore.
+// Criador de arremesso, no layout do 2K (Jump Shot Creator). Painel à esquerda (PauseMenu marca .pm--shots e a cena 3D
+// aparece à direita). Coluna de quatro cartões: três famílias (base e as duas camadas de cima) e a mistura. A coluna da
+// direita mostra o slot ativo: a tabela de animações (notas por linha) ou o painel de mistura (visual cue, velocidade
+// de soltura, mistura e losango). O cartão SHOT ATTRIBUTES fica por cima da cena. A prévia repete o arremesso em
+// montagem; focar uma linha da tabela já mostra essa escolha (sem gravar).
+// Trabalha numa cópia (ShotEditor): só Salvar, Equipar e Apagar gravam no JumpShotStore.
 // A parte sem DOM (rótulos, passos, estado da cópia e navegação) é exportada e testada em ShotCreatorView.test.ts.
-// Navegação: Enter num cartão abre a lista (ou entra no painel, no cartão de mistura); setas ajustam a barra; Esc/B
-// volta um nível e, na raiz, pede para fechar (com aviso se houver alterações não salvas).
+import './shotcreator.css';
 import { ReleaseSpeed } from '../sim/HoopsShotModel';
+import { ShotSignatures } from '../shot/ShotForms';
 import {
   type JumpShotSetup,
   type JumpShotStore,
+  type ShotAttributes,
   type ShotFamily,
   MaxSetups,
   ShotFamilies,
   defaultSetup,
+  gradeOf,
+  shotAttributes,
+  signatureAttributes,
   upperWeights,
 } from '../shot/JumpShotSetup';
+import { BaseIcon, MixIcon, UpperIcon } from './shotIcons';
 
-/** Ação de navegação: vem do teclado ou do controle (PauseMenu.update). */
-export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back';
+/** Ação de navegação: vem do teclado ou do controle (PauseMenu.update). `save` é o Y (ou a tecla Y). */
+export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'save';
 export type Dir = 'up' | 'down' | 'left' | 'right';
 
 /** Campo de família do arremesso (um por cartão de família). */
 type Slot = 'lowerBase' | 'upperRelease1' | 'upperRelease2';
 type Editable = Slot | 'blendPercent' | 'releaseSpeed';
-type ButtonId = 'new' | 'save' | 'equip' | 'delete' | 'back';
+type ButtonId = 'new' | 'save' | 'equip' | 'delete' | 'test' | 'back';
 
-/** Cartões da coluna esquerda. Os três primeiros são famílias; o último é a mistura e a velocidade (painel à direita). */
-export const CardLabels = [
-  'Corpo de baixo',
-  'Camada de cima 1',
-  'Camada de cima 2',
-  'Mistura e velocidade de soltura',
-] as const;
+/** Cartões da coluna esquerda. Os três primeiros são famílias; o último é a mistura e a velocidade. */
+export const CardLabels = ['Corpo de baixo', 'Camada de cima 1', 'Camada de cima 2', 'Mistura e velocidade de soltura'] as const;
 const FamilySlots: readonly Slot[] = ['lowerBase', 'upperRelease1', 'upperRelease2'];
+/** Índice do cartão de mistura (o último). */
+const MixCard = 3;
 
-/** Rótulos das famílias. Tipado por família: se o modelo ganhar outra, o typecheck pede o rótulo aqui. */
-export const FamilyLabels: Record<ShotFamily, string> = {
-  JumpShot: 'Arremesso clássico (JumpShot)',
-  JumpShot2: 'Arremesso alto (JumpShot2)',
-};
+/** Rótulos das famílias: o nome do jogador de referência (src/shot/ShotForms.ts). */
+export const FamilyLabels = Object.fromEntries(ShotFamilies.map((f) => [f, ShotSignatures[f].label])) as Record<ShotFamily, string>;
 
 export const SpeedLabels: Record<ReleaseSpeed, string> = {
   [ReleaseSpeed.Quick]: 'Rápida',
@@ -49,6 +51,12 @@ export const SpeedSteps: readonly ReleaseSpeed[] = [ReleaseSpeed.Quick, ReleaseS
 
 /** Passo da barra de mistura (0 a 100). */
 export const BlendStep = 5;
+
+/** Colunas da tabela de animações e a ordem dos atributos em cada linha. */
+export const TableColumns = ['ANIMAÇÃO', 'ALT. SOLT.', 'IMUN. DEF.', 'VEL. SOLT.', 'EST. TIM.'] as const;
+
+/** Atributos do cartão SHOT ATTRIBUTES, na ordem da tela (duas colunas, de cima para baixo). */
+export const AttributeNames = ['Altura de soltura', 'Velocidade de soltura', 'Imunidade defensiva', 'Estabilidade do timing'] as const;
 
 /** Limita um índice ao intervalo da lista (sem dar a volta). */
 export function clampIndex(index: number, length: number): number {
@@ -100,7 +108,23 @@ export function sameSetup(a: JumpShotSetup, b: JumpShotSetup): boolean {
   );
 }
 
-/** O que a navegação precisa saber da faixa e dos botões neste momento. */
+/** Chave do que aparece na cena: muda quando a prévia precisa começar de novo. */
+export function previewKey(s: JumpShotSetup): string {
+  return [s.lowerBase, s.upperRelease1, s.upperRelease2, s.blendPercent, s.releaseSpeed].join('|');
+}
+
+/**
+ * Arremesso mostrado agora: a cópia, com a família da linha focada da tabela no lugar da família do slot. Só a prévia
+ * usa isso; a cópia (e o que se salva) muda só com Enter ou clique na linha.
+ */
+export function withRowPreview(setup: JumpShotSetup, focus: string, slot: number): JumpShotSetup {
+  if (!focus.startsWith('opt:') || slot < 0 || slot > 2) return setup;
+  const family = focus.slice(4);
+  if (!(ShotFamilies as readonly string[]).includes(family)) return setup;
+  return { ...setup, [FamilySlots[slot]]: family as ShotFamily };
+}
+
+/** O que a navegação precisa saber da faixa, dos botões e da tabela neste momento. */
 export interface NavContext {
   /** Chips da faixa, na ordem em que aparecem. */
   chips: string[];
@@ -108,8 +132,10 @@ export interface NavContext {
   buttons: string[];
   /** Chip do arremesso em edição: é para onde o foco volta ao descer dos cartões ou subir dos botões. */
   editing: string;
-  /** Cartão de onde o foco entrou no painel: Esquerda, no "Testar", devolve para ele. */
+  /** Cartão do slot ativo (card:0..3): Esquerda e Esc levam de volta a ele a partir do conteúdo. */
   home: string;
+  /** Família de cada slot de família (base, camada 1, camada 2): a linha que o foco pega ao entrar pela direita. */
+  current: string[];
 }
 
 function pick(list: readonly string[], index: number): string | null {
@@ -124,7 +150,7 @@ export function navNeighbor(focus: string, dir: Dir, ctx: NavContext): string | 
   const side = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
   if (focus.startsWith('chip:')) {
     if (side) return pick(ctx.chips, ctx.chips.indexOf(focus) + side);
-    if (dir === 'up') return 'card:3';
+    if (dir === 'up') return ctx.home;
     if (dir === 'down') return pick(ctx.buttons, 0);
     return null;
   }
@@ -132,25 +158,23 @@ export function navNeighbor(focus: string, dir: Dir, ctx: NavContext): string | 
     if (side) return pick(ctx.buttons, ctx.buttons.indexOf(focus) + side);
     return dir === 'up' ? ctx.editing : null;
   }
-  switch (focus) {
-    case 'card:0':
-    case 'card:1':
-    case 'card:2':
-    case 'card:3': {
-      const row = Number(focus.slice(5));
-      if (dir === 'up') return row > 0 ? `card:${row - 1}` : null;
-      if (dir === 'down') return row < 3 ? `card:${row + 1}` : ctx.editing;
-      return dir === 'right' ? 'speed' : null;
-    }
-    case 'speed':
-      return dir === 'down' ? 'blend' : null;
-    case 'blend':
-      return dir === 'up' ? 'speed' : dir === 'down' ? 'test' : null;
-    case 'test':
-      return dir === 'up' ? 'blend' : dir === 'down' ? ctx.editing : dir === 'left' ? ctx.home : null;
-    default:
-      return null;
+  if (focus.startsWith('opt:')) {
+    const i = ShotFamilies.indexOf(focus.slice(4) as ShotFamily);
+    if (dir === 'up') return i > 0 ? `opt:${ShotFamilies[i - 1]}` : null;
+    if (dir === 'down') return i < ShotFamilies.length - 1 ? `opt:${ShotFamilies[i + 1]}` : null;
+    return dir === 'left' ? ctx.home : null;
   }
+  if (focus === 'speed') return dir === 'down' ? 'blend' : null;
+  if (focus === 'blend') return dir === 'up' ? 'speed' : dir === 'down' ? ctx.editing : null;
+  const card = /^card:([0-3])$/.exec(focus);
+  if (card) {
+    const n = Number(card[1]);
+    if (dir === 'up') return n > 0 ? `card:${n - 1}` : null;
+    if (dir === 'down') return n < MixCard ? `card:${n + 1}` : ctx.editing;
+    if (dir === 'right') return n < MixCard ? `opt:${ctx.current[n]}` : 'speed';
+    return null;
+  }
+  return null;
 }
 
 /** -1 para cima e esquerda, +1 para baixo e direita (nas listas), 0 para as demais ações. */
@@ -284,8 +308,11 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 export interface ShotCreatorOptions {
   store: JumpShotStore;
-  /** "Testar arremesso": recebe uma cópia do arremesso em edição (salvo ou não). */
-  onPreview: (setup: JumpShotSetup) => void;
+  /**
+   * Prévia do arremesso (a cena repete este arremesso). Chamada quando o que aparece muda (cópia ou linha focada).
+   * `restart` reinicia mesmo sem mudança ("Testar arremesso").
+   */
+  onPreview: (setup: JumpShotSetup, restart?: boolean) => void;
   /** Pedido de saída (Voltar, Esc/B ou ✕), já depois do aviso de alterações não salvas. */
   onRequestClose: () => void;
   /** Mensagem rápida no menu (em vermelho quando `error`). */
@@ -307,37 +334,48 @@ interface Dialog {
   index: number;
 }
 
+interface RowEls {
+  family: ShotFamily;
+  row: HTMLElement;
+  star: HTMLElement;
+}
+
 export class ShotCreatorView {
   readonly root: HTMLElement;
+  /** Cartão SHOT ATTRIBUTES: fica por cima da cena, fora do painel (PauseMenu o põe na moldura). */
+  readonly attrsRoot: HTMLElement;
   private readonly editor: ShotEditor;
-  /** Foco atual: a data-key de um elemento (card:0..3, speed, blend, test, chip:<id>, btn:<nome>, opt:<família>, ...). */
+  /** Foco atual: a data-key de um elemento (card:0..3, opt:<família>, speed, blend, chip:<id>, btn:<nome>, choice:<i>). */
   private focus = 'card:0';
-  /** Cartão de família de onde o foco entrou no painel de mistura. */
-  private home = 'card:0';
-  /** Foco de onde saiu uma tela sobreposta (lista ou aviso), para voltar a ele ao fechar. */
+  /** Slot ativo (0..2 famílias, 3 mistura): é o que a coluna da direita mostra. */
+  private slot = 0;
+  /** Foco de onde saiu uma tela sobreposta (aviso), para voltar a ele ao fechar. */
   private returnFocus = 'card:0';
-  /** Cartão cuja lista de opções está aberta. */
-  private picker: number | null = null;
-  private pickerIndex = 0;
   private dialog: Dialog | null = null;
   private dragging = false;
+  /** Só há prévia com a tela aberta (open) e enquanto ela não sai (hide). */
+  private active = false;
+  private lastPreview: string | null = null;
 
   private readonly nameEl: HTMLElement;
   private readonly stateEl: HTMLElement;
   private readonly cardEls: HTMLButtonElement[] = [];
   private readonly cardValues: HTMLElement[] = [];
+  private readonly tableEl: HTMLElement;
+  private readonly tableTitle: HTMLElement;
+  private readonly rowEls: RowEls[] = [];
+  private readonly mixEl: HTMLElement;
   private readonly speedButtons: HTMLButtonElement[] = [];
   private readonly track: HTMLElement;
   private readonly fill: HTMLElement;
   private readonly thumb: HTMLElement;
-  private readonly layer1El: HTMLElement;
-  private readonly layer2El: HTMLElement;
+  private readonly layerNames: HTMLElement[] = [];
+  private readonly layerPcts: HTMLElement[] = [];
+  private readonly diamondFill: SVGRectElement;
+  private readonly attrBars: { fill: HTMLElement; grade: HTMLElement }[] = [];
   private readonly chipsEl: HTMLElement;
   private readonly countEl: HTMLElement;
   private readonly buttonEls: Record<ButtonId, HTMLButtonElement>;
-  private readonly pickerEl: HTMLElement;
-  private readonly pickerTitle: HTMLElement;
-  private readonly pickerOptions: { button: HTMLButtonElement; tag: HTMLElement }[] = [];
   private readonly modalEl: HTMLElement;
   private readonly modalTitle: HTMLElement;
   private readonly modalText: HTMLElement;
@@ -347,24 +385,33 @@ export class ShotCreatorView {
     this.editor = new ShotEditor(options.store);
     this.root = el('section', 'sc');
     this.root.setAttribute('aria-label', 'Criador de arremesso');
+    this.root.hidden = true;
 
-    // Cabeçalho: nome do arremesso em edição e a situação (não salvo, equipado).
+    // Cabeçalho: título com o nome do arremesso em edição, a situação e o ✕.
     const head = el('header', 'sc-head', this.root);
     const title = el('h2', 'sc-title', head);
     el('span', 'sc-title-kicker', title, 'EDITANDO ARREMESSO:');
     title.append(' ');
     this.nameEl = el('span', 'sc-title-name', title);
     this.stateEl = el('span', 'sc-state', head);
+    const close = el('button', 'sc-x', head, '✕');
+    close.type = 'button';
+    close.title = 'Voltar (Esc / B)';
+    close.addEventListener('click', () => this.requestClose());
 
-    // Coluna esquerda: os quatro cartões.
     const main = el('div', 'sc-main', this.root);
+
+    // Coluna esquerda: os quatro cartões (ícone, nome do jogador ou o resumo da mistura).
     const cards = el('div', 'sc-cards', main);
+    const icons = [BaseIcon, UpperIcon, UpperIcon, MixIcon];
     CardLabels.forEach((label, i) => {
       const card = el('button', 'sc-card', cards);
+      card.type = 'button';
       card.dataset.key = `card:${i}`;
-      el('span', 'sc-card-label', card, label);
+      card.title = label;
+      el('span', 'sc-card-bar', card, i === MixCard ? 'Mistura' : label.replace('Camada de cima', 'Camada').replace('Corpo de baixo', 'Base'));
+      el('span', 'sc-card-icon', card).innerHTML = icons[i];
       this.cardValues.push(el('span', 'sc-card-value', card));
-      el('span', 'sc-card-go', card, '›');
       card.addEventListener('click', () => {
         this.setFocus(`card:${i}`);
         this.onConfirm();
@@ -372,31 +419,57 @@ export class ShotCreatorView {
       this.cardEls.push(card);
     });
 
-    // Painel da direita: velocidade de soltura, mistura de animação e o teste.
-    const mix = el('aside', 'sc-mix', main);
-    const speedSec = el('section', 'sc-sec', mix);
-    el('h3', 'sc-sec-title', speedSec, 'Velocidade de soltura');
-    const steps = el('div', 'sc-steps', speedSec);
+    // Conteúdo da direita, um de cada vez (o slot ativo decide): tabela de famílias ou painel de mistura.
+    const content = el('div', 'sc-content', main);
+    this.tableEl = el('section', 'sc-table', content);
+    this.tableTitle = el('h3', 'sc-sec-title', this.tableEl);
+    const table = el('table', 'sc-grid', this.tableEl);
+    const headRow = el('tr', '', el('thead', '', table));
+    TableColumns.forEach((col, i) => el('th', i === 0 ? 'sc-th-name' : 'sc-th', headRow, col));
+    const tbody = el('tbody', '', table);
+    for (const family of ShotFamilies) {
+      const row = el('tr', 'sc-row', tbody);
+      row.dataset.key = `opt:${family}`;
+      row.addEventListener('click', () => {
+        this.setFocus(`opt:${family}`);
+        this.onConfirm();
+      });
+      const name = el('td', 'sc-row-name', row);
+      const star = el('span', 'sc-row-star', name);
+      el('span', 'sc-row-label', name, FamilyLabels[family]);
+      el('span', 'sc-row-traits', name, ShotSignatures[family].traits);
+      // Notas: a mesma ordem das colunas (alt. soltura, imunidade, velocidade, estabilidade). Não mudam com a escolha.
+      const a = signatureAttributes(family);
+      const grades = [a.releaseHeight, a.defensiveImmunity, a.releaseSpeed, a.timingStability];
+      for (const v of grades) el('td', 'sc-grade', row, gradeOf(v));
+      this.rowEls.push({ family, row, star });
+    }
+    const legend = el('p', 'sc-legend', this.tableEl);
+    el('span', 'sc-legend-star', legend, '★ Equipado');
+    el('span', 'sc-legend-unlocked', legend, '■ Desbloqueado');
+
+    this.mixEl = el('section', 'sc-mix', content);
+    // Velocidade de soltura: três passos.
+    const speedBox = el('div', 'sc-block', this.mixEl);
+    el('h4', 'sc-label', speedBox, 'VELOCIDADE DE SOLTURA');
+    const steps = el('div', 'sc-steps', speedBox);
     steps.dataset.key = 'speed';
     for (const speed of SpeedSteps) {
       const step = el('button', 'sc-step', steps, SpeedLabels[speed]);
+      step.type = 'button';
       step.addEventListener('click', () => {
         this.setFocus('speed');
         this.setSpeed(speed);
       });
       this.speedButtons.push(step);
     }
-
-    const blendSec = el('section', 'sc-sec', mix);
-    el('h3', 'sc-sec-title', blendSec, 'Mistura de animação');
-    this.track = el('div', 'sc-track', blendSec);
+    // Mistura de animação: arrasta ou clica (ou setas, de 5 em 5).
+    const blendBox = el('div', 'sc-block', this.mixEl);
+    el('h4', 'sc-label', blendBox, 'MISTURA DE ANIMAÇÃO');
+    this.track = el('div', 'sc-track', blendBox);
     this.track.dataset.key = 'blend';
     this.fill = el('div', 'sc-track-fill', this.track);
     this.thumb = el('div', 'sc-track-thumb', this.track);
-    const layers = el('div', 'sc-layers', blendSec);
-    this.layer1El = el('span', 'sc-layer-1', layers);
-    this.layer2El = el('span', 'sc-layer-2', layers);
-    // Mouse: clicar ou arrastar na barra escolhe a porcentagem (com a captura, o arrasto segue fora da barra).
     this.track.addEventListener('pointerdown', (e) => {
       this.dragging = true;
       this.track.setPointerCapture(e.pointerId);
@@ -411,13 +484,48 @@ export class ShotCreatorView {
     };
     this.track.addEventListener('pointerup', release);
     this.track.addEventListener('pointercancel', release);
-
-    const test = el('button', 'sc-test', mix, 'Testar arremesso');
-    test.dataset.key = 'test';
-    test.addEventListener('click', () => {
-      this.setFocus('test');
-      this.preview();
-    });
+    // Losango: nome e porcentagem de cada camada; o losango enche de baixo para cima com a camada 2.
+    const diamondBox = el('div', 'sc-diamond', this.mixEl);
+    const names = el('div', 'sc-diamond-values', diamondBox);
+    for (let i = 0; i < 2; i++) {
+      const layer = el('div', 'sc-layer', names);
+      this.layerNames.push(el('h4', 'sc-label', layer));
+      this.layerPcts.push(el('span', `sc-pct${i === 1 ? ' is-second' : ''}`, layer));
+    }
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 200 200');
+    svg.setAttribute('class', 'sc-diamond-svg');
+    svg.setAttribute('aria-hidden', 'true');
+    const cx = 100;
+    const half = 92;
+    const diamondPts = (r: number): string => {
+      const cy = 100;
+      return `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`;
+    };
+    const defs = document.createElementNS(svgNS, 'defs');
+    const clip = document.createElementNS(svgNS, 'clipPath');
+    clip.setAttribute('id', 'sc-diamond-clip');
+    const clipShape = document.createElementNS(svgNS, 'polygon');
+    clipShape.setAttribute('points', diamondPts(half));
+    clip.appendChild(clipShape);
+    defs.appendChild(clip);
+    svg.appendChild(defs);
+    for (const r of [half, 70, 50, 30]) {
+      const ring = document.createElementNS(svgNS, 'polygon');
+      ring.setAttribute('points', diamondPts(r));
+      ring.setAttribute('class', r === half ? 'sc-diamond-edge' : 'sc-diamond-ring');
+      svg.appendChild(ring);
+    }
+    this.diamondFill = document.createElementNS(svgNS, 'rect') as SVGRectElement;
+    this.diamondFill.setAttribute('x', '0');
+    this.diamondFill.setAttribute('width', '200');
+    this.diamondFill.setAttribute('height', '200');
+    this.diamondFill.setAttribute('y', '192');
+    this.diamondFill.setAttribute('clip-path', 'url(#sc-diamond-clip)');
+    this.diamondFill.setAttribute('class', 'sc-diamond-fill');
+    svg.appendChild(this.diamondFill);
+    diamondBox.appendChild(svg);
 
     // Faixa de arremessos salvos e botões de ação.
     const strip = el('section', 'sc-strip', this.root);
@@ -431,26 +539,11 @@ export class ShotCreatorView {
       save: this.button(actions, 'save', 'Salvar', ''),
       equip: this.button(actions, 'equip', 'Equipar', ''),
       delete: this.button(actions, 'delete', 'Apagar', 'danger'),
+      test: this.button(actions, 'test', 'Testar arremesso', ''),
       back: this.button(actions, 'back', 'Voltar', 'ghost'),
     };
 
-    // Sobreposições: lista de opções de um cartão, e aviso (alterações não salvas, apagar).
-    this.pickerEl = el('div', 'sc-overlay sc-picker', this.root);
-    this.pickerEl.addEventListener('click', (e) => {
-      if (e.target === this.pickerEl) this.closePicker();
-    });
-    const pickerBox = el('div', 'sc-modal-box', this.pickerEl);
-    this.pickerTitle = el('h3', 'sc-modal-title', pickerBox);
-    const opts = el('div', 'sc-opts', pickerBox);
-    for (const family of ShotFamilies) {
-      const option = el('button', 'sc-opt', opts);
-      option.dataset.key = `opt:${family}`;
-      el('span', 'sc-opt-name', option, FamilyLabels[family]);
-      const tag = el('span', 'sc-opt-tag', option);
-      option.addEventListener('click', () => this.pickFamily(family));
-      this.pickerOptions.push({ button: option, tag });
-    }
-
+    // Aviso (alterações não salvas, apagar).
     this.modalEl = el('div', 'sc-overlay sc-modal', this.root);
     this.modalEl.addEventListener('click', (e) => {
       if (e.target === this.modalEl) this.closeDialog();
@@ -460,24 +553,53 @@ export class ShotCreatorView {
     this.modalText = el('p', 'sc-modal-text', box);
     this.modalChoices = el('div', 'sc-modal-choices', box);
 
+    // Cartão de atributos (fora do painel).
+    // Classe sc também no cartão: ele fica fora da raiz .sc, e sem ela as cores (--sc-*) não chegavam.
+    this.attrsRoot = el('section', 'sc sc-attrs');
+    this.attrsRoot.hidden = true;
+    el('div', 'sc-attrs-title', this.attrsRoot, 'SHOT ATTRIBUTES');
+    const grid = el('div', 'sc-attrs-grid', this.attrsRoot);
+    for (const name of AttributeNames) {
+      const item = el('div', 'sc-attr', grid);
+      el('span', 'sc-attr-name', item, name);
+      const bar = el('span', 'sc-attr-bar', item);
+      const fill = el('span', 'sc-attr-fill', bar);
+      const grade = el('span', 'sc-attr-grade', item);
+      this.attrBars.push({ fill, grade });
+    }
+
     this.paint();
   }
 
-  /** Abre a aba: copia o arremesso equipado e foca o primeiro cartão. */
+  /** Abre a aba: copia o arremesso equipado e foca o primeiro cartão. A prévia começa com o que aparece. */
   open(): void {
     this.editor.loadEquipped();
-    this.picker = null;
     this.dialog = null;
     this.dragging = false;
+    this.active = true;
+    this.slot = 0;
     this.focus = 'card:0';
-    this.home = 'card:0';
+    this.returnFocus = 'card:0';
+    this.lastPreview = null;
+    this.root.hidden = false;
+    this.attrsRoot.hidden = false;
+    // O HUD do jogo (placar, dicas, medidor) sai enquanto o criador está aberto: a cena fica só com o boneco.
+    document.body.classList.add('sc-open');
     this.paint();
   }
 
-  /** Pedido de saída (Voltar, Esc/B ou ✕). Fecha antes a lista ou o aviso que estiver aberto; com alterações, pergunta. */
+  /** Esconde o criador (o menu volta para a lista). A prévia para por quem chama (PauseMenu.onPreviewStop). */
+  hide(): void {
+    this.active = false;
+    this.dialog = null;
+    this.root.hidden = true;
+    this.attrsRoot.hidden = true;
+    document.body.classList.remove('sc-open');
+  }
+
+  /** Pedido de saída (Voltar, Esc/B ou ✕). Fecha antes o aviso que estiver aberto; com alterações, pergunta. */
   requestClose(): void {
     if (this.dialog) return this.closeDialog();
-    if (this.picker !== null) return this.closePicker();
     this.requestLeave(() => this.options.onRequestClose());
   }
 
@@ -485,7 +607,7 @@ export class ShotCreatorView {
   handle(action: MenuAction): void {
     const d = this.dialog;
     if (d) return this.handleDialog(d, action);
-    if (this.picker !== null) return this.handlePicker(action);
+    if (action === 'save') return this.saveOrHint();
     if (action === 'confirm') return this.onConfirm();
     if (action === 'back') return this.onBack();
     this.onDirection(action);
@@ -503,16 +625,6 @@ export class ShotCreatorView {
     this.paint();
   }
 
-  private handlePicker(action: MenuAction): void {
-    if (action === 'back') return this.closePicker();
-    if (action === 'confirm') return this.pickFamily(ShotFamilies[this.pickerIndex]);
-    const step = stepOf(action);
-    if (step === 0) return;
-    this.pickerIndex = clampIndex(this.pickerIndex + step, ShotFamilies.length);
-    this.focus = `opt:${ShotFamilies[this.pickerIndex]}`;
-    this.paint();
-  }
-
   private onDirection(dir: Dir): void {
     const side = dir === 'left' ? -1 : dir === 'right' ? 1 : null;
     const s = this.editor.setup;
@@ -525,19 +637,22 @@ export class ShotCreatorView {
   private onConfirm(): void {
     const f = this.focus;
     if (f.startsWith('card:')) {
-      const card = Number(f.slice(5));
-      if (card < FamilySlots.length) return this.openPicker(card);
-      return this.moveTo('speed');
+      // Enter num cartão entra no conteúdo: a tabela (famílias) ou o painel de velocidade (mistura).
+      const next = navNeighbor(f, 'right', this.navContext());
+      if (next) this.moveTo(next);
+      return;
     }
+    if (f.startsWith('opt:')) return this.pickFamily(f.slice(4) as ShotFamily);
     const s = this.editor.setup;
     if (f === 'speed') return this.setSpeed(stepSpeed(s.releaseSpeed, 1, true));
     if (f === 'blend') return this.setBlend(stepBlend(s.blendPercent, 1, true));
-    if (f === 'test') return this.preview();
     this.activate(f);
   }
 
   private onBack(): void {
-    if (this.focus === 'speed' || this.focus === 'blend' || this.focus === 'test') return this.setFocus(this.home);
+    if (this.focus.startsWith('opt:') || this.focus === 'speed' || this.focus === 'blend') {
+      return this.setFocus(`card:${this.slot}`);
+    }
     this.requestClose();
   }
 
@@ -553,6 +668,8 @@ export class ShotCreatorView {
         return this.equip();
       case 'btn:delete':
         return this.askDelete();
+      case 'btn:test':
+        return this.preview(true);
       case 'btn:back':
         return this.requestClose();
       default:
@@ -569,27 +686,13 @@ export class ShotCreatorView {
     });
   }
 
-  private openPicker(card: number): void {
-    this.picker = card;
-    this.pickerIndex = Math.max(0, ShotFamilies.indexOf(this.editor.setup[FamilySlots[card]]));
-    this.returnFocus = `card:${card}`;
-    this.focus = `opt:${ShotFamilies[this.pickerIndex]}`;
-    this.paint();
-  }
-
-  private closePicker(): void {
-    this.picker = null;
-    this.focus = this.returnFocus;
-    this.paint();
-  }
-
-  /** Escolhe a família do cartão aberto. Só mexe na cópia. */
+  /** Escolhe a família da linha no slot ativo. Só mexe na cópia; o foco fica na linha. */
   private pickFamily(family: ShotFamily): void {
-    if (this.picker === null) return;
+    if (this.slot > 2) return;
     const change: Partial<Pick<JumpShotSetup, Slot>> = {};
-    change[FamilySlots[this.picker]] = family;
+    change[FamilySlots[this.slot]] = family;
     this.editor.patch(change);
-    this.closePicker();
+    this.paint();
   }
 
   private openDialog(d: Dialog): void {
@@ -668,6 +771,12 @@ export class ShotCreatorView {
     this.setFocus(`chip:${this.editor.id}`);
   }
 
+  /** Y: salva; sem alterações, só avisa. */
+  private saveOrHint(): void {
+    if (!this.editor.isDirty()) return this.options.onFlash('Nada para salvar');
+    this.save();
+  }
+
   /** Salvar: grava a cópia no store. Devolve se deu certo. */
   private save(): boolean {
     if (!this.editor.save()) {
@@ -696,8 +805,16 @@ export class ShotCreatorView {
     this.paint();
   }
 
-  private preview(): void {
-    this.options.onPreview(this.editor.setup);
+  /** Mostrado agora: a cópia, com a linha focada da tabela no lugar do slot. */
+  private shown(): JumpShotSetup {
+    return withRowPreview(this.editor.setup, this.focus, this.slot);
+  }
+
+  /** Prévia explícita ("Testar arremesso"): reinicia a cena com o que aparece. */
+  private preview(restart: boolean): void {
+    const shown = this.shown();
+    this.lastPreview = previewKey(shown);
+    this.options.onPreview(shown, restart);
   }
 
   private setSpeed(speed: ReleaseSpeed): void {
@@ -719,7 +836,7 @@ export class ShotCreatorView {
 
   private setFocus(key: string): void {
     this.focus = key;
-    if (key.startsWith('card:')) this.home = key;
+    if (key.startsWith('card:')) this.slot = Number(key.slice(5));
     this.paint();
   }
 
@@ -730,11 +847,13 @@ export class ShotCreatorView {
   }
 
   private navContext(): NavContext {
+    const s = this.editor.setup;
     return {
       chips: this.chipKeys(),
       buttons: this.buttonKeys(),
       editing: `chip:${this.editor.id}`,
-      home: this.home,
+      home: `card:${this.slot}`,
+      current: FamilySlots.map((slot) => s[slot]),
     };
   }
 
@@ -745,13 +864,14 @@ export class ShotCreatorView {
     return keys;
   }
 
-  /** Botões habilitados agora. Salvar e Voltar estão sempre disponíveis. */
+  /** Botões habilitados agora. Salvar, Testar e Voltar estão sempre disponíveis. */
   private buttonState(): Record<ButtonId, boolean> {
     return {
       new: this.editor.canCreate(),
       save: true,
       equip: this.editor.isStored() && !this.editor.isEquipped(),
       delete: this.editor.canDelete(),
+      test: true,
       back: true,
     };
   }
@@ -765,6 +885,7 @@ export class ShotCreatorView {
 
   private button(parent: HTMLElement, id: ButtonId, label: string, variant: string): HTMLButtonElement {
     const b = el('button', `sc-btn${variant ? ` ${variant}` : ''}`, parent, label);
+    b.type = 'button';
     b.dataset.key = `btn:${id}`;
     b.addEventListener('click', () => {
       this.setFocus(`btn:${id}`);
@@ -776,6 +897,7 @@ export class ShotCreatorView {
   private chip(id: string, name: string, equipped: boolean, editing: boolean, draft: boolean): void {
     const key = `chip:${id}`;
     const b = el('button', `sc-chip${editing ? ' editing' : ''}${equipped ? ' equipped' : ''}`, this.chipsEl);
+    b.type = 'button';
     b.dataset.key = key;
     el('span', 'sc-chip-name', b, name);
     el('span', 'sc-chip-tag', b, draft ? 'NÃO SALVO' : equipped ? 'EQUIPADO' : '');
@@ -787,33 +909,59 @@ export class ShotCreatorView {
 
   private paint(): void {
     const s = this.editor.setup;
+    const shown = this.shown();
     const stored = this.editor.isStored();
     const dirty = this.editor.isDirty();
     const equipped = this.editor.isEquipped();
+    const shares = blendShares(s.blendPercent);
 
     this.nameEl.textContent = s.name;
     this.stateEl.textContent = !stored ? 'NOVO · NÃO SALVO' : dirty ? 'ALTERAÇÕES NÃO SALVAS' : equipped ? 'EQUIPADO' : '';
     this.stateEl.className = `sc-state${dirty || !stored ? ' dirty' : equipped ? ' equipped' : ''}`;
 
-    // Cartões: nome da opção atual. O cartão de mistura mostra velocidade e camada 2.
+    // Cartões: nome do jogador escolhido em cada família; o de mistura resume velocidade e camadas.
     FamilySlots.forEach((slot, i) => {
       this.cardValues[i].textContent = FamilyLabels[s[slot]];
     });
-    this.cardValues[3].textContent = `${SpeedLabels[s.releaseSpeed]} · camada 2 em ${s.blendPercent}%`;
-    const inMix = this.focus === 'speed' || this.focus === 'blend' || this.focus === 'test';
-    this.cardEls[3].classList.toggle('is-active', inMix);
+    this.cardValues[MixCard].textContent = `Velocidade: ${SpeedLabels[s.releaseSpeed]} · Mistura: ${shares.layer1}% / ${shares.layer2}%`;
+    this.cardEls.forEach((card, i) => card.classList.toggle('is-active', i === this.slot));
 
-    this.speedButtons.forEach((b, i) => b.classList.toggle('on', SpeedSteps[i] === s.releaseSpeed));
+    // Coluna da direita: a tabela do slot de família, ou a mistura.
+    const inFamily = this.slot < MixCard;
+    this.tableEl.hidden = !inFamily;
+    this.mixEl.hidden = inFamily;
+    if (inFamily) {
+      this.tableTitle.textContent = CardLabels[this.slot];
+      const current = s[FamilySlots[this.slot]];
+      for (const r of this.rowEls) {
+        const on = r.family === current;
+        r.row.classList.toggle('current', on);
+        r.star.textContent = on ? '★' : '';
+      }
+    } else {
+      this.paintMix(s);
+    }
 
-    const shares = blendShares(s.blendPercent);
-    this.fill.style.width = `${s.blendPercent}%`;
-    this.thumb.style.left = `${s.blendPercent}%`;
-    this.layer1El.textContent = `Camada 1: ${shares.layer1}%`;
-    this.layer2El.textContent = `Camada 2: ${shares.layer2}%`;
+    // Cartão de atributos: da prévia (com a linha focada).
+    const a: ShotAttributes = shotAttributes(shown);
+    const values = [a.releaseHeight, a.releaseSpeed, a.defensiveImmunity, a.timingStability];
+    this.attrBars.forEach((bar, i) => {
+      bar.fill.style.width = `${Math.round(values[i] * 100)}%`;
+      bar.grade.textContent = gradeOf(values[i]);
+    });
 
+    // Prévia: a cena repete o que aparece; só chama de novo quando muda.
+    if (this.active) {
+      const key = previewKey(shown);
+      if (key !== this.lastPreview) {
+        this.lastPreview = key;
+        this.options.onPreview(shown);
+      }
+    }
+
+    this.chipsEl.replaceChildren();
     const list = this.editor.list();
     const equippedId = this.editor.equippedId();
-    this.chipsEl.replaceChildren();
     for (const item of list) this.chip(item.id, item.name, item.id === equippedId, item.id === this.editor.id, false);
     if (!stored) this.chip(this.editor.id, s.name, false, true, true);
     this.countEl.textContent = `${list.length}/${MaxSetups}`;
@@ -821,30 +969,15 @@ export class ShotCreatorView {
     const state = this.buttonState();
     for (const id of Object.keys(state) as ButtonId[]) this.buttonEls[id].disabled = !state[id];
 
-    this.pickerEl.classList.toggle('open', this.picker !== null);
-    if (this.picker !== null) {
-      this.pickerTitle.textContent = CardLabels[this.picker];
-      const current = s[FamilySlots[this.picker]];
-      ShotFamilies.forEach((family, i) => {
-        const { button, tag } = this.pickerOptions[i];
-        button.classList.toggle('current', family === current);
-        tag.textContent = family === current ? 'ATUAL' : '';
-      });
-    }
-
     const d = this.dialog;
     this.modalEl.classList.toggle('open', d !== null);
+    this.modalChoices.replaceChildren();
     if (d) {
       this.modalTitle.textContent = d.title;
       this.modalText.textContent = d.text;
-      this.modalChoices.replaceChildren();
       d.choices.forEach((c, i) => {
-        const b = el(
-          'button',
-          `sc-choice${c.danger ? ' danger' : ''}${c.run ? '' : ' ghost'}`,
-          this.modalChoices,
-          c.label,
-        );
+        const b = el('button', `sc-choice${c.danger ? ' danger' : ''}${c.run ? '' : ' ghost'}`, this.modalChoices, c.label);
+        b.type = 'button';
         b.dataset.key = `choice:${i}`;
         b.addEventListener('click', () => this.chooseDialog(i));
       });
@@ -854,17 +987,31 @@ export class ShotCreatorView {
     this.paintFocus();
   }
 
-  /** Se o foco caiu num item que sumiu ou ficou desabilitado, leva para um vizinho válido. */
+  private paintMix(s: JumpShotSetup): void {
+    this.speedButtons.forEach((b, i) => b.classList.toggle('on', SpeedSteps[i] === s.releaseSpeed));
+    const shares = blendShares(s.blendPercent);
+    this.fill.style.width = `${s.blendPercent}%`;
+    this.thumb.style.left = `${s.blendPercent}%`;
+    this.layerNames[0].textContent = FamilyLabels[s.upperRelease1];
+    this.layerNames[1].textContent = FamilyLabels[s.upperRelease2];
+    this.layerPcts[0].textContent = `${shares.layer1}%`;
+    this.layerPcts[1].textContent = `${shares.layer2}%`;
+    // Losango: a camada 2 enche de baixo para cima (y da borda do retângulo; o clip recorta no losango).
+    this.diamondFill.setAttribute('y', String(192 - 184 * (shares.layer2 / 100)));
+  }
+
+  /** Foco com a tela aberta: se o item sumiu ou está escondido, leva para um vizinho válido. */
   private ensureFocus(): void {
     if (this.visibleKeys().includes(this.focus)) return;
     if (this.focus.startsWith('btn:')) this.focus = 'btn:back';
     else if (this.focus.startsWith('chip:')) this.focus = `chip:${this.editor.id}`;
-    else this.focus = 'card:0';
+    else if (this.focus.startsWith('choice:')) this.focus = 'choice:0';
+    else this.focus = `card:${this.slot}`;
   }
 
   private visibleKeys(): string[] {
     return [...this.root.querySelectorAll<HTMLElement>('[data-key]')]
-      .filter((node) => !(node as HTMLButtonElement).disabled)
+      .filter((node) => !(node as HTMLButtonElement).disabled && node.closest('[hidden]') === null)
       .map((node) => node.dataset.key ?? '');
   }
 

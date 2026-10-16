@@ -1,5 +1,5 @@
 /* Menu de pausa (PauseMenu.ts) e criador de arremesso (ShotCreatorView.ts). Mesma base do BadgeMenu: grafite, vermelho,
-   cortes em diagonal, tipografia condensada. Classes pm- são a moldura; sc- são o criador. */
+   cortes em diagonal, tipografia condensada. Classes pm- são a moldura; o criador (sc-) está em shotcreator.css. */
 .pm {
   --pm-font: Bahnschrift, 'DIN Condensed', 'Arial Narrow', 'Segoe UI', sans-serif;
   --pm-bg: #0a0c10;
@@ -167,430 +167,6 @@
   border-left-color: var(--pm-red);
 }
 
-/* ------------------------------------------------------------------ criador: cabeçalho */
-.sc {
-  position: relative;
-  display: grid;
-  gap: 14px;
-}
-.sc-head {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.sc-title {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  font-style: italic;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-.sc-title-kicker {
-  color: var(--pm-red);
-}
-.sc-title-name {
-  font-style: normal;
-  text-transform: none;
-}
-.sc-state {
-  margin-left: auto;
-  padding: 4px 12px;
-  border: 1px solid var(--pm-line-strong);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  color: var(--pm-dim);
-}
-.sc-state:empty {
-  display: none;
-}
-.sc-state.dirty {
-  color: var(--pm-amber);
-  border-color: color-mix(in srgb, var(--pm-amber) 60%, transparent);
-}
-.sc-state.equipped {
-  color: var(--pm-green);
-  border-color: color-mix(in srgb, var(--pm-green) 60%, transparent);
-}
-
-/* ------------------------------------------------------------------ criador: cartões e painel */
-.sc-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-  gap: 16px;
-  align-items: start;
-}
-.sc-cards {
-  display: grid;
-  gap: 8px;
-}
-.sc-card {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 4px 12px;
-  min-height: 78px;
-  padding: 12px 18px 12px 16px;
-  background: var(--pm-panel);
-  border: 1px solid var(--pm-line);
-  border-left: 3px solid var(--pm-red);
-  clip-path: polygon(0 0, calc(100% - var(--pm-cut)) 0, 100% var(--pm-cut), 100% 100%, 0 100%);
-  text-align: left;
-  transition: background 0.1s;
-}
-.sc-card:hover {
-  background: var(--pm-panel-2);
-}
-.sc-card.is-active {
-  background: var(--pm-panel-2);
-  border-left-color: var(--pm-ink);
-}
-.sc-card-label {
-  grid-column: 1;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--pm-dim);
-}
-.sc-card-value {
-  grid-column: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1.15;
-}
-.sc-card-go {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  font-size: 26px;
-  color: var(--pm-dim);
-}
-.sc-card.is-focus {
-  border-color: var(--pm-ink);
-  box-shadow: inset 0 0 0 1px var(--pm-ink);
-  background: var(--pm-panel-2);
-}
-
-.sc-mix {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  min-height: 100%;
-  padding: 18px 22px 22px;
-  background: var(--pm-panel);
-  border: 1px solid var(--pm-line);
-  clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 0 100%);
-}
-.sc-sec-title {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--pm-red);
-}
-.sc-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-.sc-step {
-  padding: 11px 6px;
-  background: var(--pm-panel-2);
-  border: 1px solid var(--pm-line);
-  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.sc-step.on {
-  background: linear-gradient(180deg, var(--pm-red), var(--pm-red-deep));
-  border-color: transparent;
-}
-.sc-steps.is-focus,
-.sc-track.is-focus {
-  outline: 1px solid var(--pm-ink);
-  outline-offset: 4px;
-}
-
-/* Barra de mistura: a parte preenchida é a camada 2; as linhas marcam cada 5%. */
-.sc-track {
-  position: relative;
-  height: 34px;
-  margin-top: 4px;
-  background:
-    repeating-linear-gradient(90deg, transparent 0 calc(5% - 1px), rgba(255, 255, 255, 0.1) calc(5% - 1px) 5%),
-    var(--pm-panel-2);
-  border: 1px solid var(--pm-line-strong);
-  cursor: pointer;
-  touch-action: none;
-  user-select: none;
-}
-.sc-track-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  background: linear-gradient(90deg, var(--pm-red-deep), var(--pm-red));
-}
-.sc-track-thumb {
-  position: absolute;
-  top: -5px;
-  bottom: -5px;
-  width: 6px;
-  margin-left: -3px;
-  background: var(--pm-ink);
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
-}
-.sc-layers {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
-  font-size: 15px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.sc-layer-1 {
-  color: var(--pm-dim);
-}
-.sc-layer-2 {
-  color: var(--pm-red);
-}
-
-.sc-test {
-  margin-top: auto;
-  padding: 14px 20px;
-  background: linear-gradient(180deg, var(--pm-red), var(--pm-red-deep));
-  border: none;
-  clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.sc-test:hover {
-  filter: brightness(1.15);
-}
-.sc-test.is-focus {
-  box-shadow: inset 0 0 0 2px var(--pm-ink);
-}
-
-/* ------------------------------------------------------------------ criador: faixa de salvos e botões */
-.sc-strip {
-  display: grid;
-  gap: 10px;
-  padding-top: 14px;
-  border-top: 1px solid var(--pm-line);
-}
-.sc-strip-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.sc-strip-title {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--pm-red);
-}
-.sc-strip-count {
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--pm-dim);
-  font-variant-numeric: tabular-nums;
-}
-.sc-chips {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 6px 4px 10px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--pm-red) transparent;
-}
-.sc-chip {
-  flex: 0 0 auto;
-  display: grid;
-  gap: 4px;
-  min-width: 170px;
-  max-width: 220px;
-  padding: 10px 14px 10px 16px;
-  background: var(--pm-panel);
-  border: 1px solid var(--pm-line);
-  border-bottom: 3px solid transparent;
-  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
-  text-align: left;
-}
-.sc-chip.editing {
-  background: linear-gradient(180deg, rgba(224, 38, 47, 0.22), rgba(224, 38, 47, 0.05));
-  border-bottom-color: var(--pm-red);
-}
-.sc-chip.is-focus {
-  box-shadow: inset 0 0 0 1px var(--pm-ink);
-}
-.sc-chip-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 17px;
-  font-weight: 700;
-}
-.sc-chip-tag {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: var(--pm-dim);
-}
-.sc-chip-tag:empty {
-  display: none;
-}
-.sc-chip.equipped .sc-chip-tag {
-  color: var(--pm-green);
-}
-
-.sc-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.sc-btn {
-  padding: 10px 20px;
-  background: linear-gradient(180deg, var(--pm-red), var(--pm-red-deep));
-  border: none;
-  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.sc-btn.ghost {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--pm-line-strong);
-  clip-path: none;
-}
-.sc-btn.danger {
-  background: linear-gradient(180deg, #7d1c22, #4a1014);
-}
-.sc-btn:not(:disabled):hover {
-  filter: brightness(1.15);
-}
-.sc-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.sc-btn.is-focus {
-  box-shadow: inset 0 0 0 2px var(--pm-ink);
-}
-
-/* ------------------------------------------------------------------ criador: listas e avisos sobrepostos */
-.sc-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: none;
-  place-items: center;
-  background: rgba(4, 5, 8, 0.66);
-  backdrop-filter: blur(3px);
-}
-.sc-overlay.open {
-  display: grid;
-}
-.sc-modal-box {
-  display: grid;
-  gap: 14px;
-  width: min(560px, 92%);
-  padding: 22px 24px 24px;
-  background: var(--pm-panel-2);
-  border: 1px solid var(--pm-line-strong);
-  border-left: 4px solid var(--pm-red);
-  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 0 100%);
-}
-.sc-modal-title {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  font-style: italic;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-.sc-modal-text {
-  margin: 0;
-  font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--pm-dim);
-}
-.sc-opts {
-  display: grid;
-  gap: 8px;
-}
-.sc-opt {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 18px;
-  background: var(--pm-panel);
-  border: 1px solid var(--pm-line);
-  border-left: 3px solid var(--pm-line-strong);
-  text-align: left;
-  font-size: 18px;
-  font-weight: 700;
-}
-.sc-opt.current {
-  border-left-color: var(--pm-red);
-  background: linear-gradient(90deg, rgba(224, 38, 47, 0.22), var(--pm-panel) 70%);
-}
-.sc-opt.is-focus {
-  border-color: var(--pm-ink);
-  box-shadow: inset 0 0 0 1px var(--pm-ink);
-}
-.sc-opt-tag {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: var(--pm-green);
-}
-.sc-opt-tag:empty {
-  display: none;
-}
-.sc-modal-choices {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.sc-choice {
-  padding: 10px 18px;
-  background: linear-gradient(180deg, var(--pm-red), var(--pm-red-deep));
-  border: none;
-  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.sc-choice.danger {
-  background: linear-gradient(180deg, #7d1c22, #4a1014);
-}
-.sc-choice.ghost {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--pm-line-strong);
-  clip-path: none;
-}
-.sc-choice.is-focus {
-  box-shadow: inset 0 0 0 2px var(--pm-ink);
-}
-
 /* ------------------------------------------------------------------ telas estreitas */
 @media (max-width: 900px) {
   .pm-header,
@@ -606,19 +182,54 @@
   .pm-hints {
     display: none;
   }
-  .sc-main {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .sc-mix {
-    min-height: 0;
-  }
 }
 @media (max-width: 560px) {
   .pm-footer {
     background: var(--pm-bg);
   }
-  .sc-actions .sc-btn {
-    flex: 1 1 30%;
-    padding: 10px 8px;
-  }
+}
+
+/* Lista inicial do menu de pausa (PauseMenu.ts): opções grandes, com a mesma moldura de corte dos cartões. */
+.pm-hub {
+  display: grid;
+  gap: 14px;
+  max-width: 760px;
+  margin: 36px auto 0;
+}
+.pm-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 22px;
+  text-align: left;
+  font-family: var(--pm-font);
+  color: var(--pm-ink);
+  background: var(--pm-panel);
+  border: 1px solid var(--pm-line);
+  border-left: 4px solid var(--pm-red);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--pm-cut)) 0,
+    100% var(--pm-cut),
+    100% 100%,
+    var(--pm-cut) 100%,
+    0 calc(100% - var(--pm-cut))
+  );
+  cursor: pointer;
+}
+.pm-item strong {
+  font-size: 26px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pm-item small {
+  color: var(--pm-dim);
+  font-size: 15px;
+}
+.pm-item.sel,
+.pm-item:focus-visible {
+  outline: none;
+  border-color: var(--pm-line-strong);
+  background: var(--pm-panel-2);
+  box-shadow: inset 0 0 0 1px var(--pm-ink);
 }

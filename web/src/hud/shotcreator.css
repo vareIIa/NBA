@@ -1,0 +1,689 @@
+/* Criador de arremesso no layout do 2K (ShotCreatorView.ts). Com a classe .pm--shots (PauseMenu.ts) o painel ocupa a
+   esquerda (55%) e a cena 3D aparece à direita; o cabeçalho do menu e as abas somem. Cores: azul-marinho, ciano, azul
+   de título, verde para as barras, amarelo para a linha focada e o %. */
+.sc {
+  --sc-navy: #0b1a3f;
+  --sc-navy-deep: #07102a;
+  --sc-panel: #13224d;
+  --sc-title: #2456d6;
+  --sc-cyan: #34e3d0;
+  --sc-green: #5cf59a;
+  --sc-yellow: #ffd21f;
+  --sc-ink: #ffffff;
+  --sc-dim: #9fb0d6;
+  --sc-red: #e0465c;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: var(--sc-ink);
+}
+.sc[hidden],
+.sc-attrs[hidden] {
+  display: none;
+}
+.sc button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.sc .is-focus {
+  outline: 3px solid var(--sc-yellow);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ moldura do menu com o criador */
+.pm.pm--shots {
+  grid-template-columns: minmax(0, 55%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  pointer-events: none;
+}
+.pm.pm--shots.open {
+  pointer-events: none;
+}
+.pm--shots .pm-bg,
+.pm--shots .pm-header,
+.pm--shots .pm-tabs {
+  display: none;
+}
+.pm--shots .pm-body {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.022) 0 2px, transparent 2px 12px),
+    radial-gradient(ellipse at 20% 0%, rgba(40, 80, 180, 0.35), transparent 60%),
+    linear-gradient(180deg, #0c1c44, #071029);
+  border: 2px solid var(--sc-cyan);
+  border-right: none;
+}
+.pm--shots .pm-footer {
+  grid-column: 1;
+  grid-row: 2;
+  padding: 8px 14px;
+  border-top: none;
+  border: 2px solid var(--sc-cyan);
+  border-top: 1px solid rgba(52, 227, 208, 0.4);
+  border-right: none;
+  background: var(--sc-navy-deep);
+  pointer-events: auto;
+}
+.pm--shots .pm-toast {
+  left: 27.5%;
+  bottom: 84px;
+}
+
+/* ------------------------------------------------------------------ cabeçalho */
+.sc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 14px;
+  background: linear-gradient(180deg, #2a5be0, #1a3ea8);
+  border-bottom: 2px solid var(--sc-cyan);
+}
+.sc-title {
+  margin: 0;
+  min-width: 0;
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-title-kicker {
+  color: var(--sc-ink);
+}
+.sc-title-name {
+  font-weight: 800;
+  text-transform: none;
+}
+.sc-state {
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--sc-dim);
+  white-space: nowrap;
+}
+.sc-state:empty {
+  display: none;
+}
+.sc-state.dirty {
+  color: var(--sc-yellow);
+  border-color: var(--sc-yellow);
+}
+.sc-state.equipped {
+  color: var(--sc-green);
+  border-color: var(--sc-green);
+}
+.sc-x {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: transparent;
+  font-size: 15px;
+}
+.sc-x:hover {
+  background: var(--sc-red);
+}
+
+/* ------------------------------------------------------------------ corpo: cartões e conteúdo */
+.sc-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 14px;
+}
+.sc-cards {
+  display: grid;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  min-height: 0;
+}
+.sc-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 0;
+  background: var(--sc-panel);
+  border: 2px solid #3a4f86;
+  text-align: center;
+  overflow: hidden;
+}
+.sc-card-bar {
+  padding: 4px 6px;
+  background: var(--sc-title);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sc-ink);
+}
+.sc-card-icon {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  color: var(--sc-ink);
+}
+.sc-card-icon svg {
+  width: 44px;
+  height: 44px;
+}
+.sc-card-value {
+  padding: 4px 6px;
+  background: #3a4a70;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--sc-ink);
+}
+.sc-card.is-active {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #0a1638;
+}
+.sc-card.is-active .sc-card-icon {
+  color: #0a1638;
+}
+.sc-card.is-active .sc-card-value {
+  background: #ffffff;
+  color: #0a1638;
+  border-top: 1px solid #c8d2ea;
+}
+.sc-card.is-active .sc-card-bar {
+  background: var(--sc-title);
+  color: #fff;
+}
+.sc-card.is-focus {
+  outline: 3px solid var(--sc-yellow);
+  outline-offset: 2px;
+}
+.sc-card:not(.is-active):hover {
+  border-color: var(--sc-cyan);
+}
+
+.sc-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: 10px 12px;
+  background: rgba(7, 16, 42, 0.55);
+  border: 1px solid rgba(52, 227, 208, 0.35);
+}
+.sc-content > [hidden] {
+  display: none;
+}
+.sc-sec-title {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+/* Tabela de animações: ANIMAÇÃO | ALT. SOLT. | IMUN. DEF. | VEL. SOLT. | EST. TIM. */
+.sc-table {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.sc-grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.sc-grid th {
+  padding: 4px 6px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--sc-dim);
+  border-bottom: 2px solid var(--sc-cyan);
+}
+.sc-grid th.sc-th-name {
+  text-align: left;
+  width: 38%;
+}
+.sc-row {
+  cursor: pointer;
+}
+.sc-row td {
+  height: 40px;
+  padding: 2px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 14px;
+  font-weight: 700;
+  vertical-align: middle;
+  transition: background 0.08s;
+}
+.sc-row:hover td {
+  background: rgba(255, 255, 255, 0.04);
+}
+.sc-row-name {
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 4px solid var(--sc-green);
+}
+.sc-row-star {
+  display: inline-block;
+  width: 16px;
+  margin-right: 4px;
+  color: var(--sc-yellow);
+  font-size: 13px;
+}
+.sc-row-traits {
+  display: none;
+}
+.sc-grade {
+  text-align: center;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.sc-row.is-focus td {
+  color: var(--sc-yellow);
+  background: rgba(255, 210, 31, 0.1);
+}
+.sc-row.is-focus {
+  outline: none;
+}
+.sc-row.is-focus .sc-row-name {
+  border-left-color: var(--sc-yellow);
+}
+.sc-legend {
+  display: flex;
+  gap: 16px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sc-dim);
+}
+.sc-legend-star {
+  color: var(--sc-yellow);
+}
+.sc-legend-unlocked {
+  color: var(--sc-green);
+}
+
+/* Painel de mistura: visual cue, velocidade, mistura e losango. */
+.sc-mix {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.sc-mix > [hidden] {
+  display: none;
+}
+.sc-block {
+  display: grid;
+  gap: 4px;
+}
+.sc-label {
+  justify-self: start;
+  margin: 0;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(7, 16, 42, 0.7);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sc-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 4px 6px 0;
+}
+.sc-step {
+  padding: 11px 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.sc-step.on {
+  background: linear-gradient(180deg, #7bffb4, #2fd47a);
+  border-color: transparent;
+  color: #06220f;
+}
+
+.sc-track {
+  position: relative;
+  height: 34px;
+  margin: 4px 6px 0;
+  background: #f2f5fa;
+  border: 2px solid #ffffff;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.sc-track-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, #3ee89a, var(--sc-green));
+}
+.sc-track-thumb {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 4px;
+  margin-left: -2px;
+  background: var(--sc-yellow);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+}
+.sc-steps.is-focus,
+.sc-track.is-focus {
+  outline: 3px solid var(--sc-yellow);
+  outline-offset: 3px;
+}
+
+.sc-diamond {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.sc-diamond-values {
+  display: grid;
+  gap: 8px;
+}
+.sc-layer {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+}
+.sc-pct {
+  font-size: 64px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--sc-yellow);
+  font-variant-numeric: tabular-nums;
+}
+.sc-diamond-svg {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  overflow: visible;
+}
+.sc-diamond-edge {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+.sc-diamond-ring {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 2;
+}
+.sc-diamond-fill {
+  fill: #ffb11e;
+}
+
+/* ------------------------------------------------------------------ faixa de salvos e botões */
+.sc-strip {
+  display: grid;
+  gap: 6px;
+  padding: 8px 14px 10px;
+  border-top: 2px solid var(--sc-cyan);
+  background: var(--sc-navy-deep);
+}
+.sc-strip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.sc-strip-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sc-cyan);
+}
+.sc-strip-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--sc-dim);
+  font-variant-numeric: tabular-nums;
+}
+.sc-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+  scrollbar-width: thin;
+}
+.sc-chip {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 2px;
+  min-width: 140px;
+  max-width: 180px;
+  padding: 6px 10px;
+  background: var(--sc-panel);
+  border: 1px solid #3a4f86;
+  border-bottom: 3px solid transparent;
+  text-align: left;
+}
+.sc-chip.editing {
+  background: #1f3f96;
+  border-bottom-color: var(--sc-yellow);
+}
+.sc-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 800;
+}
+.sc-chip-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--sc-dim);
+}
+.sc-chip-tag:empty {
+  display: none;
+}
+.sc-chip.equipped .sc-chip-tag {
+  color: var(--sc-green);
+}
+.sc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.sc-btn {
+  padding: 7px 14px;
+  background: linear-gradient(180deg, #2a5be0, #1a3ea8);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sc-btn.ghost {
+  background: transparent;
+}
+.sc-btn.danger {
+  background: linear-gradient(180deg, #8b2330, #4a1014);
+}
+.sc-btn:not(:disabled):hover {
+  filter: brightness(1.2);
+}
+.sc-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ------------------------------------------------------------------ avisos sobrepostos */
+.sc-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: none;
+  place-items: center;
+  background: rgba(4, 8, 20, 0.7);
+}
+.sc-overlay.open {
+  display: grid;
+}
+.sc-modal-box {
+  display: grid;
+  gap: 12px;
+  width: min(480px, 92%);
+  padding: 20px 22px;
+  background: var(--sc-panel);
+  border: 2px solid var(--sc-cyan);
+}
+.sc-modal-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.sc-modal-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--sc-dim);
+}
+.sc-modal-choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.sc-choice {
+  padding: 8px 14px;
+  background: linear-gradient(180deg, #2a5be0, #1a3ea8);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.sc-choice.danger {
+  background: linear-gradient(180deg, #8b2330, #4a1014);
+}
+.sc-choice.ghost {
+  background: transparent;
+}
+.sc-choice.is-focus {
+  outline: 3px solid var(--sc-yellow);
+  outline-offset: 2px;
+}
+
+/* HUD do jogo escondido enquanto o criador está aberto (placar, dicas de teclado, medidor). */
+body.sc-open #hud,
+body.sc-open .gh {
+  visibility: hidden;
+}
+
+/* ------------------------------------------------------------------ SHOT ATTRIBUTES (por cima da cena) */
+.sc-attrs {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2;
+  width: min(600px, calc(45vw - 40px));
+  display: grid;
+  grid-template-columns: 178px minmax(0, 1fr);
+  background: rgba(7, 12, 26, 0.94);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #ffffff;
+  pointer-events: none;
+}
+.sc-attrs-title {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--sc-red);
+  font-size: 23px;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1.02;
+  text-transform: uppercase;
+}
+.sc-attrs-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: repeat(2, auto);
+  grid-auto-flow: column;
+  gap: 10px 18px;
+  padding: 12px 16px;
+}
+.sc-attr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  min-width: 0;
+}
+.sc-attr-name {
+  grid-column: 1 / span 2;
+  font-size: 13px;
+  font-weight: 700;
+}
+.sc-attr-bar {
+  align-self: center;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.sc-attr-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #3ee89a, var(--sc-green));
+}
+.sc-attr-grade {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--sc-green);
+}
+
+/* ------------------------------------------------------------------ telas estreitas */
+@media (max-width: 900px) {
+  .pm.pm--shots {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pm--shots .pm-body,
+  .pm--shots .pm-footer {
+    grid-column: 1;
+  }
+  .sc-attrs {
+    display: none;
+  }
+  .sc-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sc-cards {
+    grid-template-rows: none;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

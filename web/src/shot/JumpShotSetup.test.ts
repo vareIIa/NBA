@@ -3,8 +3,11 @@ import { ReleaseSpeed } from '../sim/HoopsShotModel';
 import {
   JumpShotStore,
   MaxSetups,
-  clipNameFor,
   defaultSetup,
+  formOf,
+  gradeOf,
+  shotAttributes,
+  signatureAttributes,
   parseSetup,
   upperWeights,
   type KeyValueStorage,
@@ -22,10 +25,21 @@ function memoryStorage(initial: Record<string, string> = {}): KeyValueStorage & 
   };
 }
 
-describe('nomes de clipe e mistura das camadas', () => {
-  it('monta o clipe pela família e pela mão', () => {
-    expect(clipNameFor('JumpShot2', 'r')).toBe('JumpShot2_R');
-    expect(clipNameFor('JumpShot', 'l')).toBe('JumpShot_L');
+describe('forma e mistura das camadas', () => {
+  it('o padrão é o Curry e a mistura das releases vai para a forma', () => {
+    const s = defaultSetup();
+    expect([s.lowerBase, s.upperRelease1, s.upperRelease2]).toEqual(['Curry', 'Curry', 'Curry']);
+    const half = formOf({ ...s, upperRelease2: 'Oscar', blendPercent: 50 });
+    const curry = formOf(s).release.setPoint[1];
+    const oscar = formOf({ ...s, upperRelease1: 'Oscar' }).release.setPoint[1];
+    expect(half.release.setPoint[1]).toBeCloseTo((curry + oscar) / 2, 9);
+  });
+
+  it('arremessos salvos com as famílias antigas (clipes da CMU) viram o padrão', () => {
+    const old = { ...defaultSetup(), lowerBase: 'JumpShot2', upperRelease1: 'JumpShot', upperRelease2: 'JumpShot2' };
+    const parsed = parseSetup(old);
+    expect(parsed?.lowerBase).toBe('Curry');
+    expect(parsed?.upperRelease1).toBe('Curry');
   });
 
   it('as duas camadas de cima somam 1 e a porcentagem é limitada a 0..100', () => {
@@ -112,5 +126,24 @@ describe('JumpShotStore', () => {
     const store = new JumpShotStore(memoryStorage({ [StorageKey]: file }));
     expect(store.list().map((s) => s.id)).toEqual(['ok']);
     expect(store.equipped().id).toBe('ok');
+  });
+});
+
+describe('atributos (tela do 2K)', () => {
+  it('notas de F a A+ e ordem coerente entre jogadores', () => {
+    expect(gradeOf(0)).toBe('F');
+    expect(gradeOf(1)).toBe('A+');
+    expect(gradeOf(0.5)).toBe('C+');
+    const oscar = signatureAttributes('Oscar');
+    const bird = signatureAttributes('Bird');
+    expect(oscar.releaseHeight).toBeGreaterThan(bird.releaseHeight);
+    expect(signatureAttributes('Dirk').defensiveImmunity).toBeGreaterThan(signatureAttributes('Klay').defensiveImmunity);
+  });
+
+  it('a velocidade rápida sobe a velocidade de soltura e baixa a estabilidade', () => {
+    const normal = shotAttributes(defaultSetup());
+    const quick = shotAttributes({ ...defaultSetup(), releaseSpeed: ReleaseSpeed.Quick });
+    expect(quick.releaseSpeed).toBeGreaterThan(normal.releaseSpeed);
+    expect(quick.timingStability).toBeLessThan(normal.timingStability);
   });
 });

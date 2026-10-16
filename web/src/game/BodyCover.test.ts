@@ -23,4 +23,24 @@ describe('BodyCover', () => {
       if (y < 0.45) expect(covered[i]).toBe(0);
     }
   });
+
+  it('pele que furou o tecido também sai (raio para dentro)', () => {
+    // "Corpo": cilindro de raio 0,2. "Bermuda": tubo de raio 0,18 (mais justo que o corpo): o corpo fura a peça.
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1, 24, 10, true).translate(0, 0.5, 0));
+    const shorts = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.4, 24, 4, true).translate(0, 0.5, 0));
+    body.updateMatrixWorld();
+    shorts.updateMatrixWorld();
+    const p = skinnedWorldPositions(body);
+    const idx = body.geometry.getIndex()!.array;
+    const covered = coveredVertices(p, idx, triangleSoup([shorts]), 0.12);
+    const legacy = coveredVertices(p, idx, triangleSoup([shorts]), 0.12, 0);
+    for (let i = 0; i < covered.length; i++) {
+      const y = p[i * 3 + 1];
+      if (y > 0.35 && y < 0.65) {
+        expect(covered[i]).toBe(1);
+        expect(legacy[i]).toBe(0);
+      }
+      if (y < 0.25 || y > 0.75) expect(covered[i]).toBe(0);
+    }
+  });
 });

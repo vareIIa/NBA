@@ -191,17 +191,21 @@ export function buildCourt(scene: THREE.Scene, renderer: THREE.WebGLRenderer, la
     new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.9, side: THREE.BackSide }),
   );
   hall.position.set(5, 10.99, 0);
+  hall.name = 'ginasio'; // a arena (ArenaDressing) esconde o ginásio e as faixas pelo nome
   scene.add(hall);
 
   const standMaterial = new THREE.MeshStandardMaterial({ color: 0x1d2330, roughness: 0.85 });
+  const stands = new THREE.Group();
+  stands.name = 'arquibancada_simples';
   for (let row = 0; row < 8; ++row) {
     for (const side of [-1, 1]) {
       const step = new THREE.Mesh(new THREE.BoxGeometry(24, 0.45, 0.8), standMaterial);
       step.position.set(5, 0.25 + row * 0.45, side * (11 + row * 0.8));
       step.receiveShadow = true;
-      scene.add(step);
+      stands.add(step);
     }
   }
+  scene.add(stands);
 
   scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a2412, 0.55));
 

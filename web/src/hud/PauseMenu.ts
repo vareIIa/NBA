@@ -1,16 +1,23 @@
-// Menu de pausa. Hoje tem a aba "Arremessos" (o criador de arremesso, em ShotCreatorView.ts). Segue o padrão do
-// BadgeMenu: abre e fecha por método (quem liga é o jogo), o teclado escuta a janela só enquanto a tela está aberta e
-// o controle entra por update(dt, input), a cada quadro, também com o jogo pausado.
+// Menu de pausa. A tela inicial é uma lista de opções (MENU): "Arremessos" abre o criador de arremesso (ShotCreatorView.ts)
+// e "Continuar" volta ao jogo. Dentro do criador, Voltar (Esc / B) leva de volta à lista. Segue o padrão do BadgeMenu: abre
+// e fecha por método (quem liga é o jogo), o teclado escuta a janela só enquanto a tela está aberta e o controle entra por
+// update(dt, input), a cada quadro, também com o jogo pausado.
 import './pausemenu.css';
-import type { JumpShotSetup, JumpShotStore } from '../shot/JumpShotSetup';
-import { type MenuAction, ShotCreatorView } from './ShotCreatorView';
+import type { JumpShotStore } from '../shot/JumpShotSetup';
+import { type MenuAction, ShotCreatorOptions, ShotCreatorView } from './ShotCreatorView';
 
 export interface PauseMenuOptions {
   store: JumpShotStore;
-  /** "Testar arremesso": recebe a cópia do arremesso em edição (pode ter alterações não salvas). */
-  onPreview: (setup: JumpShotSetup) => void;
-  /** Chamado ao fechar (Voltar, Esc/B ou ✕), depois do aviso de alterações não salvas. */
+  /** Prévia do arremesso em edição (a cena repete o que aparece; pode ter alterações não salvas). */
+  onPreview: ShotCreatorOptions['onPreview'];
+  /** A prévia para (o menu voltou à lista). */
+  onPreviewStop?: () => void;
+  /** Chamado ao fechar o menu (Continuar, Esc/B na lista ou ✕), para o jogo retomar. */
   onClose: () => void;
+  /** "Badges": a pausa sai da tela e o menu de badges abre (o jogo continua pausado). */
+  onBadges: () => void;
+  /** "Menu principal": sai do Freestyle para o menu (Meu Jogador e modos). */
+  onMainMenu?: () => void;
 }
 
 /** Estado do controle neste quadro. A tela age na borda (apertou agora) e repete a direção que ficou segurada. */
@@ -21,14 +28,33 @@ export interface PauseMenuInput {
   right?: boolean;
   confirm?: boolean;
   back?: boolean;
+  /** Y no controle (Salvar no criador). */
+  save?: boolean;
 }
 
 /** Atraso antes de repetir uma direção segurada e intervalo entre as repetições, em segundos. */
 export const RepeatDelay = 0.4;
 export const RepeatRate = 0.11;
 
-const Actions: readonly MenuAction[] = ['up', 'down', 'left', 'right', 'confirm', 'back'];
+const Actions: readonly MenuAction[] = ['up', 'down', 'left', 'right', 'confirm', 'back', 'save'];
 const Directions: readonly MenuAction[] = ['up', 'down', 'left', 'right'];
+
+/** Opções da tela inicial do menu, na ordem em que aparecem. */
+export const PauseItems = [
+  { id: 'shots', label: 'Arremessos', desc: 'Base, camadas de cima, mistura e velocidade de soltura' },
+  { id: 'badges', label: 'Badges', desc: 'Equipar badges e montar a build' },
+  { id: 'mainmenu', label: 'Menu principal', desc: 'Meu Jogador (builds) e modos de jogo' },
+  { id: 'resume', label: 'Continuar', desc: 'Volta ao jogo' },
+] as const;
+export type PauseItemId = (typeof PauseItems)[number]['id'];
+
+/** Próxima opção selecionada na lista (anda com cima/baixo e dá a volta nas pontas). */
+export function nextHubIndex(index: number, action: MenuAction, count: number): number {
+  if (count <= 0) return 0;
+  if (action === 'up') return (index - 1 + count) % count;
+  if (action === 'down') return (index + 1) % count;
+  return index;
+}
 
 /** Tecla (KeyboardEvent.code) para ação do menu: setas ou WASD andam, Enter/Espaço escolhem, Esc volta. */
 export function keyToAction(code: string): MenuAction | null {
@@ -51,6 +77,8 @@ export function keyToAction(code: string): MenuAction | null {
       return 'confirm';
     case 'Escape':
       return 'back';
+    case 'KeyY':
+      return 'save';
     default:
       return null;
   }
@@ -80,13 +108,22 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+type Screen = 'menu' | 'shots';
+
 export class PauseMenu {
   private readonly root: HTMLElement;
   private readonly view: ShotCreatorView;
+  private readonly title: HTMLElement;
+  private readonly tabs: HTMLElement;
+  private readonly hub: HTMLElement;
+  private readonly hubButtons: HTMLButtonElement[] = [];
+  private readonly hints: HTMLElement;
   private readonly toast: HTMLElement;
   // Listener de teclado: só existe enquanto a tela está aberta (entra em open, sai em close).
   private readonly onKeyBound = (e: KeyboardEvent): void => this.onKey(e);
   private openState = false;
+  private screen: Screen = 'menu';
+  private hubIndex = 0;
   /** Depois de abrir, nada age até o controle soltar: o botão que abriu a tela não pode escolher nada. */
   private waitRelease = false;
   private toastTimer = 0;
@@ -101,45 +138,51 @@ export class PauseMenu {
     const header = el('header', 'pm-header', this.root);
     const brand = el('div', 'pm-brand', header);
     el('span', 'pm-tag', brand, 'PAUSA');
-    el('h1', 'pm-title', brand, 'ARREMESSOS');
+    this.title = el('h1', 'pm-title', brand, 'MENU');
     const close = el('button', 'pm-close', header, '✕');
     close.title = 'Voltar ao jogo (Esc / B)';
-    close.addEventListener('click', () => this.view.requestClose());
+    close.addEventListener('click', () => (this.screen === 'shots' ? this.view.requestClose() : this.close()));
 
-    const tabs = el('nav', 'pm-tabs', this.root);
-    el('span', 'pm-tab active', tabs, 'Arremessos');
+    this.tabs = el('nav', 'pm-tabs', this.root);
+    el('span', 'pm-tab active', this.tabs, 'Arremessos');
 
     const body = el('main', 'pm-body', this.root);
+    this.hub = el('div', 'pm-hub', body);
+    PauseItems.forEach((item, i) => {
+      const button = el('button', 'pm-item', this.hub);
+      button.type = 'button';
+      el('strong', '', button, item.label);
+      el('small', '', button, item.desc);
+      button.addEventListener('click', () => {
+        this.hubIndex = i;
+        this.runItem(item.id);
+      });
+      this.hubButtons.push(button);
+    });
     this.view = new ShotCreatorView({
       store: options.store,
       onPreview: options.onPreview,
-      onRequestClose: () => this.close(),
+      // Voltar no criador (depois de resolver as alterações não salvas) leva de volta à lista do menu.
+      onRequestClose: () => this.showMenu(),
       onFlash: (text, error) => this.flash(text, error),
     });
     body.appendChild(this.view.root);
+    // Cartão SHOT ATTRIBUTES: por cima da cena, fora do painel.
+    this.root.appendChild(this.view.attrsRoot);
 
     const footer = el('footer', 'pm-footer', this.root);
-    const hints = el('div', 'pm-hints', footer);
-    for (const [key, label] of [
-      ['Setas / WASD', 'Mover'],
-      ['← / →', 'Ajustar'],
-      ['Enter / A', 'Escolher'],
-      ['Esc / B', 'Voltar'],
-    ]) {
-      const hint = el('span', 'pm-hint', hints);
-      el('kbd', '', hint, key);
-      hint.append(label);
-    }
+    this.hints = el('div', 'pm-hints', footer);
     this.toast = el('div', 'pm-toast', this.root);
 
     (document.getElementById('hud')?.parentElement ?? document.body).appendChild(this.root);
+    this.showMenu();
   }
 
   isOpen(): boolean {
     return this.openState;
   }
 
-  /** Mostra a aba de arremessos, copia o equipado e foca o primeiro cartão. */
+  /** Abre na lista do menu. O criador só é preparado quando a opção "Arremessos" é escolhida. */
   open(): void {
     if (this.openState) return;
     this.openState = true;
@@ -147,10 +190,10 @@ export class PauseMenu {
     this.root.classList.add('open');
     this.root.setAttribute('aria-hidden', 'false');
     window.addEventListener('keydown', this.onKeyBound, true);
-    this.view.open();
+    this.showMenu();
   }
 
-  /** Esconde a tela e chama onClose. As alterações não salvas são resolvidas antes, por Voltar (ou pelo ✕). */
+  /** Esconde a tela e chama onClose (o jogo retoma). */
   close(): void {
     if (!this.openState) return;
     this.openState = false;
@@ -194,6 +237,79 @@ export class PauseMenu {
     this.prev = { ...now };
   }
 
+  // ---------------------------------------------------------------- telas
+
+  /** Lista inicial do menu. */
+  private showMenu(): void {
+    const wasShots = this.screen === 'shots';
+    this.screen = 'menu';
+    this.title.textContent = 'MENU';
+    this.tabs.style.display = 'none';
+    this.hub.style.display = '';
+    this.root.classList.remove('pm--shots');
+    this.view.hide();
+    if (wasShots) this.options.onPreviewStop?.();
+    this.renderHub();
+    this.setHints([
+      ['Setas / WASD', 'Mover'],
+      ['Enter / A', 'Escolher'],
+      ['Esc / B', 'Continuar'],
+    ]);
+  }
+
+  /** Criador de arremesso, com o equipado copiado para edição. */
+  private showShots(): void {
+    this.screen = 'shots';
+    this.title.textContent = 'ARREMESSOS';
+    this.tabs.style.display = 'none';
+    this.hub.style.display = 'none';
+    this.root.classList.add('pm--shots');
+    this.view.open();
+    this.setHints([
+      ['Setas / WASD', 'Mover'],
+      ['← / →', 'Ajustar'],
+      ['Enter / A', 'Escolher'],
+      ['Y', 'Salvar'],
+      ['Esc / B', 'Voltar'],
+    ]);
+  }
+
+  private renderHub(): void {
+    this.hubButtons.forEach((button, i) => button.classList.toggle('sel', i === this.hubIndex));
+  }
+
+  private runItem(id: PauseItemId): void {
+    if (id === 'shots') this.showShots();
+    else if (id === 'badges') this.suspend(this.options.onBadges);
+    else if (id === 'mainmenu' && this.options.onMainMenu) this.options.onMainMenu();
+    else this.close();
+  }
+
+  /**
+   * Sai da tela sem retomar o jogo (quem abre outra tela, como as badges, cuida do resto). Depois, o jogo chama open() de
+   * novo para voltar à lista.
+   */
+  private suspend(next: () => void): void {
+    if (!this.openState) return;
+    this.openState = false;
+    this.root.classList.remove('open');
+    this.root.setAttribute('aria-hidden', 'true');
+    window.removeEventListener('keydown', this.onKeyBound, true);
+    this.toast.classList.remove('show');
+    this.prev = {};
+    this.hold = null;
+    next();
+  }
+
+  private setHints(pairs: [string, string][]): void {
+    this.hints.replaceChildren();
+    for (const [key, label] of pairs) {
+      const hint = el('span', 'pm-hint', this.hints);
+      el('kbd', '', hint, key);
+      hint.append(label);
+    }
+  }
+
   // ---------------------------------------------------------------- entrada
 
   private onKey(e: KeyboardEvent): void {
@@ -211,7 +327,20 @@ export class PauseMenu {
   }
 
   private act(action: MenuAction): void {
-    if (this.openState) this.view.handle(action);
+    if (!this.openState) return;
+    if (this.screen === 'shots') {
+      this.view.handle(action);
+      return;
+    }
+    // Lista do menu: cima/baixo escolhe, Enter/A abre, Esc/B continua o jogo.
+    if (action === 'up' || action === 'down') {
+      this.hubIndex = nextHubIndex(this.hubIndex, action, PauseItems.length);
+      this.renderHub();
+    } else if (action === 'confirm') {
+      this.runItem(PauseItems[this.hubIndex].id);
+    } else if (action === 'back') {
+      this.close();
+    }
   }
 
   private flash(text: string, error = false): void {

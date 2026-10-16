@@ -82,42 +82,105 @@ function vertexNormals(p: Float32Array, idx: ArrayLike<number>): Float32Array {
   return n;
 }
 
+/** Grade uniforme dos triângulos da sopa (cada um entra em todas as células que a caixa dele toca). */
+class TriangleGrid {
+  private readonly cells = new Map<string, number[]>();
+  private readonly stamp: Int32Array;
+  private query = 0;
+
+  constructor(
+    private readonly tri: Float32Array,
+    private readonly cell: number,
+  ) {
+    this.stamp = new Int32Array(tri.length / 9);
+    for (let t = 0; t < tri.length; t += 9) {
+      const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      for (let v = 0; v < 9; v += 3) for (let k = 0; k < 3; k++) (lo[k] = Math.min(lo[k], tri[t + v + k])), (hi[k] = Math.max(hi[k], tri[t + v + k]));
+      this.forCells(lo, hi, (key) => (this.cells.get(key) ?? this.cells.set(key, []).get(key)!).push(t));
+    }
+  }
+
+  private forCells(lo: number[], hi: number[], fn: (key: string) => void): void {
+    const c = this.cell;
+    for (let x = Math.floor(lo[0] / c); x <= Math.floor(hi[0] / c); x++)
+      for (let y = Math.floor(lo[1] / c); y <= Math.floor(hi[1] / c); y++)
+        for (let z = Math.floor(lo[2] / c); z <= Math.floor(hi[2] / c); z++) fn(`${x},${y},${z}`);
+  }
+
+  /** O raio o + s·d (0 < s < len) bate em algum triângulo? */
+  hits(o: number[], d: number[], len: number): boolean {
+    const id = ++this.query;
+    const lo = [0, 0, 0], hi = [0, 0, 0];
+    for (let k = 0; k < 3; k++) (lo[k] = Math.min(o[k], o[k] + d[k] * len)), (hi[k] = Math.max(o[k], o[k] + d[k] * len));
+    let found = false;
+    this.forCells(lo, hi, (key) => {
+      if (found) return;
+      for (const t of this.cells.get(key) ?? []) {
+        if (this.stamp[t / 9] === id) continue;
+        this.stamp[t / 9] = id;
+        const hit = rayTriangle(o, d, this.tri, t);
+        if (hit > 0 && hit < len) {
+          found = true;
+          return;
+        }
+      }
+    });
+    return found;
+  }
+}
+
 /**
  * Vértices do corpo cobertos pela sopa de triângulos `cover`. Vértices de costura (mesma posição, índices diferentes)
  * herdam a normal média, para o corte não abrir fresta entre ilhas.
+ *
+ * Coberto = o raio para fora bate na peça a menos de `maxDist` (pele por baixo do tecido) OU o raio para dentro bate na
+ * peça a menos de `maxIn` (a pele furou o tecido: peito ou coxa mais largos que a peça; sem essa pele, aparece o
+ * tecido que está logo abaixo). Depois a máscara é erodida `erode` anéis: perto da barra e do decote a pele continua um
+ * pouco por baixo do tecido, e o recorte (serrilhado, por triângulo) não aparece pela fresta entre o pano e o corpo.
  */
-export function coveredVertices(p: Float32Array, idx: ArrayLike<number>, cover: Float32Array, maxDist: number): Uint8Array {
+export function coveredVertices(p: Float32Array, idx: ArrayLike<number>, cover: Float32Array, maxDist: number, maxIn = 0.04, erode = 1): Uint8Array {
   const n = vertexNormals(p, idx);
+  const count = p.length / 3;
+  // Costuras: cópias da mesma posição viram um vértice só (normal média e vizinhança comum).
+  const rep = new Int32Array(count);
   const welded = new Map<string, number[]>();
-  for (let i = 0; i < p.length / 3; i++) {
+  for (let i = 0; i < count; i++) {
     const key = `${p[i * 3].toFixed(4)},${p[i * 3 + 1].toFixed(4)},${p[i * 3 + 2].toFixed(4)}`;
     (welded.get(key) ?? welded.set(key, []).get(key)!).push(i);
   }
   for (const group of welded.values()) {
+    for (const i of group) rep[i] = group[0];
     if (group.length < 2) continue;
     let x = 0, y = 0, z = 0;
     for (const i of group) (x += n[i * 3]), (y += n[i * 3 + 1]), (z += n[i * 3 + 2]);
     const l = Math.hypot(x, y, z) || 1;
     for (const i of group) (n[i * 3] = x / l), (n[i * 3 + 1] = y / l), (n[i * 3 + 2] = z / l);
   }
-  // Caixa da roupa (com folga) para não testar a cabeça contra a bermuda.
-  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < cover.length; i += 3) for (let k = 0; k < 3; k++) (lo[k] = Math.min(lo[k], cover[i + k])), (hi[k] = Math.max(hi[k], cover[i + k]));
-  const out = new Uint8Array(p.length / 3);
+  const grid = new TriangleGrid(cover, Math.max(maxDist, maxIn, 0.05));
+  let out = new Uint8Array(count);
   const o = [0, 0, 0], d = [0, 0, 0];
-  for (let i = 0; i < out.length; i++) {
-    let inside = true;
-    for (let k = 0; k < 3; k++) if (p[i * 3 + k] < lo[k] - maxDist || p[i * 3 + k] > hi[k] + maxDist) inside = false;
-    if (!inside) continue;
+  for (let i = 0; i < count; i++) {
+    if (rep[i] !== i) continue;
     for (let k = 0; k < 3; k++) (d[k] = n[i * 3 + k]), (o[k] = p[i * 3 + k] - d[k] * 0.002);
-    for (let t = 0; t < cover.length; t += 9) {
-      const hit = rayTriangle(o, d, cover, t);
-      if (hit > 0 && hit < maxDist) {
-        out[i] = 1;
-        break;
-      }
+    if (grid.hits(o, d, maxDist)) {
+      out[i] = 1;
+      continue;
+    }
+    if (maxIn <= 0) continue;
+    for (let k = 0; k < 3; k++) (d[k] = -n[i * 3 + k]), (o[k] = p[i * 3 + k] - d[k] * 0.002);
+    if (grid.hits(o, d, maxIn)) out[i] = 1;
+  }
+  if (erode > 0) {
+    const nbr: number[][] = Array.from({ length: count }, () => []);
+    for (let t = 0; t + 2 < idx.length; t += 3)
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) if (a !== b) nbr[rep[idx[t + a]]].push(rep[idx[t + b]]);
+    for (let r = 0; r < erode; r++) {
+      const next = out.slice();
+      for (let i = 0; i < count; i++) if (out[i] && nbr[i].some((j) => !out[j])) next[i] = 0;
+      out = next;
     }
   }
+  for (let i = 0; i < count; i++) out[i] = out[rep[i]];
   return out;
 }
 

@@ -17,6 +17,8 @@ Plugins/*/Intermediate/
 
 # Builds locais
 build/
+# ...menos o código do MyPlayer Builder (regras da build do jogador, docs/23)
+!web/src/build/
 __pycache__/
 
 # Log que o OpenSim (Tools/Captura) cria na pasta atual

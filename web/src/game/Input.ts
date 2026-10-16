@@ -1,12 +1,29 @@
 // Entrada: controle de Xbox pela Gamepad API (mapeamento "standard") + teclado como alternativa.
 // Mapa do jogo de referência (docs/02-controles.md): X = arremesso, RT = sprint, LS = movimento, RS = Pro Stick.
 
+/** Controle puro, para os menus (sem o teclado, que o menu já lê sozinho). */
+export interface PadState {
+  lx: number; // LS (com zona morta)
+  ly: number; // LS para cima +
+  up: boolean; // D-pad
+  down: boolean;
+  left: boolean;
+  right: boolean;
+  a: boolean;
+  b: boolean;
+  start: boolean;
+}
+
 export interface InputState {
   moveX: number; // LS: direita +
   moveY: number; // LS: para cima +
   proX: number; // RS (Pro Stick)
   proY: number;
   shoot: boolean; // X (segurar = gather, soltar = soltura)
+  call?: boolean; // A (pedir a bola): com a bola solta, ela voa até a mão
+  /** P no teclado ou Start no controle: abre o menu de pausa (criador de arremesso). */
+  pause?: boolean;
+  pad?: PadState;
   /** Instante (s, relógio performance.now) da última vez que o X mudou: o timing do arremesso vem daqui. */
   shootEdgeTime: number;
   sprint: boolean; // RT
@@ -15,14 +32,26 @@ export interface InputState {
 }
 
 // Índices do mapeamento standard (Xbox): 0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 6 LT, 7 RT, 8 View, 9 Menu.
+const ButtonA = 0;
+const ButtonB = 1;
 const ButtonX = 2;
+const ButtonStart = 9;
+const PadDpad = { up: 12, down: 13, left: 14, right: 15 };
 const ButtonLT = 6;
 const ButtonRT = 7;
 const DeadZone = 0.18;
 
-const applyDeadZone = (v: number): number => (Math.abs(v) < DeadZone ? 0 : v);
+/** Zona morta circular: conserva a direção e remapeia a amplitude restante para 0..1. */
+export function applyRadialDeadZone(x: number, y: number, deadZone = DeadZone): { x: number; y: number } {
+  const length = Math.hypot(x, y);
+  if (length <= deadZone) return { x: 0, y: 0 };
+  const scale = (Math.min(length, 1) - deadZone) / ((1 - deadZone) * length);
+  return { x: x * scale, y: y * scale };
+}
 
 const ShootKeys = ['Space', 'KeyJ'];
+const CallKeys = ['KeyF']; // teclado para o A (pedir a bola)
+const PauseKeys = ['KeyP']; // Esc fica com os menus (badges e pausa), então a pausa usa P
 
 export class Input {
   private readonly keys = new Set<string>();
@@ -56,6 +85,8 @@ export class Input {
       proX: k('ArrowRight') - k('ArrowLeft'),
       proY: k('ArrowUp') - k('ArrowDown'),
       shoot: ShootKeys.some((code) => this.keys.has(code)),
+      call: CallKeys.some((code) => this.keys.has(code)),
+      pause: PauseKeys.some((code) => this.keys.has(code)),
       shootEdgeTime: this.shootEdgeTime,
       sprint: this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'),
       protect: this.keys.has('KeyQ'),
@@ -81,8 +112,7 @@ export class Input {
     for (const pad of pads) {
       if (!pad || !pad.connected) continue;
       state.gamepadConnected = true;
-      const lx = applyDeadZone(pad.axes[0] ?? 0);
-      const ly = applyDeadZone(pad.axes[1] ?? 0);
+      const { x: lx, y: ly } = applyRadialDeadZone(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
       if (lx !== 0 || ly !== 0) {
         state.moveX = lx;
         state.moveY = -ly; // eixo Y do gamepad cresce para baixo
@@ -90,6 +120,19 @@ export class Input {
       state.proX = pad.axes[2] ?? 0;
       state.proY = -(pad.axes[3] ?? 0);
       state.shoot ||= pad.buttons[ButtonX]?.pressed ?? false;
+      state.call ||= pad.buttons[ButtonA]?.pressed ?? false;
+      state.pad = {
+        lx,
+        ly,
+        up: pad.buttons[PadDpad.up]?.pressed ?? false,
+        down: pad.buttons[PadDpad.down]?.pressed ?? false,
+        left: pad.buttons[PadDpad.left]?.pressed ?? false,
+        right: pad.buttons[PadDpad.right]?.pressed ?? false,
+        a: pad.buttons[ButtonA]?.pressed ?? false,
+        b: pad.buttons[ButtonB]?.pressed ?? false,
+        start: pad.buttons[ButtonStart]?.pressed ?? false,
+      };
+      state.pause ||= state.pad.start;
       state.sprint ||= (pad.buttons[ButtonRT]?.value ?? 0) > 0.3;
       state.protect ||= (pad.buttons[ButtonLT]?.value ?? 0) > 0.3;
       break;

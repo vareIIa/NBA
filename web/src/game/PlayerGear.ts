@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { PlayerAnimator } from '../anim/PlayerAnimator';
 import { hideCoveredTriangles } from './BodyCover';
+import { LimbPush, type PushMode } from './LimbPush';
 
 export interface GearSet {
   shoes?: string; // GLB com tenis_r e tenis_l
@@ -58,6 +59,7 @@ const capSeg = new THREE.Line3();
 export class PlayerGear {
   private readonly cloth: ClothBone[] = [];
   private readonly capsules: { a: THREE.Bone; b: THREE.Bone; r: number }[] = [];
+  private readonly pushers: LimbPush[] = [];
   private acc = 0;
   /** Triângulos do corpo tirados por estarem sob a roupa (diagnóstico). */
   coveredTriangles = 0;
@@ -72,6 +74,8 @@ export class PlayerGear {
     for (const [kind, gltf] of loaded) gear.wear(kind, gltf.scene);
     gear.coverBody();
     gear.buildCapsules();
+    // Colisão dos braços com a roupa vestida (regata e bermuda são mais largas que o corpo).
+    animator.fitArmClearance([...gear.bodyMeshes(), ...gear.gearMeshes()]);
     return gear;
   }
 
@@ -137,47 +141,96 @@ export class PlayerGear {
     this.coveredTriangles = hideCoveredTriangles(this.bodyMeshes(), this.gearMeshes());
   }
 
+  /** Distância média dos vértices do corpo (com `from` como osso dominante) ao eixo from→to, na pose atual. */
+  private meanRadius(from: string, to: string): number {
+    const seg = new THREE.Line3(this.animator.bone(from).getWorldPosition(new THREE.Vector3()), this.animator.bone(to).getWorldPosition(new THREE.Vector3()));
+    const near = new THREE.Vector3();
+    let sum = 0;
+    let count = 0;
+    for (const mesh of this.bodyMeshes()) {
+      const idx = mesh.geometry.getAttribute('skinIndex');
+      const wts = mesh.geometry.getAttribute('skinWeight');
+      const bi = mesh.skeleton.bones.findIndex((x) => x.name === from);
+      for (let i = 0; i < idx.count; i++) {
+        let best = 0;
+        for (let k = 1; k < 4; k++) if (wts.getComponent(i, k) > wts.getComponent(i, best)) best = k;
+        if (idx.getComponent(i, best) !== bi) continue;
+        mesh.getVertexPosition(i, v1); // no r186 já aplica a pele (não chamar applyBoneTransform de novo)
+        v1.applyMatrix4(mesh.matrixWorld);
+        seg.closestPointToPoint(v1, true, near);
+        sum += near.distanceTo(v1);
+        count++;
+      }
+    }
+    return count > 0 ? sum / count : 0;
+  }
+
+  /** Raio do joelho com a patela: 95º percentil da distância ao eixo da perna dos vértices numa fatia de ±3 cm da articulação. */
+  private kneeRadius(knee: THREE.Bone, foot: THREE.Bone): number {
+    const c = knee.getWorldPosition(new THREE.Vector3());
+    const axis = foot.getWorldPosition(new THREE.Vector3()).sub(c).normalize();
+    const ds: number[] = [];
+    for (const mesh of this.bodyMeshes()) {
+      const n = mesh.geometry.getAttribute('position').count;
+      for (let i = 0; i < n; i++) {
+        mesh.getVertexPosition(i, v1).applyMatrix4(mesh.matrixWorld).sub(c); // getVertexPosition já aplica a pele (r186)
+        const along = v1.dot(axis);
+        if (Math.abs(along) > 0.03) continue;
+        const radial = v1.addScaledVector(axis, -along).length();
+        if (radial < 0.15) ds.push(radial);
+      }
+    }
+    ds.sort((x, y) => x - y);
+    return ds[Math.floor(0.95 * (ds.length - 1))] ?? 0.06;
+  }
+
   /**
-   * Cápsulas do corpo (coxas, canelas, tronco) para o pano não entrar no corpo ao balançar. Raio = 85% da distância média
-   * dos vértices do osso ao eixo (só a parte que de fato é carne do osso, no bind).
+   * Cápsulas do corpo. Pano (pontas dos ossos de pano): coxas, canelas e tronco com 85% do raio médio, para a mola não
+   * brigar com a colisão. Membros (LimbPush, no shader): braços, mãos, coxas e canelas com o raio médio + 1,2 cm de folga.
    */
   private buildCapsules(): void {
-    if (this.cloth.length === 0) return;
-    const pairs: [string, string][] = [
-      ['thigh_l', 'calf_l'],
-      ['thigh_r', 'calf_r'],
-      ['calf_l', 'foot_l'],
-      ['calf_r', 'foot_r'],
-      ['spine_01', 'neck_01'],
-    ];
     this.animator.root.updateMatrixWorld(true);
-    const a = new THREE.Vector3();
-    const b = new THREE.Vector3();
-    const seg = new THREE.Line3();
-    const near = new THREE.Vector3();
-    for (const [from, to] of pairs) {
-      this.animator.bone(from).getWorldPosition(a);
-      this.animator.bone(to).getWorldPosition(b);
-      seg.set(a, b);
-      let sum = 0;
-      let count = 0;
-      for (const mesh of this.bodyMeshes()) {
-        const idx = mesh.geometry.getAttribute('skinIndex');
-        const wts = mesh.geometry.getAttribute('skinWeight');
-        const bi = mesh.skeleton.bones.findIndex((x) => x.name === from);
-        for (let i = 0; i < idx.count; i++) {
-          let best = 0;
-          for (let k = 1; k < 4; k++) if (wts.getComponent(i, k) > wts.getComponent(i, best)) best = k;
-          if (idx.getComponent(i, best) !== bi) continue;
-          mesh.getVertexPosition(i, v1);
-          mesh.applyBoneTransform(i, v1);
-          v1.applyMatrix4(mesh.matrixWorld);
-          seg.closestPointToPoint(v1, true, near);
-          sum += near.distanceTo(v1);
-          count++;
-        }
-      }
-      if (count > 0) this.capsules.push({ a: this.animator.bone(from), b: this.animator.bone(to), r: (0.85 * sum) / count });
+    const cap = (from: string, to: string, k: number, margin = 0) => ({ a: this.animator.bone(from), b: this.animator.bone(to), r: k * this.meanRadius(from, to) + margin });
+    if (this.cloth.length > 0)
+      for (const [from, to] of [
+        ['thigh_l', 'calf_l'],
+        ['thigh_r', 'calf_r'],
+        ['calf_l', 'foot_l'],
+        ['calf_r', 'foot_r'],
+        ['spine_01', 'neck_01'],
+      ])
+        this.capsules.push(cap(from, to, 0.85));
+    // Modo por peça: 'in' = o membro passa por dentro da peça (o tecido sai por cima); 'out' = cruza por fora (o tecido
+    // recua para trás dele). Ausente = não empurra (canela não encosta na regata; braço não entra na bermuda).
+    const modes: Record<'jersey' | 'shorts', Partial<Record<string, PushMode>>> = {
+      // Sem a coxa: a barra da regata segue o quadril e a bermuda (vestir.py), e a cápsula da coxa a empurrava em lasca
+      // quando a perna subia; quem cobre a coxa é a bermuda.
+      jersey: { upperarm: 'in', lowerarm: 'out', hand: 'out' },
+      shorts: { thigh: 'in', calf: 'in', knee: 'in', lowerarm: 'out', hand: 'out' },
+    };
+    const limbs: [string, string, string][] = [];
+    for (const side of ['l', 'r'])
+      limbs.push(
+        ['upperarm', `upperarm_${side}`, `lowerarm_${side}`],
+        ['lowerarm', `lowerarm_${side}`, `hand_${side}`],
+        ['hand', `hand_${side}`, `fingers_${side}`],
+        ['thigh', `thigh_${side}`, `calf_${side}`],
+        ['calf', `calf_${side}`, `foot_${side}`],
+      );
+    const limbCaps = new Map(limbs.map(([kind, from, to]) => [from, { kind, cap: cap(from, to, 1, 0.012) }]));
+    // Joelho: esfera na articulação com o raio da patela (95% dos vértices a até 9 cm dela), maior que o raio médio da
+    // coxa e da canela; sem ela a patela furava a barra da bermuda no crossover.
+    for (const side of ['l', 'r']) {
+      const knee = this.animator.bone(`calf_${side}`);
+      limbCaps.set(`knee_${side}`, { kind: 'knee', cap: { a: knee, b: knee, r: this.kneeRadius(knee, this.animator.bone(`foot_${side}`)) + 0.008 } });
+    }
+    for (const mesh of this.gearMeshes()) {
+      const kind = mesh.userData.gear as keyof GearSet;
+      if (kind === 'shoes') continue;
+      const m = modes[kind];
+      const caps = [...limbCaps.values()].filter((c) => m[c.kind]).map((c) => ({ cap: c.cap, mode: m[c.kind]! }));
+      const core: [THREE.Bone, THREE.Bone] = kind === 'jersey' ? [this.animator.bone('pelvis'), this.animator.bone('neck_01')] : [this.animator.bone('pelvis'), this.animator.bone('spine_02')];
+      this.pushers.push(new LimbPush(mesh, caps, core));
     }
   }
 
@@ -221,7 +274,9 @@ export class PlayerGear {
       if (mesh.isSkinnedMesh && !mesh.userData.gear) mats.push(...([] as THREE.Material[]).concat(mesh.material).map((m) => m as THREE.MeshStandardMaterial));
     });
     const skin = mats.find((m) => m.name === 'Pele');
-    for (const m of mats) if (m.name === name && skin) m.color.copy(skin.color);
+    // Corpo do HY (Tools/Animacao/trocar_corpo.py): a pele é textura (cor branca) e o "Uniforme" já sai cor de pele.
+    if (!skin || skin.map) return;
+    for (const m of mats) if (m.name === name) m.color.copy(skin.color);
   }
 
   /** O GLTFLoader divide o corpo em uma SkinnedMesh por material: esconde as que usam esses materiais. */
@@ -236,14 +291,14 @@ export class PlayerGear {
 
   /** Chamar depois do animator.update (pose final do frame). Passo fixo de 1/60 s para a mola não depender do fps. */
   update(dt: number): void {
-    if (this.cloth.length === 0) return;
     const step = 1 / 60;
-    this.acc = Math.min(this.acc + dt, 4 * step);
+    this.acc = Math.min(this.acc + Math.max(0, dt), 4 * step);
     this.animator.root.updateMatrixWorld(true);
     while (this.acc >= step) {
       this.acc -= step;
       for (const c of this.cloth) this.stepBone(c, step);
     }
+    for (const p of this.pushers) p.update();
   }
 
   /**

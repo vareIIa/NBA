@@ -66,6 +66,8 @@ export interface ShotTuning {
   fatigueWeight: number; // K_f
   balanceWeight: number; // K_b
   maxTraitBonus: number; // soma dos Estilos limitada a ±0.4
+  maxBadgeBonus: number; // soma dos badges (HoopsBadges) em log-odds, limitada a ±isto
+  maxBadgeWindowScale: number; // janela green aumentada pelos badges no máximo até isto (×)
   guaranteedMaxContest: number; // green abaixo disso = cesta garantida
 
   minProbability: number;
@@ -97,6 +99,8 @@ export const defaultShotTuning = (overrides: Partial<ShotTuning> = {}): ShotTuni
   fatigueWeight: 0.8,
   balanceWeight: 0.7,
   maxTraitBonus: 0.4,
+  maxBadgeBonus: 1.2,
+  maxBadgeWindowScale: 1.35,
   guaranteedMaxContest: 0.3,
   minProbability: 0.01,
   maxProbability: 0.97,
@@ -122,6 +126,12 @@ export interface ShotContext {
   balance: number; // 1 = pés posicionados, 0 = totalmente desequilibrado
   traitBonus: number; // soma dos Estilos (limitada por maxTraitBonus)
   meterOff: boolean;
+  /** Badges ativos neste arremesso (HoopsBadges): bônus em log-odds (negativo = nerf, ex.: badge do defensor). */
+  badgeBonus: number;
+  /** Badges: multiplicador da janela green (Green Machine, Limitless Range...). 1 = sem efeito. */
+  badgeWindowScale: number;
+  /** Badges: multiplicador do peso da contestação (Blinders, Guard Up < 1; Challenger do defensor > 1). */
+  badgeContestScale: number;
 }
 
 export const makeShotContext = (overrides: Partial<ShotContext> = {}): ShotContext => ({
@@ -135,6 +145,9 @@ export const makeShotContext = (overrides: Partial<ShotContext> = {}): ShotConte
   balance: 1,
   traitBonus: 0,
   meterOff: false,
+  badgeBonus: 0,
+  badgeWindowScale: 1,
+  badgeContestScale: 1,
   ...overrides,
 });
 
@@ -283,6 +296,7 @@ export class ShotModel {
       half *= t.meterOffWindowScale;
     }
     half *= t.perfectWindowScale;
+    half *= clamp(context.badgeWindowScale ?? 1, 1 / t.maxBadgeWindowScale, t.maxBadgeWindowScale);
     if (half < t.minPerfectHalfWindowMs) {
       half = t.minPerfectHalfWindowMs;
     }
@@ -359,10 +373,11 @@ export class ShotModel {
         break;
     }
 
-    logit -= t.contestWeight * result.contest;
+    logit -= t.contestWeight * result.contest * Math.max(0, context.badgeContestScale ?? 1);
     logit -= t.fatigueWeight * clamp(context.fatigue, 0, 1);
     logit -= t.balanceWeight * (1 - clamp(context.balance, 0, 1));
     logit += clamp(context.traitBonus, -t.maxTraitBonus, t.maxTraitBonus);
+    logit += clamp(context.badgeBonus ?? 0, -t.maxBadgeBonus, t.maxBadgeBonus);
 
     result.logit = logit;
     result.guaranteed =

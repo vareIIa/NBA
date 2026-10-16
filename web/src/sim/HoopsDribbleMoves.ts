@@ -283,8 +283,32 @@ export class ActiveDribbleMove {
   }
 }
 
+/**
+ * Multiplicadores externos (badges, takeover) aplicados por cima da configuração. 1 = sem efeito. Ficam fora do
+ * DribbleEnergyConfig porque mudam durante a partida (badge que ativa, takeover que acende).
+ */
+export interface DribbleModifiers {
+  moveEnergyScale: number; // custo de energia dos dribles (Handles for Days)
+  burstEnergyScale: number; // custo de energia do arranque de saída
+  sprintDrainScale: number; // gasto do sprint
+  movePlayRate: number; // velocidade dos dribles (Killer Combos, Hyperdrive...)
+  burstScale: number; // força do arranque de saída (Quick First Step)
+  speedScale: number; // velocidade máxima com a bola
+}
+
+export const neutralDribbleModifiers = (): DribbleModifiers => ({
+  moveEnergyScale: 1,
+  burstEnergyScale: 1,
+  sprintDrainScale: 1,
+  movePlayRate: 1,
+  burstScale: 1,
+  speedScale: 1,
+});
+
 export class DribbleController {
   private readonly config: DribbleEnergyConfig;
+  /** Badges/takeover: trocados a cada quadro por quem conhece o jogador. */
+  modifiers: DribbleModifiers = neutralDribbleModifiers();
   private active = new ActiveDribbleMove();
   private buffered = DribbleMove.None;
   private bufferedTime = -1000;
@@ -366,6 +390,14 @@ export class DribbleController {
    */
   resolveGesture(gesture: StickGesture, context: DribbleContext, now: number): DribbleIntent {
     const local: DribbleContext = { ...context };
+    // Giro de um toque que já saiu como flick na borda (o stick parou na zona ativa e depois girou): se o drible desse
+    // flick já começou, o giro o troca antes do 1º quique; depois disso é descartado (um toque não vira dois dribles).
+    const turning = gesture.kind === StickGestureKind.Rotation || gesture.kind === StickGestureKind.QuarterCircle;
+    if (turning && gesture.afterEarlyFlick && this.active.isActive(now) && this.active.startTime >= gesture.startTime) {
+      if (!this.canRedirect(now)) return { move: DribbleMove.None, redirect: false };
+      local.hand = this.active.handAtStart;
+      return { move: resolveDribbleMove(gesture, local), redirect: true };
+    }
     if (this.canRedirect(now)) {
       // A bola ainda não quicou: o gesto é lido a partir da mão do início do movimento.
       local.hand = this.active.handAtStart;
@@ -401,7 +433,7 @@ export class DribbleController {
     this.comboCount = inRhythm ? this.comboCount + 1 : 1;
     if (!this.config.infiniteEnergy) {
       this.energy = clamp(
-        this.energy - spec.energyCost * (inRhythm ? this.config.comboEnergyDiscount : 1),
+        this.energy - spec.energyCost * (inRhythm ? this.config.comboEnergyDiscount : 1) * this.modifiers.moveEnergyScale,
         0,
         1,
       );
@@ -487,7 +519,7 @@ export class DribbleController {
     if (this.config.infiniteEnergy) {
       this.energy = 1;
     } else if (sprinting) {
-      this.energy = clamp(this.energy - this.config.sprintDrainPerSecond * deltaSeconds, 0, 1);
+      this.energy = clamp(this.energy - this.config.sprintDrainPerSecond * this.modifiers.sprintDrainScale * deltaSeconds, 0, 1);
     } else if (!this.active.isActive(now)) {
       const regen = this.config.regenPerSecond * (moving ? this.config.movingRegenScale : 1);
       this.energy = clamp(this.energy + regen * deltaSeconds, 0, 1);
@@ -512,11 +544,11 @@ export class DribbleController {
 
   /** Efeito da energia baixa na velocidade máxima. */
   speedScale(): number {
-    return this.lowEnergyScale(this.config.lowEnergyMinSpeedScale);
+    return this.lowEnergyScale(this.config.lowEnergyMinSpeedScale) * this.modifiers.speedScale;
   }
   /** Efeito da energia baixa na velocidade dos dribles. */
   movePlayRateScale(): number {
-    return this.lowEnergyScale(this.config.lowEnergyMinMovePlayRate);
+    return this.lowEnergyScale(this.config.lowEnergyMinMovePlayRate) * this.modifiers.movePlayRate;
   }
   exitBurstEnergyScale(): number {
     return this.lowEnergyScale(this.config.lowEnergyMinBurstScale);
@@ -560,10 +592,10 @@ export class DribbleController {
     }
 
     // Energia é o único limitador (D13): abaixo de 40% o arranque cai; nunca há contador de boosts.
-    result.speed = spec.exitBurst * kindScale * this.exitBurstEnergyScale();
+    result.speed = spec.exitBurst * kindScale * this.exitBurstEnergyScale() * this.modifiers.burstScale;
     result.startTime = now;
     if (!this.config.infiniteEnergy) {
-      result.energyCost = result.speed * this.config.exitBurstEnergyPerMps;
+      result.energyCost = result.speed * this.config.exitBurstEnergyPerMps * this.modifiers.burstEnergyScale;
       this.energy = clamp(this.energy - result.energyCost, 0, 1);
     }
     this.exitMove = DribbleMove.None;

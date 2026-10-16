@@ -15,6 +15,7 @@ import {
   snapBlend,
   stepBlend,
   stepSpeed,
+  withRowPreview,
 } from './ShotCreatorView';
 
 function memoryStorage(): KeyValueStorage {
@@ -28,8 +29,10 @@ function memoryStorage(): KeyValueStorage {
 }
 
 describe('rótulos', () => {
-  it('cada família tem rótulo com o nome do clipe, e as velocidades têm nome em português', () => {
-    for (const family of ShotFamilies) expect(FamilyLabels[family]).toContain(`(${family})`);
+  it('cada família tem o nome do jogador, e as velocidades têm nome em português', () => {
+    expect(FamilyLabels.Curry).toBe('Stephen Curry');
+    expect(FamilyLabels.Oscar).toBe('Oscar Robertson');
+    for (const family of ShotFamilies) expect(FamilyLabels[family].length).toBeGreaterThan(3);
     expect(SpeedSteps).toEqual([ReleaseSpeed.Quick, ReleaseSpeed.Normal, ReleaseSpeed.Slow]);
     expect(SpeedSteps.map((s) => SpeedLabels[s])).toEqual(['Rápida', 'Normal', 'Lenta']);
   });
@@ -81,6 +84,7 @@ describe('navegação', () => {
     buttons: ['btn:new', 'btn:save', 'btn:back'],
     editing: 'chip:b',
     home: 'card:1',
+    current: ['Curry', 'Klay', 'Oscar'],
   };
 
   it('sobe e desce pelos cartões; descer do último cai no chip em edição', () => {
@@ -89,20 +93,42 @@ describe('navegação', () => {
     expect(navNeighbor('card:3', 'down', ctx)).toBe('chip:b');
   });
 
-  it('dos cartões vai ao painel de velocidade e de mistura, e o Esquerda do teste volta ao cartão de origem', () => {
-    expect(navNeighbor('card:2', 'right', ctx)).toBe('speed');
+  it('da direita do cartão entra na linha da família atual; o de mistura entra na velocidade', () => {
+    expect(navNeighbor('card:1', 'right', ctx)).toBe('opt:Klay');
+    expect(navNeighbor('card:3', 'right', ctx)).toBe('speed');
+    expect(navNeighbor('card:0', 'left', ctx)).toBeNull();
+  });
+
+  it('a tabela anda por linha e a Esquerda ou o Esc voltam ao cartão do slot', () => {
+    expect(navNeighbor('opt:Curry', 'up', ctx)).toBeNull();
+    expect(navNeighbor('opt:Curry', 'down', ctx)).toBe('opt:Klay');
+    expect(navNeighbor('opt:Bird', 'down', ctx)).toBeNull();
+    expect(navNeighbor('opt:Klay', 'left', ctx)).toBe('card:1');
+    expect(navNeighbor('opt:Klay', 'right', ctx)).toBeNull();
+  });
+
+  it('no painel de mistura, velocidade e mistura descem uma para a outra; a mistura desce para a faixa', () => {
     expect(navNeighbor('speed', 'down', ctx)).toBe('blend');
-    expect(navNeighbor('blend', 'down', ctx)).toBe('test');
-    expect(navNeighbor('test', 'left', ctx)).toBe('card:1');
+    expect(navNeighbor('blend', 'up', ctx)).toBe('speed');
+    expect(navNeighbor('blend', 'down', ctx)).toBe('chip:b');
   });
 
   it('na faixa anda entre chips e botões, e sobe dos botões para o chip em edição', () => {
     expect(navNeighbor('chip:a', 'right', ctx)).toBe('chip:b');
     expect(navNeighbor('chip:c', 'right', ctx)).toBe('chip:c');
     expect(navNeighbor('chip:a', 'down', ctx)).toBe('btn:new');
+    expect(navNeighbor('chip:a', 'up', ctx)).toBe('card:1');
     expect(navNeighbor('btn:save', 'left', ctx)).toBe('btn:new');
     expect(navNeighbor('btn:save', 'up', ctx)).toBe('chip:b');
     expect(navNeighbor('btn:back', 'down', ctx)).toBeNull();
+  });
+
+  it('a prévia mostra a família da linha focada, sem mexer na cópia', () => {
+    const setup = defaultSetup();
+    expect(withRowPreview(setup, 'opt:Kobe', 1).upperRelease1).toBe('Kobe');
+    expect(withRowPreview(setup, 'opt:Kobe', 1).lowerBase).toBe(setup.lowerBase);
+    expect(withRowPreview(setup, 'speed', 1)).toBe(setup);
+    expect(withRowPreview(setup, 'opt:Kobe', 3)).toBe(setup);
   });
 
   it('limita índices sem dar a volta', () => {
@@ -195,7 +221,7 @@ describe('cópia em edição', () => {
 
   it('comparação de arremessos olha todos os campos editáveis', () => {
     const a = defaultSetup();
-    const otherFamily = a.upperRelease2 === 'JumpShot' ? 'JumpShot2' : 'JumpShot';
+    const otherFamily = a.upperRelease2 === 'Klay' ? 'Curry' : 'Klay';
     expect(sameSetup(a, { ...a })).toBe(true);
     expect(sameSetup(a, { ...a, blendPercent: a.blendPercent === 55 ? 60 : 55 })).toBe(false);
     expect(sameSetup(a, { ...a, upperRelease2: otherFamily })).toBe(false);

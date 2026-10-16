@@ -32,6 +32,10 @@ export interface StickGesture {
   clockwise: boolean; // Rotation/QuarterCircle
   sweepDegrees: number;
   time: number;
+  /** Quando o toque começou (o stick passou da zona ativa). */
+  startTime: number;
+  /** Rotation/QuarterCircle de um toque que já tinha saído como flick na borda (earlyFlick). */
+  afterEarlyFlick: boolean;
 }
 
 export const makeStickGesture = (overrides: Partial<StickGesture> = {}): StickGesture => ({
@@ -41,6 +45,8 @@ export const makeStickGesture = (overrides: Partial<StickGesture> = {}): StickGe
   clockwise: false,
   sweepDegrees: 0,
   time: 0,
+  startTime: 0,
+  afterEarlyFlick: false,
   ...overrides,
 });
 
@@ -54,6 +60,22 @@ export interface ProStickConfig {
   quarterMinDegrees: number;
   quarterMaxDegrees: number;
   holdMaxSweepDegrees: number;
+  /**
+   * Flick na borda: o toque sai assim que o stick para na zona ativa, sem esperar a volta ao centro (~50–70 ms antes; o
+   * stick segurado também vira o drible). Parado = girando menos que earlyFlickMaxTurnDegPerSecond durante
+   * earlyFlickStableSeconds: o spin e o meio giro varrem a borda a 700–1400°/s e não disparam.
+   */
+  earlyFlick: boolean;
+  earlyFlickStableSeconds: number;
+  earlyFlickMaxTurnDegPerSecond: number;
+  earlyFlickMaxSweepDegrees: number;
+  /**
+   * Direções que esperam a volta ao centro: segurar para baixo é o arremesso pelo Pro Stick (docs/02 §1), e o toque
+   * para baixo (step-back) só se distingue dele quando o stick volta.
+   */
+  earlyFlickExcluded: StickDir[];
+  /** Giro completo sai assim que a varredura passa de rotationMinDegrees (nenhum outro gesto chega lá), sem a volta. */
+  earlyRotation: boolean;
 }
 
 export const defaultProStickConfig = (): ProStickConfig => ({
@@ -66,6 +88,12 @@ export const defaultProStickConfig = (): ProStickConfig => ({
   quarterMinDegrees: 65,
   quarterMaxDegrees: 160,
   holdMaxSweepDegrees: 45,
+  earlyFlick: true,
+  earlyFlickStableSeconds: 0.025,
+  earlyFlickMaxTurnDegPerSecond: 300,
+  earlyFlickMaxSweepDegrees: 30,
+  earlyFlickExcluded: [StickDir.Down],
+  earlyRotation: true,
 });
 
 /** Arredonda como std::lround (metade se afasta do zero). */
@@ -116,6 +144,13 @@ export class ProStickRecognizer {
   private lastFlickTime = -1000;
   private lastFlickDir = StickDir.Up;
 
+  /** Flick na borda: já saiu neste toque; desde quando o stick está parado na zona ativa (-1 = não está). */
+  private earlyEmitted = false;
+  /** O giro completo deste toque já saiu (earlyRotation). */
+  private rotationEmitted = false;
+  private stableSince = -1;
+  private lastSampleTime = 0;
+
   constructor(config: ProStickConfig = defaultProStickConfig()) {
     this.config = config;
   }
@@ -133,6 +168,9 @@ export class ProStickRecognizer {
     this.sweepDeg = 0;
     this.peakMagnitude = 0;
     this.hasLastFlick = false;
+    this.earlyEmitted = false;
+    this.rotationEmitted = false;
+    this.stableSince = -1;
   }
 
   /** Uma amostra por frame. Devolve os gestos reconhecidos nesta amostra (até MaxGesturesPerUpdate). */
@@ -141,6 +179,8 @@ export class ProStickRecognizer {
     const c = this.config;
     const magnitude = Math.sqrt(x * x + y * y);
     const angleDeg = radToDeg(Math.atan2(y, x));
+    const sampleDt = time - this.lastSampleTime;
+    this.lastSampleTime = time;
 
     if (!this.active) {
       if (magnitude >= c.activeZone) {
@@ -151,6 +191,9 @@ export class ProStickRecognizer {
         this.sweepDeg = 0;
         this.peakMagnitude = magnitude;
         this.peakDir = dirFromVector(x, y);
+        this.earlyEmitted = false;
+        this.rotationEmitted = false;
+        this.stableSince = time;
       }
       return out;
     }
@@ -170,6 +213,42 @@ export class ProStickRecognizer {
         }
       }
 
+      // Flick na borda: o stick está na zona ativa e quase não gira há earlyFlickStableSeconds.
+      const turning = sampleDt > 1e-6 && Math.abs(delta) / sampleDt > c.earlyFlickMaxTurnDegPerSecond;
+      if (magnitude < c.activeZone || turning) this.stableSince = magnitude >= c.activeZone ? time : -1;
+      else if (this.stableSince < 0) this.stableSince = time;
+      if (
+        c.earlyFlick &&
+        !this.earlyEmitted &&
+        !this.holdEmitted &&
+        this.stableSince >= 0 &&
+        time - this.stableSince >= c.earlyFlickStableSeconds - 1e-6 &&
+        Math.abs(this.sweepDeg) < c.earlyFlickMaxSweepDegrees
+      ) {
+        const dir = dirFromVector(x, y);
+        if (!c.earlyFlickExcluded.includes(dir)) {
+          this.earlyEmitted = true;
+          this.peakDir = dir;
+          this.emitFlick(dir, time, out);
+        }
+      }
+
+      // Giro completo: sai no meio do gesto, assim que passa do mínimo (~70 ms antes da volta ao centro).
+      if (c.earlyRotation && !this.rotationEmitted && !this.holdEmitted && Math.abs(this.sweepDeg) >= c.rotationMinDegrees) {
+        this.rotationEmitted = true;
+        out.push(
+          makeStickGesture({
+            kind: StickGestureKind.Rotation,
+            clockwise: this.sweepDeg < 0,
+            sweepDegrees: Math.abs(this.sweepDeg),
+            dir: this.peakDir,
+            time,
+            startTime: this.activeStartTime,
+            afterEarlyFlick: this.earlyEmitted,
+          }),
+        );
+      }
+
       const elapsed = time - this.activeStartTime;
       if (
         !this.holdEmitted &&
@@ -186,19 +265,35 @@ export class ProStickRecognizer {
 
     // Voltou ao centro: classifica.
     this.active = false;
+    this.stableSince = -1;
     const elapsed = time - this.activeStartTime;
     const absSweep = Math.abs(this.sweepDeg);
     const clockwise = this.sweepDeg < 0;
+    const startTime = this.activeStartTime;
+    const afterEarlyFlick = this.earlyEmitted;
+    this.earlyEmitted = false;
+    if (this.rotationEmitted) {
+      this.rotationEmitted = false;
+      return out; // o giro já saiu no meio do gesto
+    }
 
     if (this.holdEmitted) {
-      out.push(makeStickGesture({ kind: StickGestureKind.HoldRelease, dir: this.holdDir, time }));
+      out.push(makeStickGesture({ kind: StickGestureKind.HoldRelease, dir: this.holdDir, time, startTime }));
       this.holdEmitted = false;
       return out;
     }
 
     if (absSweep >= c.rotationMinDegrees) {
       out.push(
-        makeStickGesture({ kind: StickGestureKind.Rotation, clockwise, sweepDegrees: absSweep, dir: this.peakDir, time }),
+        makeStickGesture({
+          kind: StickGestureKind.Rotation,
+          clockwise,
+          sweepDegrees: absSweep,
+          dir: this.peakDir,
+          time,
+          startTime,
+          afterEarlyFlick,
+        }),
       );
       return out;
     }
@@ -211,31 +306,34 @@ export class ProStickRecognizer {
           sweepDegrees: absSweep,
           dir: this.peakDir,
           time,
+          startTime,
+          afterEarlyFlick,
         }),
       );
       return out;
     }
 
-    if (elapsed <= c.flickMaxSeconds) {
-      out.push(makeStickGesture({ kind: StickGestureKind.Flick, dir: this.peakDir, time }));
-
-      if (this.hasLastFlick && time - this.lastFlickTime <= c.comboGapSeconds) {
-        if (this.lastFlickDir === this.peakDir) {
-          out.push(
-            makeStickGesture({ kind: StickGestureKind.DoubleThrow, dir: this.peakDir, firstDir: this.lastFlickDir, time }),
-          );
-        } else if (areOpposite(this.lastFlickDir, this.peakDir)) {
-          out.push(
-            makeStickGesture({ kind: StickGestureKind.Switchback, dir: this.peakDir, firstDir: this.lastFlickDir, time }),
-          );
-        }
-        this.hasLastFlick = false; // um combo consome o par
-      } else {
-        this.hasLastFlick = true;
-        this.lastFlickTime = time;
-        this.lastFlickDir = this.peakDir;
-      }
-    }
+    // O flick que já saiu na borda não sai de novo na volta.
+    if (!afterEarlyFlick && elapsed <= c.flickMaxSeconds) this.emitFlick(this.peakDir, time, out);
     return out;
+  }
+
+  /** Flick (na borda ou na volta ao centro) e o combo com o flick anterior (double throw / switchback). */
+  private emitFlick(dir: StickDir, time: number, out: StickGesture[]): void {
+    const c = this.config;
+    const startTime = this.activeStartTime;
+    out.push(makeStickGesture({ kind: StickGestureKind.Flick, dir, time, startTime }));
+    if (this.hasLastFlick && time - this.lastFlickTime <= c.comboGapSeconds) {
+      if (this.lastFlickDir === dir) {
+        out.push(makeStickGesture({ kind: StickGestureKind.DoubleThrow, dir, firstDir: this.lastFlickDir, time, startTime }));
+      } else if (areOpposite(this.lastFlickDir, dir)) {
+        out.push(makeStickGesture({ kind: StickGestureKind.Switchback, dir, firstDir: this.lastFlickDir, time, startTime }));
+      }
+      this.hasLastFlick = false; // um combo consome o par
+    } else {
+      this.hasLastFlick = true;
+      this.lastFlickTime = time;
+      this.lastFlickDir = dir;
+    }
   }
 }
