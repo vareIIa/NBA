@@ -611,7 +611,40 @@ body.mn-open #hud {
   padding-right: 6px;
   scrollbar-width: thin;
 }
+/* Estado do catálogo online (buscando / online / sem conexão) e os cabeçalhos das seções da lista. */
+.bl-status {
+  margin: -8px 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--mn-dim);
+  text-transform: uppercase;
+}
+.bl-status.online {
+  color: var(--mn-teal);
+}
+.bl-status.offline {
+  color: var(--mn-gold);
+}
+.bl-head {
+  flex: none;
+  margin: 8px 0 -2px 2px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--mn-dim);
+  text-transform: uppercase;
+}
+.mm-card .bl-origin {
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: var(--mn-dim);
+}
+.mm-card .bl-origin.mine {
+  color: var(--mn-teal);
+}
 .bl-item {
+  flex: none;
   display: grid;
   grid-template-columns: 52px 1fr auto;
   gap: 14px;

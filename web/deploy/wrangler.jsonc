@@ -10,9 +10,16 @@
     "binding": "ASSETS"
   },
   "durable_objects": {
-    "bindings": [{ "name": "HUB", "class_name": "HubObject" }]
+    "bindings": [
+      { "name": "HUB", "class_name": "HubObject" },
+      { "name": "BUILDS", "class_name": "BuildsObject" }
+    ]
   },
   // Plano grátis: só Durable Objects com SQLite (o hub não grava nada, mas a classe precisa ser desse tipo).
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HubObject"] }],
+  // v2: o catálogo de builds compartilhadas (deploy/builds.ts), que grava.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["HubObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["BuildsObject"] }
+  ],
   "observability": { "enabled": true }
 }

@@ -83,6 +83,7 @@ Notas:
 
 **Para jogar com os amigos, use https://garrafao.vercel.app** (o outro endereço é o mesmo jogo e a mesma sala).
 
+- O mesmo Worker atende as **builds compartilhadas** (`/api/builds`, Durable Object `BuildsObject`; docs/23 §6).
 - Os dois endereços servem o mesmo jogo e entram na **mesma sala**: um amigo pode abrir um e o outro o outro. Convite:
   `https://garrafao.vercel.app/?sala=CÓDIGO` (o lobby gera o link do site em que você está).
 - A sala vem de `web/.env.production` (`VITE_MP_URL`), lido em todo build de produção. Se o subdomínio do Worker mudar,
@@ -96,10 +97,11 @@ Notas:
 - `web/public/assets/mocap/mixamo_loco.json` (locomoção do Mixamo convertida) fica **fora do git** por causa da licença
   do Mixamo (decisão do diretor, 2026-10-16) e existe só no PC dele. O jogo publicado leva o arquivo porque o build sai
   da pasta local; publicar de um clone novo sai sem ele, e o jogo cai na locomoção da CMU.
-- `npm run publicar` (`web/deploy/publicar.mjs`): recusa se houver código não commitado em `web/`, roda `tsc`, `vitest`
-  e `e2e/online.spec.ts` num Vite próprio (primeira porta livre a partir da 5182), faz **um** build e manda o mesmo
-  `dist` para a Cloudflare e para a Vercel. `npm run deploy` e `deploy:vercel` continuam existindo, mas sozinhos
-  publicam só um lado.
+- `npm run publicar` (`web/deploy/publicar.mjs`) publica **o último commit**: monta uma cópia separada dele (git worktree
+  fora do repositório, com os arquivos do LFS e os assets locais de `public/assets/mocap`), roda `tsc`, `vitest` e
+  `e2e/online.spec.ts` com o Vite e a sala em portas livres, faz **um** build e manda o mesmo `dist` para a Cloudflare e
+  para a Vercel. O que outras sessões estão editando na pasta não vai para o ar e não atrapalha. `--pasta` publica a pasta
+  como está (só emergência). `npm run deploy` e `deploy:vercel` continuam existindo, mas sozinhos publicam só um lado.
 - **Republicar com várias sessões editando `web/`:** o build pega o que está na pasta naquele instante, inclusive edição
   pela metade de outra sessão. O `build:deploy` roda o `tsc` antes e para se algo não compilar; para ter certeza, copie
   `web/` (sem `node_modules`, `dist` e `models_raw`) para uma pasta à parte, rode `tsc`, `vitest` e o

@@ -165,7 +165,10 @@ Ainda **não** entram no Freestyle:
 | `build/BuildRules.ts` | Faixas de corpo, caps, custo/orçamento, overall, pontos de badge, arquétipo, Shades Of, build padrão |
 | `build/BuildRatings.ts` | Build → ratings do Freestyle |
 | `build/BuildBadges.ts` | Ajusta as badges salvas ao orçamento da build |
-| `build/BuildSave.ts` | Builds no `localStorage` (`garrafao.builds.v1`) e a ativa |
+| `build/BuildSave.ts` | Builds deste navegador no `localStorage` (`garrafao.builds.v1`), cópia das dos outros, a ativa e a sincronia (§6) |
+| `net/builds/BuildCatalog.ts`, `buildsApi.ts` | Catálogo de builds compartilhadas e a API HTTP (lógica pura, §6) |
+| `net/builds/BuildCloud.ts` | Cliente da API (endereço, chave do dono, tempo limite) |
+| `deploy/builds.ts` | Durable Object `BuildsObject` (o catálogo na Cloudflare) |
 | `menu/MenuFlow.ts` | Moldura, troca de telas, teclado/controle, laço do showroom |
 | `menu/Showroom.ts` | Jogador 3D no meio (câmera fixa; altura e envergadura ao vivo pela mesma escala do jogo; giro) |
 | `anim/PlayerAnimator.ts` (`setBodyScale`, `heightMeters`) | Altura e braço da build no corpo do jogo (§3.2) |
@@ -181,3 +184,31 @@ Ainda **não** entram no Freestyle:
 4. Minha Carreira: Cap Breakers (+5 acima do cap), progressão por uso (`09-atributos-progressao.md` §4).
 5. Antes de lançar: trocar os nomes reais do Shades Of por lendas fictícias da nossa liga (brief: liga e jogadores
    fictícios).
+
+## 6. Builds compartilhadas (online)
+
+Toda build criada por qualquer jogador aparece para todos, no Meu Jogador (pedido do diretor em 2026-10-16: "pode ter
+dezenas, centenas de builds que a gente vai criando juntos"). A lista mostra "Criar nova build" no topo, depois as
+suas, a padrão (Cardoso 2K, que é do jogo e nunca sai da lista) e as "da galera".
+
+- **Dono:** cada navegador tem uma chave aleatória no `localStorage` (`garrafao.builds.dono`); o servidor guarda só o
+  hash (SHA-256). Só o dono edita e exclui. As builds dos outros e a padrão dão para jogar e para "Copiar e editar"
+  (a cópia vira sua, com id novo).
+- **Ativa:** escolha deste navegador (pode ser a de outro jogador).
+- **Sem servidor:** o menu nunca espera. A lista sai na hora com o que está salvo aqui e as dos outros chegam depois.
+  O que não subiu fica pendente (`pending`, `deleted` no arquivo) e sobe na próxima sincronia (ao abrir o Meu Jogador
+  e depois de salvar). Builds salvas antes do catálogo sobem na primeira sincronia.
+- **API** (mesmo servidor da sala; o endereço sai do da sala: `wss://host/ws` → `https://host/api/builds`):
+  `GET /api/builds` (todas), `PUT /api/builds/:id` (cria ou atualiza; corpo = a build; cabeçalho `x-garrafao-dono`),
+  `DELETE /api/builds/:id` (só o dono).
+- **Proteções** (a escrita é aberta): CORS só para `garrafao.vercel.app`, o `workers.dev` e localhost (o servidor de
+  desenvolvimento aceita também a rede local); nomes com no máximo 16 caracteres, sem controle nem `<>`; números com
+  faixa; corpo de até 4 KB; 60 builds por dono e 2.000 no total; 20 escritas e 60 leituras por minuto por IP. Os tetos
+  do corpo e o orçamento de pontos o jogo reaplica ao ler (`sanitizeBuild`).
+- **Onde mora:** na Cloudflare, o Durable Object `BuildsObject` (SQLite, migração `v2` do `wrangler.jsonc`), separado
+  do `HubObject` da sala. No `npm run server`, em memória (some quando o servidor para).
+- **Publicar:** o Worker e o site juntos (`npm run publicar`, docs/24 §4). Site novo com Worker velho funciona, só
+  sem as builds dos outros (o `/api/builds` não existe e o menu mostra "sem conexão").
+- **Testes:** `net/builds/builds.test.ts` (catálogo, validação, dono, limites, CORS) e `build/BuildSave.test.ts` (dois
+  navegadores com um servidor de mentira: a build de um aparece para o outro, cópia, exclusão, sem conexão, e criar
+  build nova não tira o Cardoso 2K).
