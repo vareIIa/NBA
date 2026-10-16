@@ -14,7 +14,8 @@
     "server": "node server/dev.ts",
     "build:deploy": "tsc --noEmit && vite build --config deploy/vite.config.ts",
     "deploy": "npm run build:deploy && npx wrangler@4.147.0 deploy --config deploy/wrangler.jsonc",
-    "deploy:local": "npm run build:deploy && npx wrangler@4.147.0 dev --config deploy/wrangler.jsonc"
+    "deploy:local": "npm run build:deploy && npx wrangler@4.147.0 dev --config deploy/wrangler.jsonc",
+    "deploy:vercel": "npm run build:deploy && npx vercel@latest deploy dist --prod --yes --scope vareiias-projects --project garrafao"
   },
   "dependencies": {
     "three": "0.186.1"

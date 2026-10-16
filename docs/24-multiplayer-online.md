@@ -62,6 +62,25 @@ Notas:
   brutos do HY 3D (2,9 GB, fora do git) moravam em `public/` e o `vite build` comum os copiava para o `dist` (2,9 GB,
   com arquivos acima de 25 MB). Com o build de publicação, o `dist` tem ~23 MB.
 
+### 4.1 No ar (2026-10-16)
+
+| | URL | Como republicar (na pasta `web/`) |
+|---|---|---|
+| **Jogo + sala (Cloudflare)** | https://garrafao.garrafao-web.workers.dev | `npm run deploy` |
+| **Jogo na Vercel** (usa a sala da Cloudflare) | https://garrafao.vercel.app | `npm run deploy:vercel` |
+
+- Os dois endereços servem o mesmo jogo e entram na **mesma sala**: um amigo pode abrir um e o outro o outro. Convite:
+  `https://garrafao.vercel.app/?sala=CÓDIGO` (o lobby gera o link do site em que você está).
+- A sala vem de `web/.env.production` (`VITE_MP_URL`), lido em todo build de produção. Se o subdomínio do Worker mudar,
+  troque ali e republique os dois.
+- Contas usadas: o `wrangler login` feito no PC do diretor (conta Cloudflare dele, Durable Object `hub` na América do
+  Sul) e o login da Vercel já existente no PC (time pessoal `vareiias-projects`, projeto `garrafao`).
+- **Republicar com várias sessões editando `web/`:** o build pega o que está na pasta naquele instante, inclusive edição
+  pela metade de outra sessão. O `build:deploy` roda o `tsc` antes e para se algo não compilar; para ter certeza, copie
+  `web/` (sem `node_modules`, `dist` e `models_raw`) para uma pasta à parte, rode `tsc`, `vitest` e o
+  `e2e/online.spec.ts` lá e publique dessa cópia (foi assim na primeira publicação: os dois testes de dois navegadores
+  passaram contra o Worker publicado e contra a Vercel).
+
 ## 5. O jogador do outro na tela (boneco remoto)
 
 Código: `web/src/online/`. O jogo hoje anima um jogador só, e a bola segue a mão animada (`BallDribbler`). O adversário
