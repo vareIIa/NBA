@@ -197,6 +197,10 @@ export class Freestyle {
   });
   /** O drible pode começar com a bola ainda subindo para a mão (?bola=mao espera ela na mão, como antes). */
   moveBeforeCatch = typeof location === 'undefined' || new URLSearchParams(location.search).get('bola') !== 'mao';
+  /** O impulso do drible espera junto com o clipe que espera a bola (`?impulso=relogio` volta ao relógio do núcleo). */
+  syncImpulseToBall = typeof location === 'undefined' || new URLSearchParams(location.search).get('impulso') !== 'relogio';
+  /** s que o drible atual ficou parado esperando a bola (a rampa do impulso desconta). */
+  private moveBallHeld = 0;
   readonly rng = new Rng(2026);
   readonly dribbler: BallDribbler;
 
@@ -556,6 +560,7 @@ export class Freestyle {
       return;
     }
     this.moveStart = active.startTime;
+    this.moveBallHeld = 0;
     const spec = getDribbleMoveSpec(active.move);
     const duration = spec.duration / active.playRate;
     const kind = moveKindFor(active.move);
@@ -629,7 +634,11 @@ export class Freestyle {
       if (inMove) {
         // O drible dá a direção. Lateral/frente: o impulso cresce rápido e se mantém até o fim (acelera no corte, não
         // freia). Step-back/retreat: o salto para trás acontece no meio (empurrão, voo, aterrissagem).
-        const alpha = clamp((now - active.startTime) / Math.max(0.05, active.endTime() - active.startTime), 0, 1);
+        // Enquanto o clipe espera a bola chegar à mão (animator.waitingForBall), a rampa do impulso também espera; depois
+        // ela cabe no que sobra até o fim do núcleo (as janelas de combo continuam as do núcleo).
+        if (this.syncImpulseToBall && this.animator.waitingForBall()) this.moveBallHeld += dt;
+        const span = Math.max(0.05, active.endTime() - active.startTime - this.moveBallHeld);
+        const alpha = clamp((now - active.startTime - this.moveBallHeld) / span, 0, 1);
         const profile = this.moveIsStepBack
           ? Math.sin(Math.PI * clamp((alpha - 0.06) / 0.62, 0, 1)) * 1.35
           : clamp(alpha / 0.3, 0, 1) ** 0.7;

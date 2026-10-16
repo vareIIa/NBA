@@ -997,6 +997,15 @@ export class PlayerAnimator {
     return t.turnDeg ? Math.max(0, toRelease - MoveBallMargin) : toRelease + MoveBallWaitMax - MoveBallMargin;
   }
 
+  /**
+   * O drible ativo está parado esperando a bola chegar à mão neste quadro (holdMoveForBall). O jogo segura o impulso do
+   * drible junto: sem isso o corpo saía para o corte enquanto o braço ainda esperava a bola (até 0,15 s).
+   */
+  waitingForBall(): boolean {
+    const a = this.active;
+    return !!a && !a.fadingOut && !a.released && a.action.timeScale === 0 && this.moveBallWait > 0 && a.kind !== 'Shot';
+  }
+
   /** Drible de mocap que começou com a bola no ar: o clipe para logo antes da soltura até ela chegar à mão. */
   private holdMoveForBall(dt: number): void {
     const a = this.active;

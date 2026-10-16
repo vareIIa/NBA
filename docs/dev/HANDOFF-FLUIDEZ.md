@@ -611,3 +611,29 @@ A 144 Hz o padrão é o mesmo (bola no corpo 136 -> 110 quadros, profundidade so
 - **Entre as pernas andando** (`anda_entre_pernas`): continua com as pernas da locomoção (46 quadros cruzando, igual a
   antes). A base escalonada só vale parado; em movimento o certo é cronometrar o drible com a passada aberta.
 - `escape_combo` a 144 Hz: pernas cruzando 29 -> 39 quadros.
+
+### Depois do commit 0d56bf8 (mesma sessão, junto com o plano do GPT/Codex)
+
+O Codex fez a 1ª etapa de responsividade (LS radial, freio na inversão, giro de 180°, drible com o LS/RT do quadro):
+`docs/dev/RESPONSIVIDADE-MOVIMENTO.md`, `web/src/game/Movement.ts`, `e2e/movement.spec.ts`. Daqui:
+
+- **Bola fugindo no e2e do freestyle (corrigido).** A falha intermitente (maxDist 1,5–7 m) era o IK do braço:
+  `solveTwoBoneIK` com a cadeia reta e o pole paralelo a ela (bola na mão de fora no deslize lateral, braço para fora,
+  baixo e para trás) gerava eixo nulo, `setFromAxisAngle` dava |q| ≠ 1 (até 4,5 no upperarm_r) e a matriz do osso
+  esticava o braço até 6 m num quadro. Só aparecia com quadros longos (os prints do e2e). Agora há eixo de reserva e os
+  quaternions saem normalizados (`TwoBoneIK.ts`, teste `twoBoneIK.test.ts`). e2e: antes 4 de 6 falhando; depois 10 de 10
+  passando, maxDist 0,94 m. Ferramentas: `tools/sonda-palma.mjs` (embrulha cada etapa do animador e acusa a primeira que
+  gera quaternion não-unitário ou palma longe) e `ballStats().worst` com o rastro dos 12 quadros antes do pior.
+- **Impulso do drible esperando a bola** (item 2 do plano do Codex, passo pequeno): enquanto o clipe espera a bola
+  (`animator.waitingForBall()`), a rampa do impulso no `Freestyle.updateMovement` também espera e depois cabe no que
+  sobra até o fim do núcleo (janelas de combo iguais). `?impulso=relogio` volta ao antigo. Medido: efeito nulo nos 9
+  cenários em movimento (o jogo já só começa o drible com a bola chegando); fica por coerência.
+- **Quique no referencial da quadra** (item 4 do plano do Codex): implementado em `BallDribbler` (arco planejado na
+  soltura, herda a velocidade do jogador, segue o desvio dele ao longo do arco), **desligado** (`?quique=quadra` liga):
+  saltos da bola 163 -> 154 e spin correndo sem bola no corpo, mas bola no corpo 16 -> 20 quadros e o pior salto do
+  zigue-zague maior. Falta a mão ir para onde a bola vai (e não o contrário) antes de ligar.
+- **Behind the back dentro da bermuda** (achado da sessão dos braços, 15 cm): mover o caminho da bola para trás não muda
+  nada, o braço não alcança (tronco inclinado, ombros à frente). Precisa girar o tronco para o lado da bola no por trás.
+  Não mexido.
+- e2e contra build congelado: `E2E_ORIGIN=http://127.0.0.1:5174 npx playwright test ...` ("lab-congelado" no
+  .claude/launch.json serve `Saved/lab-dist`).

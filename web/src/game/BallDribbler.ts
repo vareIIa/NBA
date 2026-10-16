@@ -25,10 +25,21 @@ const AirClearanceRate = 30;
 const Gravity = 9.81;
 /** Peso do casamento da velocidade de chegada da bola com a da mão na recepção, contra o erro da restituição. */
 const CatchMatchWeight = 0.35;
+/**
+ * Quique no referencial da QUADRA (experimental, `?quique=quadra`): o arco é planejado no referencial do jogador no
+ * instante da soltura e depois segue no mundo, herdando a velocidade do jogador (a bola sai da mão com ela); girar o
+ * corpo no meio do quique não varre a bola no ar. Laboratório (2026-10-16, 9 cenários em movimento): saltos da bola
+ * 163 -> 154 quadros e o spin correndo sem bola no corpo, mas bola no corpo 16 -> 20 quadros no total e o pior salto do
+ * zigue-zague maior (a mão vai para onde o jogador foi e a bola corrige no caminho). Desligado até resolver isso.
+ */
+const CourtFrameBounce = typeof location !== 'undefined' && new URLSearchParams(location.search).get('quique') === 'quadra';
+/** s: constante do filtro da velocidade do jogador (a da soltura não pode ser a de um quadro com tranco). */
+const RootVelocityTau = 0.06;
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
 const offset = new THREE.Vector3(); // só para os deslocamentos da pegada (nunca é o vetor de saída)
 const otherPalm = new THREE.Vector3();
+const tmpDrift = new THREE.Vector3();
 const inv = new THREE.Matrix4();
 
 /**
@@ -85,8 +96,27 @@ export class BallDribbler {
   private gripBlend = 1; // 0..1: suaviza a troca de pegada (drible <-> arremesso <-> procedural)
   private readonly gripFrom = new THREE.Vector3();
   private procedural = false;
+  /** Quique na quadra: pose do jogador na soltura e a velocidade dele (mundo) herdada pela bola. */
+  private readonly releaseMatrix = new THREE.Matrix4();
+  private readonly releaseVelocity = new THREE.Vector3();
+  private readonly releaseRoot = new THREE.Vector3();
+  private readonly rootVelocity = new THREE.Vector3();
+  private readonly prevRoot = new THREE.Vector3();
+  private rootTracked = false;
 
   constructor(private readonly radius: number) {}
+
+  /**
+   * Arco (referencial do jogador na soltura) -> mundo no tempo t do quique. `follow` (0..1): quanto do desvio entre onde
+   * o jogador está e onde a extrapolação da soltura o punha a bola acompanha. Cresce ao longo do arco inteiro (não só na
+   * subida): com a correção toda na subida, no zigue-zague a bola dava o salto concentrado ali.
+   */
+  private arcToWorld(local: THREE.Vector3, t: number, animator: PlayerAnimator, follow: number): THREE.Vector3 {
+    if (!CourtFrameBounce) return local.applyMatrix4(animator.root.matrixWorld);
+    local.applyMatrix4(this.releaseMatrix).addScaledVector(this.releaseVelocity, t);
+    const drift = tmpDrift.copy(animator.root.position).sub(this.releaseRoot).addScaledVector(this.releaseVelocity, -t).setY(0);
+    return local.addScaledVector(drift, follow);
+  }
 
   /** Onde o centro da bola fica preso à mão agora (mundo). */
   gripPoint(animator: PlayerAnimator, hand: Hand, mode: GripMode, out = new THREE.Vector3()): THREE.Vector3 {
@@ -136,6 +166,13 @@ export class BallDribbler {
   update(dt: number, animator: PlayerAnimator): void {
     this.bounces = [];
     this.trackGrips(dt, animator);
+    const root = animator.root.position;
+    if (this.rootTracked && dt > 1e-6) {
+      tmp.copy(root).sub(this.prevRoot).divideScalar(dt);
+      this.rootVelocity.lerp(tmp, 1 - Math.exp(-dt / RootVelocityTau));
+    }
+    this.prevRoot.copy(root);
+    this.rootTracked = true;
     for (const release of animator.releases) {
       if (this.mode === 'held' && release.fromHand !== this.hand && !release.move) continue; // não é a mão da bola
       // Soltura do loop com a bola ainda no ar (o loop trocou no meio do quique): a bola não está na mão, não sai de novo.
@@ -203,13 +240,14 @@ export class BallDribbler {
     const t = Math.min(this.arcTime, total);
     // Descida empurrada (sai com a velocidade da mão); subida balística do núcleo.
     const local = t <= P.td ? tmp.copy(P.p0).addScaledVector(P.v0, t).addScaledVector(P.acc, 0.5 * t * t) : toThree(arc.evaluate(t), tmp);
-    const world = local.applyMatrix4(animator.root.matrixWorld);
+    const u = THREE.MathUtils.clamp(t / Math.max(1e-3, total), 0, 1);
+    const world = this.arcToWorld(local, t, animator, u * u * (3 - 2 * u));
     // Na subida, o desvio entre a recepção prevista e a palma real entra aos poucos (smoothstep): no fim do arco a bola
     // está na palma, sem o puxão de ímã dos últimos quadros.
     const s = THREE.MathUtils.clamp((t - P.td) / Math.max(1e-3, total - P.td), 0, 1);
     if (s > 0) {
       const real = this.gripPoint(animator, this.hand, 'dribble', tmp2);
-      const predicted = otherPalm.copy(this.catchLocal).applyMatrix4(animator.root.matrixWorld);
+      const predicted = this.arcToWorld(otherPalm.copy(this.catchLocal), total, animator, 1);
       world.addScaledVector(real.sub(predicted), s * s * (3 - 2 * s));
     }
     // O arco é cinemático: se passaria por dentro de uma perna, contorna por fora dela (a bola não atravessa o corpo).
@@ -311,6 +349,9 @@ export class BallDribbler {
     this.push.v0.copy(v0);
     this.push.acc.copy(floor).sub(startLocal).addScaledVector(v0, -td).multiplyScalar(2 / (td * td));
     this.catchLocal.copy(release.catchLocal);
+    this.releaseMatrix.copy(animator.root.matrixWorld);
+    this.releaseVelocity.copy(this.rootVelocity).setY(0);
+    this.releaseRoot.copy(animator.root.position);
     this.arc = arc;
     this.arcTime = 0;
     this.absorb.t = Infinity;

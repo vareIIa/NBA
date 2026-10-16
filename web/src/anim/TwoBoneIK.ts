@@ -25,8 +25,17 @@ const clamp1 = (v: number): number => Math.min(1, Math.max(-1, v));
 /** Aplica no bone.quaternion (local) uma rotação dada no espaço do mundo: local = local * (W^-1 * r * W). */
 function applyWorldRotation(bone: Bone, worldRot: Quaternion, boneWorld: Quaternion, boneWorldInv: Quaternion): void {
   tmp.copy(boneWorldInv).multiply(worldRot).multiply(boneWorld);
-  bone.quaternion.multiply(tmp);
+  // Sempre unitário: um quaternion encolhido ou esticado vira ESCALA na matriz do osso (o braço chegou a 6 m num quadro).
+  bone.quaternion.multiply(tmp).normalize();
 }
+
+/** Algum eixo perpendicular a v (para quando o plano de dobra não é definido por mais nada). */
+function anyPerpendicular(v: Vector3, out: Vector3): Vector3 {
+  out.crossVectors(v, Math.abs(v.y) < 0.9 ? up : side);
+  return out.normalize();
+}
+const up = new Vector3(0, 1, 0);
+const side = new Vector3(1, 0, 0);
 
 /**
  * Resolve a cadeia upper -> lower -> end para end chegar em target (mundo). Precisa das matrizes do mundo em dia
@@ -68,6 +77,9 @@ export function solveTwoBoneIK(upper: Bone, lower: Bone, end: Bone, target: Vect
     // Perna reta: o plano vem da dica do joelho.
     axis0.crossVectors(ac, poleHint ?? new Vector3(0, 0, 1));
   }
+  // Dica paralela à cadeia (braço reto apontando para o lado do pole: bola na mão de fora no deslize lateral): o eixo
+  // saía nulo e setFromAxisAngle dava um quaternion com |q| < 1, que esticava o braço até 6 m.
+  if (axis0.lengthSq() < 1e-10) anyPerpendicular(ac, axis0);
   axis0.normalize();
   axis1.crossVectors(ac, at);
   const hasAxis1 = axis1.lengthSq() > 1e-12;
@@ -130,6 +142,6 @@ export function applyPole(upper: Bone, lower: Bone, target: Vector3, pole: Vecto
   qwInv.copy(qw).invert();
   r.setFromAxisAngle(dir, angle * weight);
   tmp.copy(qwInv).multiply(r).multiply(qw);
-  upper.quaternion.multiply(tmp);
+  upper.quaternion.multiply(tmp).normalize();
   upper.updateWorldMatrix(false, true);
 }

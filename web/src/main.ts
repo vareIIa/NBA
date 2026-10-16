@@ -48,7 +48,7 @@ declare global {
       fps: () => number;
       anim: () => { base: string; action: string | null; ballMode: string; ballHand: string; ballY: number };
       /** Amostras da bola no drible: altura mínima, maior distância horizontal ao jogador, quiques e trocas de mão. */
-      ballStats: () => { minY: number; maxDist: number; bounces: number; handChanges: number; samples: number };
+      ballStats: () => { minY: number; maxDist: number; bounces: number; handChanges: number; samples: number; worst: Record<string, unknown> | null };
       /** HUD de gameplay: nota, box score, takeover, badges ativados, aviso na tela. */
       match?: () => Record<string, unknown>;
     };
@@ -279,7 +279,8 @@ async function boot(): Promise<void> {
       ballY: game.ballMesh.position.y,
     }),
   };
-  const stats = { minY: Infinity, maxDist: 0, bounces: 0, handChanges: 0, samples: 0 };
+  const stats = { minY: Infinity, maxDist: 0, bounces: 0, handChanges: 0, samples: 0, worst: null as Record<string, unknown> | null };
+  const trail: Record<string, unknown>[] = [];
   let lastHand = game.dribbler.ballHand();
   let lastMode = game.dribbler.mode;
   const sampleBall = (): void => {
@@ -287,7 +288,28 @@ async function boot(): Promise<void> {
     const ball = game.ballMesh.position;
     const root = animator.root.position;
     stats.minY = Math.min(stats.minY, ball.y);
-    stats.maxDist = Math.max(stats.maxDist, Math.hypot(ball.x - root.x, ball.z - root.z));
+    const dist = Math.hypot(ball.x - root.x, ball.z - root.z);
+    const palmR = animator.palmWorld('r', new THREE.Vector3());
+    const palmL = animator.palmWorld('l', new THREE.Vector3());
+    const r2 = (v: THREE.Vector3) => [v.x, v.y, v.z].map((x) => +x.toFixed(2));
+    trail.push({ f: debug.frame, d: +dist.toFixed(2), m: game.dribbler.mode, a: animator.actionKind(), b: animator.baseClip(), ball: r2(ball), root: [+root.x.toFixed(2), +root.z.toFixed(2)], pr: r2(palmR), pl: r2(palmL) });
+    if (trail.length > 12) trail.shift();
+    if (dist > stats.maxDist) {
+      // O pior quadro, para o e2e mostrar de onde veio a bola longe (é intermitente: depende do relógio real).
+      stats.worst = {
+        frame: debug.frame,
+        dist: +dist.toFixed(2),
+        mode: game.dribbler.mode,
+        hand: game.dribbler.ballHand(),
+        action: animator.actionKind(),
+        base: animator.baseClip(),
+        moves: game.moves.length,
+        ball: [ball.x, ball.y, ball.z].map((x) => +x.toFixed(2)),
+        root: [root.x, root.z].map((x) => +x.toFixed(2)),
+        trail: [...trail],
+      };
+    }
+    stats.maxDist = Math.max(stats.maxDist, dist);
     if (game.dribbler.mode === 'air' && lastMode === 'held') stats.bounces++;
     if (game.dribbler.ballHand() !== lastHand) stats.handChanges++;
     lastHand = game.dribbler.ballHand();
