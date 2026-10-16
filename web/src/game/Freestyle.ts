@@ -104,6 +104,8 @@ export interface FreestyleEvents {
   modifyShot?: (context: ShotContext, timing: TimingGrade, contest: number) => void;
   /** A cada tick da física da bola em voo (1/120 s): a rede (HoopsNet) colide com a bola e a corrige no lugar. */
   onFlightTick?: (ball: BallState, dt: number) => void;
+  /** Contestação do defensor nesta soltura (0–1). Sem defensor (Freestyle) fica 0; o Online 1x1 dá a do oponente. */
+  contest?: () => number;
 }
 
 export { PlayerHeightMeters as PlayerHeight } from '../anim/ProceduralMoves';
@@ -211,6 +213,8 @@ export class Freestyle {
 
   phase: Phase = 'dribble';
   ball: BallState = makeBallState(); // só no voo (núcleo)
+  /** Sem a bola, o corpo fica de frente para este ponto (núcleo): a defesa do Online 1x1 olha o atacante. */
+  faceTarget: Vec3 | null = null;
 
   // Drible em andamento (núcleo).
   private moveStart = -1;
@@ -743,6 +747,9 @@ export class Freestyle {
       const towardBallSide = (lateral > 0) === (this.dribbler.ballHand() === 'r');
       const strafe = !input.sprint && along < 0.55 && (along < -0.3 || !towardBallSide || speed < 2.2);
       desired = strafe ? toRim : dir;
+    } else if (this.ballFree() && this.faceTarget && !input.sprint) {
+      // Defendendo (Online 1x1): de frente para o atacante, deslizando de lado e recuando; com RT corre virado.
+      desired = this.faceTarget.sub(this.position).flat().normalized(this.facing);
     } else if (this.ballFree()) {
       // Sem a bola na mão o boneco é livre: vira para onde corre e, parado, mantém a frente (não volta para a cesta).
       desired = speed > 0.8 ? this.velocity.flat().normalized(this.facing) : this.facing;
@@ -1178,8 +1185,8 @@ export class Freestyle {
     const context = this.context!;
     const windows = this.windows!;
     this.holdMs = finishHoldMs(ShotType.Layup, windows.idealReleaseMs, windows.perfectHalfMs);
-    // Sem defensor no Freestyle por enquanto: contestação zero.
-    const contest = 0;
+    // Sem defensor no Freestyle: contestação zero (o Online 1x1 dá a do oponente).
+    const contest = this.events.contest?.() ?? 0;
     this.events.modifyShot?.(context, TimingGrade.Good, contest);
     const evaluation = this.model.evaluate(context, windows, this.holdMs, contest);
     const reported: ShotEvaluation = { ...evaluation, timing: TimingGrade.Good };
@@ -1228,9 +1235,9 @@ export class Freestyle {
     // Depois da soltura, a velocidade vira o freio em cosseno (ver updateMovement), em vez de seguir com o embalo.
     this.landing = { startAt: this.now, v0: this.velocity.flat() };
     this.holdMs = finishHoldMs(kind, windows.idealReleaseMs, windows.perfectHalfMs);
-    // Sem defensor no Freestyle por enquanto: contestação zero. Os badges leem a soltura antes da avaliação,
+    // Sem defensor no Freestyle: contestação zero (o Online 1x1 dá a do oponente). Os badges leem a soltura antes da avaliação,
     // como no arremesso.
-    const contest = 0;
+    const contest = this.events.contest?.() ?? 0;
     // Bandeja e enterrada não têm green (UE: bLastShotGreen = false): a soltura conta como Boa para o HUD e os badges.
     this.events.modifyShot?.(context, TimingGrade.Good, contest);
     const evaluation = this.model.evaluate(context, windows, this.holdMs, contest);
@@ -1262,8 +1269,8 @@ export class Freestyle {
     this.animator.releaseShot();
     const context = this.context!;
     const windows = this.windows!;
-    // Sem defensor no Freestyle por enquanto: contestação zero.
-    const contest = 0;
+    // Sem defensor no Freestyle: contestação zero (o Online 1x1 dá a do oponente).
+    const contest = this.events.contest?.() ?? 0;
     this.events.modifyShot?.(context, this.model.gradeTiming(this.holdMs - windows.idealReleaseMs, windows), contest);
     const evaluation = this.model.evaluate(context, windows, this.holdMs, contest);
     const decision = this.model.decide(evaluation, this.rng);

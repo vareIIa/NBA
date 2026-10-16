@@ -18,11 +18,14 @@ import { displayName, formatFeet, Positions } from '../build/PlayerBuild';
 import { overall } from '../build/BuildRules';
 import { BuildSave } from '../build/BuildSave';
 import { RepeatDelay, holdRepeats } from '../hud/PauseMenu';
+import { OnlineLobby, type OnlineStart } from './OnlineLobby';
 
 export interface MenuResult {
   build: PlayerBuild;
   /** "Testar build": a build não foi salva (o Freestyle usa, mas ela não vira a ativa). */
   test: boolean;
+  /** Online 1x1: a partida que o servidor começou (com a conexão aberta). */
+  online?: OnlineStart;
 }
 
 // Índices do mapeamento standard (Xbox).
@@ -73,6 +76,7 @@ export class MenuFlow {
       () => BuildSave.active(),
       (choice) => {
         if (choice === 'freestyle') this.finish({ build: BuildSave.active(), test: false });
+        else if (choice === 'online') this.showOnline(null);
         else this.show(this.list);
       },
     );
@@ -95,7 +99,10 @@ export class MenuFlow {
     window.addEventListener('keydown', this.onKeyBound, true);
     window.addEventListener('keyup', this.onKeyUpBound, true);
     this.renderChip();
-    this.show(this.main);
+    // Link de convite (?sala=CODE): abre direto no lobby online, entrando na sala.
+    const invite = new URLSearchParams(location.search).get('sala');
+    if (invite) this.showOnline(invite);
+    else this.show(this.main);
     this.running = true;
     this.last = performance.now();
     requestAnimationFrame((t) => this.frame(t));
@@ -146,6 +153,21 @@ export class MenuFlow {
           this.renderChip();
           this.show(this.list);
         },
+      }),
+    );
+  }
+
+  // ------------------------------------------------------------------ online
+
+  private showOnline(autoJoin: string | null): void {
+    const build = BuildSave.active();
+    this.show(
+      new OnlineLobby({
+        build,
+        name: new URLSearchParams(location.search).get('nome'),
+        autoJoin,
+        onBack: () => this.show(this.main),
+        onMatch: (online) => this.finish({ build, test: false, online }),
       }),
     );
   }

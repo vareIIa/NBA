@@ -29,6 +29,8 @@ import { DefaultBuild, archetypeName, badgePoints } from './build/BuildRules';
 import { applyDribbleRatings, bodyScaleOf, playRatings, wingspanOverModelM } from './build/BuildRatings';
 import { fitLoadout } from './build/BuildBadges';
 import { displayName, formatMeters } from './build/PlayerBuild';
+import type { OnlineMatch } from './game/OnlineMatch';
+import type { OnlineStart } from './menu/OnlineLobby';
 
 /** Y do controle (botão 3 do mapeamento padrão): Salvar no criador. O Input só lê A, B e Start na pausa. */
 function padY(): boolean {
@@ -51,6 +53,8 @@ declare global {
       ballStats: () => { minY: number; maxDist: number; bounces: number; handChanges: number; samples: number; worst: Record<string, unknown> | null };
       /** HUD de gameplay: nota, box score, takeover, badges ativados, aviso na tela. */
       match?: () => Record<string, unknown>;
+      /** Online 1x1: lado, fase, placar, posse e rede (null fora do online). */
+      online?: () => Record<string, unknown> | null;
     };
   }
 }
@@ -90,7 +94,9 @@ window.addEventListener('resize', () => {
 const arenaOn = params.get('arena') !== '0';
 // Menu principal estilo 2K (docs/23): abre antes do Freestyle para quem joga. Fica fora no Playwright (navigator.webdriver,
 // os testes e as ferramentas abrem "/" e esperam o Freestyle), no laboratório e com ?menu=0; ?menu=1 força.
-const menuOn = params.get('menu') === '1' || (params.get('menu') !== '0' && !navigator.webdriver && params.get('lab') !== '1');
+// O link de convite do online (?sala=CODE) também abre o menu (direto no lobby).
+const menuOn =
+  params.get('menu') === '1' || params.has('sala') || (params.get('menu') !== '0' && !navigator.webdriver && params.get('lab') !== '1');
 
 async function boot(): Promise<void> {
   if (arenaOn) ArenaDressing.preload(); // baixa os GLBs enquanto o jogador carrega
@@ -114,14 +120,18 @@ async function boot(): Promise<void> {
   const gameHud = new GameHud();
   let director: MatchDirector | null = null;
   let netMesh: NetMesh | null = null;
+  /** Online 1x1 (menu → Online 1x1): o oponente, a posse e o juiz do servidor. null = Freestyle. */
+  let online: OnlineMatch | null = null;
   const game: Freestyle = new Freestyle(scene, animator, {
     modifyShot: (context, timing, contest) => director?.modifyShot(context, timing, contest),
+    contest: () => online?.contest() ?? 0,
     // Rede com física: colide com a bola a cada tick do voo (a bola nunca atravessa a rede).
     onFlightTick: (ball, step) => netMesh?.stepWithBall(ball, step, game.sim.getConfig().ball.radius),
     onRelease: (evaluation, _windows, finish) => {
       // Bandeja e enterrada não têm green: sem medidor colorido e sem ding.
       if (!finish) hud.freezeMeter(evaluation);
       director?.onRelease(evaluation);
+      online?.onRelease();
       if (evaluation.timing === TimingGrade.Green) sfx.ding();
     },
     onFloorBounce: (speed) => sfx.bounce(speed),
@@ -130,6 +140,7 @@ async function boot(): Promise<void> {
     onScore: () => sfx.swish(),
     onResult: (record) => {
       director?.onResult(record);
+      online?.onResult(record);
     },
     onMove: (label, detail) => {
       hud.showMove(label, detail);
@@ -151,6 +162,7 @@ async function boot(): Promise<void> {
   // Menu principal: o jogador escolhe (ou cria) a build; o Freestyle usa os ratings dela. Sem menu, a build ativa salva
   // (ou a padrão, que joga igual a antes do builder).
   let build = BuildSave.active();
+  let onlineStart: OnlineStart | null = null;
   if (menuOn) {
     // Import dinâmico: as telas do menu só carregam quando o menu abre (o Freestyle dos testes não depende delas). Se o
     // menu falhar ao carregar (arquivo em edição), o Freestyle abre direto com a build ativa.
@@ -161,7 +173,9 @@ async function boot(): Promise<void> {
       const facing = new THREE.Vector3(spot.x - rim.x, 0, spot.z - rim.z).normalize(); // de costas para a cesta
       const showroom = new Showroom(renderer, scene, rig.camera, animator, gear, spot, facing, canvas, [game.ballMesh]);
       (window as unknown as { __showroom: unknown }).__showroom = { showroom, animator, THREE };
-      build = (await new MenuFlow(showroom).run()).build;
+      const result = await new MenuFlow(showroom).run();
+      build = result.build;
+      onlineStart = result.online ?? null;
     } catch (e) {
       console.error('menu não carregou; abrindo o Freestyle', e);
     }
@@ -183,7 +197,41 @@ async function boot(): Promise<void> {
   const playerName = params.get('nome') ?? (build.id === DefaultBuild.id ? 'cardoso2k' : displayName(build));
   // Badges salvas, ajustadas aos pontos de badge da build (as mais caras descem de nível se não couberem).
   const looseBudget = { Finishing: 999, Shooting: 999, Playmaking: 999, Defense: 999 };
-  director = new MatchDirector(game, gameHud, ring, { playerName, loadout: fitLoadout(loadBuild(looseBudget), badgeBudget) });
+  const opponentName = onlineStart?.start.room.players.find((p) => p.side !== onlineStart!.start.you)?.card.name;
+  director = new MatchDirector(game, gameHud, ring, { playerName, opponentName, loadout: fitLoadout(loadBuild(looseBudget), badgeBudget) });
+  if (onlineStart) {
+    // Online 1x1: o boneco do oponente carrega enquanto o servidor conta o primeiro check.
+    hud.setLoading('Carregando o oponente…');
+    const { net, start } = onlineStart;
+    try {
+      const { OnlineMatch } = await import('./game/OnlineMatch');
+      online = await OnlineMatch.create({
+        scene,
+        game,
+        animator,
+        net,
+        start,
+        gameHud,
+        hand: build.hand,
+        myName: playerName,
+        project: (p) => rig.project(p, window.innerWidth, window.innerHeight),
+        sfx,
+        // Saiu da partida: volta ao menu principal (sem o código do convite, para não entrar de novo na sala).
+        onExit: () => {
+          const query = new URLSearchParams(location.search);
+          query.delete('sala');
+          query.set('menu', '1');
+          location.search = query.toString();
+        },
+      });
+    } catch (e) {
+      console.error('online não montou', e);
+      net.send({ t: 'room.leave' });
+      net.close();
+      online = null;
+    }
+    hud.setLoading(null);
+  }
   // Tela de badges (B / View): equipar, trocar nível e desequipar; a build fica salva no navegador.
   const badgeMenu = new BadgeMenu({
     playerName,
@@ -325,7 +373,7 @@ async function boot(): Promise<void> {
     lastMode = game.dribbler.mode;
     stats.samples++;
   };
-  window.__garrafao = { ...debug, ballStats: () => ({ ...stats }), match: () => director!.snapshot() };
+  window.__garrafao = { ...debug, ballStats: () => ({ ...stats }), match: () => director!.snapshot(), online: () => online?.debug() ?? null };
   (window as unknown as { __debug: unknown }).__debug = { animator, game, THREE, gear };
 
   let last = performance.now();
@@ -340,7 +388,8 @@ async function boot(): Promise<void> {
     if (timeScale === 1) gameClock = now / 1000;
     fps += (1 / Math.max(realDt, 1e-3) - fps) * 0.05;
 
-    const state = input.read();
+    // Online: o jogo não pausa (a partida segue no servidor); P/Start abre o "sair da partida" do HUD do online.
+    const state = online ? online.filterInput(input.read()) : input.read();
     // Badges abertas pela pausa: quando fecham, a lista da pausa volta.
     if (awaitingBadges && !badgeMenu.isOpen()) {
       awaitingBadges = false;
@@ -395,6 +444,7 @@ async function boot(): Promise<void> {
     }
     // Tela de badges aberta: o jogo pausa (só desenha a cena parada atrás).
     badgeMenu.update(realDt);
+    if (online && badgeMenu.isOpen()) badgeMenu.close();
     if (badgeMenu.isOpen()) {
       renderer.render(scene, rig.camera);
       requestAnimationFrame(frame);
@@ -421,6 +471,8 @@ async function boot(): Promise<void> {
     if (game.phase !== 'flight') netMesh.advance(dt);
     netMesh.sync();
     director!.update(dt, state.sprint, (p) => rig.project(p, window.innerWidth, window.innerHeight));
+    // Depois do director: o placar do online (o do servidor) é o que fica na tela.
+    online?.update(dt, now / 1000);
     // A build multiplica os multiplicadores do drible que as badges montaram (energia, ritmo dos dribles, sprint).
     applyDribbleRatings(game.dribble.modifiers, ratings);
     gameHud.update(dt);

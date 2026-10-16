@@ -1,0 +1,18 @@
+// Publicação no Cloudflare (docs/24): um Worker serve o jogo (web/dist) e a sala em tempo real (/ws).
+// Uso (na pasta web/): `npm run deploy` publica; `npm run deploy:local` roda o mesmo Worker em http://localhost:8787.
+// Os caminhos abaixo são relativos a este arquivo.
+{
+  "name": "garrafao",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-15",
+  "assets": {
+    "directory": "../dist",
+    "binding": "ASSETS"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "HubObject" }]
+  },
+  // Plano grátis: só Durable Objects com SQLite (o hub não grava nada, mas a classe precisa ser desse tipo).
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HubObject"] }],
+  "observability": { "enabled": true }
+}

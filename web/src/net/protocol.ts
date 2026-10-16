@@ -1,0 +1,199 @@
+// Protocolo do multiplayer (docs/24-multiplayer.md): o que cliente e servidor trocam pelo WebSocket. Um único endpoint
+// (/ws), quadros de texto JSON {t, ...}. Este arquivo não importa nada: o servidor de desenvolvimento (Node, sem
+// bundler) e o Worker da Cloudflare usam o mesmo arquivo do jogo.
+//
+// Quem manda em quê (netcode do 1x1):
+//   - Cada cliente simula o PRÓPRIO jogador (sem atraso no controle; o timing do arremesso é julgado no cliente, docs/03 §9)
+//     e manda o estado dele ~20 vezes por segundo ('st', que o servidor só repassa ao oponente).
+//   - A bola é do dono da posse: driblando, no voo e solta depois do arremesso, quem a simula é o cliente do atacante.
+//   - O servidor é o juiz: placar, posse, check-ball, relógio de posse, rebote (o primeiro pedido válido leva), vitória,
+//     queda de conexão e revanche.
+
+export const ProtocolVersion = 1;
+export const WsPath = '/ws';
+/** Porta do servidor de desenvolvimento (web/server/dev.ts). */
+export const DevServerPort = 8790;
+/** Maior quadro aceito (bytes). */
+export const MaxFrameBytes = 64 * 1024;
+
+/** Lugar na sala: 0 = quem criou (ou o primeiro da fila), 1 = convidado. */
+export type Side = 0 | 1;
+export const otherSide = (s: Side): Side => (s === 0 ? 1 : 0);
+
+/** Cartão do jogador (o que o oponente vê no lobby e o que o jogo precisa para montar o boneco dele). */
+export interface PlayerCard {
+  name: string;
+  heightCm: number;
+  /** Envergadura além do modelo, em m (o 2º argumento de PlayerAnimator.setBodyScale). */
+  wingspanOverM: number;
+  /** Envergadura total (cm), para a contestação. */
+  wingspanCm: number;
+  overall: number;
+  archetype: string;
+  /** Sigla da posição (PG, SG...). */
+  position: string;
+  /** Defesa de perímetro (25–99): entra na contestação. */
+  perimeterDefense: number;
+}
+
+/** Regras da partida (docs/10-modos.md: 1x1 de rua até 11, cestas de 1 e 2). */
+export interface MatchRules {
+  /** Pontos para vencer. */
+  target: number;
+  /** Precisa de 2 pontos de vantagem. */
+  winByTwo: boolean;
+  /** Quem marca continua com a bola. */
+  makeItTakeIt: boolean;
+  /** Depois do rebote defensivo a bola precisa sair da linha de 3 antes de valer cesta. */
+  clearBall: boolean;
+  /** Pontos da cesta de dentro e de fora da linha de 3. */
+  insidePoints: number;
+  outsidePoints: number;
+  /** Relógio de posse (s); 0 = sem relógio. */
+  shotClock: number;
+}
+
+export const DefaultRules: MatchRules = {
+  target: 11,
+  winByTwo: false,
+  makeItTakeIt: false,
+  clearBall: true,
+  insidePoints: 1,
+  outsidePoints: 2,
+  shotClock: 24,
+};
+
+/**
+ * Fase da partida:
+ *   check  = jogadores parados nos lugares do check-ball, contagem até a bola ficar viva;
+ *   live   = bola em jogo;
+ *   dead   = depois de cesta ou violação, a pausa curta (comemoração) antes do próximo check;
+ *   paused = oponente caiu, esperando ele voltar;
+ *   over   = acabou.
+ */
+export type MatchPhase = 'check' | 'live' | 'dead' | 'paused' | 'over';
+
+/** held = na mão do atacante; air = arremesso no ar; loose = solta (rebote). */
+export type BallStatus = 'held' | 'air' | 'loose';
+
+export type MatchEvent =
+  | { kind: 'start'; offense: Side }
+  | { kind: 'score'; side: Side; points: number; isThree: boolean }
+  | { kind: 'noClear'; side: Side } // cesta sem limpar a bola: não vale, a bola troca
+  | { kind: 'miss'; side: Side }
+  | { kind: 'rebound'; side: Side; offensive: boolean }
+  | { kind: 'cleared'; side: Side }
+  | { kind: 'shotClock'; side: Side } // estouro do relógio de posse
+  | { kind: 'deadBall'; side: Side } // bola solta sem dono por tempo demais: volta para a defesa
+  | { kind: 'over'; winner: Side; reason: 'score' | 'forfeit' }
+  | { kind: 'paused'; side: Side } // side = quem caiu
+  | { kind: 'resumed' };
+
+export interface MatchState {
+  phase: MatchPhase;
+  /** Fim da contagem desta fase (ms do relógio do servidor); 0 = sem contagem. */
+  phaseEndsAt: number;
+  score: [number, number];
+  /** Quem ataca (ou atacou por último, com a bola solta). */
+  offense: Side;
+  ball: BallStatus;
+  /** Quem arremessou por último (rebote ofensivo x defensivo). */
+  shooter: Side | null;
+  /** O ataque ainda precisa limpar a bola (levar para fora da linha de 3). */
+  needsClear: boolean;
+  /** Relógio de posse: ms restantes no instante clockAt (relógio do servidor); corre só com clockRunning. */
+  clockMs: number;
+  clockAt: number;
+  clockRunning: boolean;
+  /** Sobe a cada troca de posse ou novo check: relatos de outra posse são ignorados. */
+  seq: number;
+  winner: Side | null;
+}
+
+/** ms restantes no relógio de posse, no instante serverNow. */
+export function shotClockLeft(state: MatchState, serverNow: number): number {
+  if (!state.clockRunning) return state.clockMs;
+  return Math.max(0, state.clockMs - (serverNow - state.clockAt));
+}
+
+export interface RoomPlayer {
+  side: Side;
+  card: PlayerCard;
+  ready: boolean;
+  connected: boolean;
+}
+
+export interface RoomInfo {
+  code: string;
+  /** Sala da partida rápida (sem código para convidar, começa sozinha). */
+  quick: boolean;
+  rules: MatchRules;
+  players: RoomPlayer[];
+  /** Partida em andamento ou terminada nesta sala. */
+  inMatch: boolean;
+  /** Pedido de revanche de cada lado. */
+  rematch: [boolean, boolean];
+}
+
+// ---------------------------------------------------------------- cliente → servidor
+
+export type ClientMsg =
+  | { t: 'hello'; v: number; card: PlayerCard; token?: string }
+  | { t: 'ping'; c: number }
+  | { t: 'queue.join' }
+  | { t: 'queue.leave' }
+  | { t: 'room.create'; rules?: Partial<MatchRules> }
+  | { t: 'room.join'; code: string }
+  | { t: 'room.leave' }
+  | { t: 'room.ready'; ready: boolean }
+  | { t: 'room.rules'; rules: Partial<MatchRules> }
+  | { t: 'room.rematch'; want: boolean }
+  /** Estado do próprio jogador para o oponente (o servidor não lê d, só repassa). */
+  | { t: 'st'; d: unknown }
+  /** O atacante soltou o arremesso (o relógio de posse para). */
+  | { t: 'g.release'; seq: number }
+  /** O arremesso resolveu (primeiro toque da bola no chão). */
+  | { t: 'g.result'; seq: number; scored: boolean; isThree: boolean }
+  /** Pedido da bola solta (rebote). at = onde o cliente viu a bola (núcleo, m). */
+  | { t: 'g.claim'; seq: number; at: [number, number, number] }
+  /** O atacante levou a bola para fora da linha de 3. */
+  | { t: 'g.cleared'; seq: number };
+
+// ---------------------------------------------------------------- servidor → cliente
+
+export type ErrorCode =
+  | 'version'
+  | 'bad_message'
+  | 'not_hello'
+  | 'room_not_found'
+  | 'room_full'
+  | 'in_room'
+  | 'in_match'
+  | 'not_host'
+  | 'rate_limit'
+  | 'replaced';
+
+export type ServerMsg =
+  | { t: 'welcome'; id: string; token: string; serverTime: number }
+  | { t: 'pong'; c: number; s: number }
+  | { t: 'error'; code: ErrorCode; message: string }
+  | { t: 'queue'; waiting: boolean; players: number }
+  | { t: 'room'; room: RoomInfo; you: Side }
+  | { t: 'room.left' }
+  /** A partida começou (ou recomeçou na revanche, ou você voltou depois de cair). */
+  | { t: 'match.start'; room: RoomInfo; you: Side; state: MatchState; serverTime: number }
+  | { t: 'match.state'; state: MatchState; event: MatchEvent | null; serverTime: number }
+  | { t: 'opponent'; connected: boolean; graceEndsAt: number }
+  | { t: 'st'; d: unknown };
+
+/** Alfabeto do código da sala: sem 0/O nem 1/I/L (ditado por voz ou lido num print sem confusão). */
+export const RoomCodeAlphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export const RoomCodeLength = 4;
+
+/** Normaliza o que o jogador digitou (minúsculas, espaços, traço). null se não for um código possível. */
+export function normalizeRoomCode(text: string): string | null {
+  const code = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.length !== RoomCodeLength) return null;
+  for (const ch of code) if (!RoomCodeAlphabet.includes(ch)) return null;
+  return code;
+}

@@ -55,6 +55,8 @@ O `npm run e2e` salva os prints e o vídeo em `test-results/entrega/` (`01-quadr
 | `tools/` | `capturar.mjs` (sequência de prints com roteiro de teclas) e `sonda.mjs` (avalia uma expressão na página): depuração visual. |
 | `src/hud/` | HUD em HTML/CSS: medidor, banner de timing/cobertura, energia, placar do treino. |
 | `e2e/` | Teste visual do Playwright e o gravador de vídeo (screencast do Chromium → ffmpeg). |
+| `src/online/` | Adversário no online (docs/24 §5): `AnimRecorder` grava os comandos do animador local; `RemotePlayer` é o boneco que os repete, com interpolação e a própria bola. `EchoTest` + `tools/eco-boneco.mjs`: teste de eco. |
+| `deploy/` | Publicação no Cloudflare (docs/24 §4): `worker.ts` (site + lobby `/ws` num Durable Object), `wrangler.jsonc` e o build sem `models_raw`. `npm run deploy` publica; `npm run deploy:local` roda o mesmo Worker em `localhost:8787`. |
 
 ## Decisões desta etapa
 
