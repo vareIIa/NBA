@@ -283,7 +283,13 @@ test('Online 1x1: erro, rebote do defensor (bola vem para a mão dele) e limpar 
   );
   expect(got).toBe(true);
   const sd = await waitOnline(def, (o) => o.seq !== missed!.seq, 3_000);
-  if (sd.offense === sd.you) {
+  if (sd.phase !== 'live') {
+    // Ninguém alcançou a bola em 10 s (quicou para longe ou parou presa): bola presa, volta para a defesa num check novo,
+    // sem precisar limpar. Regra do juiz (LooseMaxMs); o rebote em si fica para a próxima rodada do teste.
+    test.info().annotations.push({ type: 'bola presa', description: 'o defensor não chegou na bola a tempo' });
+    expect(sd.offense).toBe(sd.you);
+    expect(sd.needsClear).toBe(false);
+  } else if (sd.offense === sd.you) {
     // Rebote defensivo: a bola voa para a mão dele, o atacante fica sem bola, e precisa limpar.
     expect(sd.needsClear).toBe(true);
     const held = await waitOnline(def, (o) => o.me.phase === 'dribble' && o.me.ballVisible, 3_000);
