@@ -3,13 +3,14 @@
 //      no meio da partida, o estado volta para a sala sem o boneco parar; o canal volta e o estado volta para ele.
 //   2. Com ?p2p=falha o canal nunca conecta e a partida inteira anda pela sala.
 // Rodando contra um Vite com VITE_P2P=falha, o teste 1 vira o 2 (o canal nunca abre): é o e2e do fallback.
-// Com várias sessões salvando arquivos, rode contra um Vite sem HMR (E2E_ORIGIN).
+// Com várias sessões salvando arquivos, rode contra um Vite sem HMR (E2E_ORIGIN). E2E_P2P_HUB_PORT troca a porta da
+// sala (outra sessão pode estar com a 8792; o publicar.mjs passa uma livre).
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const OUT = 'test-results/online-p2p';
-const HubPort = 8792;
+const HubPort = Number(process.env.E2E_P2P_HUB_PORT ?? 8792);
 const Mp = `ws://127.0.0.1:${HubPort}/ws`;
 
 type Link = {
@@ -48,6 +49,9 @@ let hub: ChildProcess | null = null;
 
 test.beforeAll(async () => {
   const cwd = fileURLToPath(new URL('..', import.meta.url));
+  // Porta já respondendo = servidor de salas de outra sessão: o teste rodaria contra ele sem perceber.
+  const taken = await fetch(`http://127.0.0.1:${HubPort}/`).then(() => true, () => false);
+  if (taken) throw new Error(`a porta ${HubPort} já tem outro servidor: use E2E_P2P_HUB_PORT`);
   hub = spawn(process.execPath, ['server/dev.ts'], { cwd, env: { ...process.env, PORT: String(HubPort), MP_LOG: '0' }, stdio: 'pipe' });
   hub.stderr?.on('data', (d) => process.stdout.write(`[sala!] ${d}`));
   for (let i = 0; i < 50; i++) {
