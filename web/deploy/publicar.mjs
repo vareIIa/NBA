@@ -12,7 +12,8 @@
 // vai para o ar é exatamente o commit, e ninguém precisa parar de editar. A cópia recebe só os assets locais que ficam
 // fora do git de propósito (public/assets/mocap: Mixamo e pose de terceiros, docs/24 §4.1).
 //
-// Ordem: cópia do commit → tsc → vitest → teste online com dois navegadores (Vite e sala em portas livres) → build →
+// Ordem: cópia do commit → tsc → vitest → testes online com dois navegadores, partida e canal direto (Vite e salas em
+// portas livres) → build →
 // Cloudflare → Vercel com o mesmo dist → apaga a cópia. Qualquer falha para tudo antes de publicar.
 import { execSync, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync } from 'node:fs';
@@ -83,7 +84,12 @@ function cleanup() {
   try {
     execSync(`git worktree remove --force "${worktree}"`, { cwd: repo, stdio: 'ignore' });
   } catch {
-    rmSync(worktree, { recursive: true, force: true });
+    // No Windows um processo do teste (Vite, rolldown) pode segurar a pasta por alguns segundos depois de morto.
+    try {
+      rmSync(worktree, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+    } catch {
+      console.log(`\n(a cópia temporária ficou em ${worktree}; pode apagar quando quiser)`);
+    }
     execSync('git worktree prune', { cwd: repo, stdio: 'ignore' });
   }
   worktree = null;
@@ -131,7 +137,8 @@ sh('npx vitest run', root);
 if (!flags.has('--sem-e2e')) {
   const vitePort = await freePort(5182, 5199);
   const hubPort = await freePort(8791, 8799);
-  step(`teste online com dois navegadores (Vite na ${vitePort}, sala na ${hubPort})`);
+  const p2pHubPort = await freePort(hubPort + 1, 8810);
+  step(`teste online com dois navegadores (Vite na ${vitePort}, salas na ${hubPort} e ${p2pHubPort})`);
   const vite = spawn('npx', ['vite', '--config', 'deploy/vite.teste.config.ts'], {
     cwd: root,
     shell: true,
@@ -145,7 +152,12 @@ if (!flags.has('--sem-e2e')) {
       up = await fetch(`http://127.0.0.1:${vitePort}/`).then((r) => r.ok, () => false);
     }
     if (!up) throw new Error('o Vite do teste não subiu');
-    sh('npx playwright test e2e/online.spec.ts', root, { E2E_ORIGIN: `http://127.0.0.1:${vitePort}`, E2E_HUB_PORT: String(hubPort) });
+    // online.spec: partida, rebote e defesa; online-p2p.spec: canal direto e a volta para a sala.
+    sh('npx playwright test e2e/online.spec.ts e2e/online-p2p.spec.ts', root, {
+      E2E_ORIGIN: `http://127.0.0.1:${vitePort}`,
+      E2E_HUB_PORT: String(hubPort),
+      E2E_P2P_HUB_PORT: String(p2pHubPort),
+    });
   } finally {
     killTree(vite);
   }
