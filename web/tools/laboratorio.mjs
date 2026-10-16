@@ -99,6 +99,7 @@ for (const name of names) {
       `  pernas ${(metrics.legGapMin * 100).toFixed(0)} cm (${metrics.legCrossFrames} q cruzando, base máx ${metrics.stanceMax.toFixed(2)} m)` +
       `  sola ${(metrics.soleMin * 100).toFixed(1)} cm (${metrics.soleBelowFrames} q no chão)` +
       `  bola-corpo ${(metrics.ballBodyMax * 100).toFixed(0)} cm (${metrics.ballBodyFrames} q)` +
+      `  braço-corpo ${(metrics.armBodyMax * 100).toFixed(1)} cm (${metrics.armBodyFrames} q${metrics.armBodyWorst ? `, pior ${metrics.armBodyWorst.part} q${metrics.armBodyWorst.frame}` : ''})` +
       `  pé na ponta ${metrics.supportFrames ? ((100 * metrics.heelUpFrames) / metrics.supportFrames).toFixed(0) : '-'}% do apoio (calcanhar máx ${(metrics.heelUpMax * 100).toFixed(1)} cm, sequência máx ${Math.round(metrics.heelRunMaxMs)} ms)` +
       `  flicks bola ${metrics.ballKinkFrames} (máx ${Math.round(metrics.ballKinkMax)}) mão ${metrics.palmKinkFrames} corpo ${metrics.bodyKinkFrames} giro ${metrics.yawKinkFrames} NaN ${metrics.nanFrames}` +
       `  SALTOS ${metrics.snapFrames}${metrics.snapWorst ? ` (pior ${metrics.snapWorst.part} ${metrics.snapWorst.cm} cm q${metrics.snapWorst.frame})` : ''}` +

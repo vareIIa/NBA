@@ -800,6 +800,21 @@ export class PlayerAnimator {
     this.armClearance.fit(meshes);
   }
 
+  /** Braço dentro do tronco/quadril/coxa na pose final (m) e onde (métrica braço-corpo do laboratório). */
+  armBodyPenetration(): { depth: number; part: string } {
+    return this.armClearance.penetration(this.hasBall);
+  }
+
+  /** Começa um gesto do parado sem bola pelo nome (laboratório). */
+  playIdleGesture(name: string): boolean {
+    return this.idleLife.start(name);
+  }
+
+  /** Nomes dos gestos do parado sem bola. */
+  idleGestureNames(): string[] {
+    return IdleLife.gestureNames();
+  }
+
   /** Medidas da colisão dos braços e quanto cada braço foi empurrado no último quadro (laboratório). */
   armClearanceState(): { sizes: ReturnType<ArmClearance['sizes']>; pushed: { l: number; r: number } } {
     return { sizes: this.armClearance.sizes(), pushed: { ...this.armClearance.pushed } };
@@ -1536,6 +1551,8 @@ export class PlayerAnimator {
   /** Tira da pelve a inclinação para a frente a mais que ela tem em relação a `pelvisClip`; as coxas não mudam no mundo. */
   private keepClipPelvisPitch(pelvis: THREE.Bone, pelvisClip: THREE.Quaternion, pairs: [THREE.Bone, THREE.Object3D][]): void {
     const thighWorld = pairs.filter(([b]) => b.name.startsWith('thigh_')).map(([b]) => [b, b.getWorldQuaternion(new THREE.Quaternion())] as const);
+    const hipMid = () => thighWorld.reduce((sum, [b]) => sum.add(b.getWorldPosition(new THREE.Vector3())), new THREE.Vector3()).multiplyScalar(0.5);
+    const hip0 = hipMid();
     const pitchAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(this.model.getWorldQuaternion(new THREE.Quaternion()));
     const rel = pelvis.getWorldQuaternion(new THREE.Quaternion()).multiply(pelvisClip.clone().invert());
     const pitchPart = pitchAxis.dot(new THREE.Vector3(rel.x, rel.y, rel.z));
@@ -1543,6 +1560,12 @@ export class PlayerAnimator {
     const keep = rel.multiply(pitch.invert()); // rel = swing · pitch: fica o swing
     const pelvisParent = pelvis.parent!.getWorldQuaternion(new THREE.Quaternion()).invert();
     pelvis.quaternion.copy(pelvisParent.multiply(keep.multiply(pelvisClip)));
+    // A pelve gira em volta do próprio osso, ~12 cm acima das articulações do quadril: sem isto as pernas inteiras andavam
+    // ~3 cm para a frente (a bola do crossover no ar passava a raspar a coxa). Volta as articulações para onde estavam.
+    pelvis.updateWorldMatrix(false, true);
+    const shift = hip0.sub(hipMid());
+    const parent = pelvis.parent!;
+    pelvis.position.add(shift.applyQuaternion(parent.getWorldQuaternion(new THREE.Quaternion()).invert()).divide(parent.getWorldScale(new THREE.Vector3())));
     pelvis.updateWorldMatrix(false, false);
     for (const [thigh, world] of thighWorld) {
       thigh.quaternion.copy(thigh.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(world));

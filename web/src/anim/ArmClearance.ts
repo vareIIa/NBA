@@ -163,47 +163,90 @@ export class ArmClearance {
   }
 
   /**
+   * Seção do ponto `p` (membro de raio `r`, já na escala) no cilindro `c`: deslocamento no referencial (esquerda, frente)
+   * a partir do centro, semieixos com o raio do membro, distância elíptica `e` (< 1 = dentro), posição `t` ao longo do
+   * eixo e o peso das pontas. Deixa `lat` e `fwd` com os eixos da seção. Nulo se o eixo não existe.
+   */
+  private section(c: Collider, p: THREE.Vector3, r: number, k: number): { dx: number; dz: number; Rx: number; Rz: number; e: number; t: number; w: number } | null {
+    c.ends(a, b);
+    const len = ax.subVectors(b, a).length();
+    if (len < 1e-4) return null;
+    ax.divideScalar(len);
+    v.subVectors(p, a);
+    const t = v.dot(ax) / len;
+    const w = smooth(-EndFade, 0, t) * (1 - smooth(1, 1 + EndFade, t));
+    c.left(lat);
+    lat.addScaledVector(ax, -lat.dot(ax)).normalize();
+    fwd.crossVectors(lat, ax);
+    v.addScaledVector(ax, -v.dot(ax));
+    const dx = v.dot(lat) - c.cx * k;
+    const dz = v.dot(fwd) - c.cz * k;
+    const Rx = c.rx * k + r;
+    const Rz = c.rz * k + r;
+    return { dx, dz, Rx, Rz, e: Math.hypot(dx / Rx, dz / Rz), t, w };
+  }
+
+  /**
    * Quanto o ponto `p` (centro de um membro de raio `r`) precisa andar para sair dos cilindros; soma em `out`.
-   * Devolve a penetração mais funda (m).
+   * Devolve o tamanho do maior empurrão (m).
    */
   push(p: THREE.Vector3, r: number, hasBall: boolean, out: THREE.Vector3): number {
     out.set(0, 0, 0);
     let worst = 0;
     const k = this.rig.scale() / this.fitScale;
-    r *= k;
     for (const c of this.colliders) {
       if (c.freeOnly && hasBall) continue;
-      c.ends(a, b);
-      const len = ax.subVectors(b, a).length();
-      if (len < 1e-4) continue;
-      ax.divideScalar(len);
-      v.subVectors(p, a);
-      const t = v.dot(ax) / len;
-      const w = smooth(-EndFade, 0, t) * (1 - smooth(1, 1 + EndFade, t));
-      if (w <= 0) continue;
-      c.left(lat);
-      lat.addScaledVector(ax, -lat.dot(ax)).normalize();
-      fwd.crossVectors(lat, ax);
-      v.addScaledVector(ax, -v.dot(ax));
-      let dx = v.dot(lat) - c.cx * k;
-      let dz = v.dot(fwd) - c.cz * k;
-      const Rx = c.rx * k + r;
-      const Rz = c.rz * k + r;
-      let e = Math.hypot(dx / Rx, dz / Rz);
-      if (e >= 1 + Band) continue;
+      const sec = this.section(c, p, r * k, k);
+      if (!sec || sec.w <= 0 || sec.e >= 1 + Band) continue;
+      let { dx, dz, e } = sec;
       if (e < 1e-4) {
         // No eixo: sai para o lado (o braço do lado do ponto).
-        dx = Math.sign(v.dot(lat) || 1) * 1e-4 * Rx;
+        dx = Math.sign(dx || 1) * 1e-4 * sec.Rx;
         dz = 0;
         e = 1e-4;
       }
       // Saída suave: g(e) = 1 + B·e^((e−1−B)/B) é contínua, com derivada 1 em e = 1+B, e nunca fica abaixo de 1.
       const g = 1 + Band * Math.exp((e - 1 - Band) / Band);
-      const m = (g / e - 1) * w;
+      const m = (g / e - 1) * sec.w;
       out.addScaledVector(lat, dx * m).addScaledVector(fwd, dz * m);
       worst = Math.max(worst, Math.hypot(dx * m, dz * m));
     }
     return worst;
+  }
+
+  /**
+   * Quanto os braços estão DENTRO do tronco, do quadril ou das coxas na pose atual (m; 0 = encostando ou fora), e onde.
+   * Profundidade ≈ (1 − e) × o menor semieixo, só dentro do comprimento do eixo. Mede com ou sem a colisão ligada
+   * (métrica "braço-corpo" do laboratório).
+   */
+  penetration(hasBall: boolean): { depth: number; part: string } {
+    const k = this.rig.scale() / this.fitScale;
+    const pos = (n: string) => this.rig.bone(n).getWorldPosition(new THREE.Vector3());
+    let depth = 0;
+    let part = '';
+    for (const s of ['l', 'r'] as Side[]) {
+      const sh = pos(`upperarm_${s}`), el = pos(`lowerarm_${s}`), wr = pos(`hand_${s}`), tip = pos(`fingers_${s}`);
+      const points: [string, THREE.Vector3, number][] = [
+        ['cotovelo', el, LimbRadius.elbow],
+        ['braço', sh.clone().lerp(el, 0.6), LimbRadius.upperMid],
+        ['antebraço', el.clone().lerp(wr, 0.5), LimbRadius.forearmMid],
+        ['punho', wr, LimbRadius.wrist],
+        ['mão', wr.clone().lerp(tip, 0.6), LimbRadius.hand],
+      ];
+      for (const c of this.colliders) {
+        if (c.freeOnly && hasBall) continue;
+        for (const [name, p, r] of points) {
+          const sec = this.section(c, p, r * k, k);
+          if (!sec || sec.t < 0 || sec.t > 1 || sec.e >= 1) continue;
+          const d = (1 - sec.e) * Math.min(sec.Rx, sec.Rz);
+          if (d > depth) {
+            depth = d;
+            part = `${name}_${s}/${c.name}`;
+          }
+        }
+      }
+    }
+    return { depth, part };
   }
 
   /** Gira `bone` (no mundo) para o ponto `from` (que ele move) ir para `to`, em torno de `pivot`. */

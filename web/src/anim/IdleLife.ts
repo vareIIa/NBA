@@ -62,10 +62,10 @@ const Gestures: Gesture[] = [
     name: 'bater palmas',
     duration: 1.7,
     pose: (u) => {
-      // Três palmas: as mãos se encontram na frente do peito.
+      // Três palmas: as mãos se encontram na frente do peito (1,34 m; a 1,18 m batiam na frente do umbigo).
       const open = 0.5 + 0.5 * Math.cos(Math.min(1, u / 1.3) * Math.PI * 2 * 3);
       const x = 0.035 + 0.13 * open;
-      return { l: [x, 1.18, 0.3], r: [x, 1.18, 0.3], elbow: 'down', headPitch: -4 };
+      return { l: [x, 1.34, 0.34], r: [x, 1.34, 0.34], elbow: 'down', headPitch: -4 };
     },
   },
   {
@@ -73,7 +73,7 @@ const Gestures: Gesture[] = [
     duration: 1.9,
     pose: (u) => {
       const a = u * Math.PI * 2 * 2.2;
-      return { l: [0.04 + 0.02 * Math.sin(a), 1.16, 0.3 + 0.03 * Math.cos(a)], r: [0.04 - 0.02 * Math.sin(a), 1.16, 0.3 - 0.03 * Math.cos(a)], elbow: 'down', headPitch: -6 };
+      return { l: [0.04 + 0.02 * Math.sin(a), 1.3, 0.32 + 0.03 * Math.cos(a)], r: [0.04 - 0.02 * Math.sin(a), 1.3, 0.32 - 0.03 * Math.cos(a)], elbow: 'down', headPitch: -6 };
     },
   },
   {
@@ -81,7 +81,7 @@ const Gestures: Gesture[] = [
     duration: 1.6,
     pose: (u) => {
       const tug = Math.max(0, Math.sin(Math.min(1, u / 1.2) * Math.PI * 2 * 2)) * 0.035;
-      return { l: [0.2, 0.9 + tug, 0.11], r: [0.2, 0.9 + tug, 0.11], elbow: 'out', headPitch: -10 };
+      return { l: [0.21, 1.0 + tug, 0.12], r: [0.21, 1.0 + tug, 0.12], elbow: 'out', headPitch: -10 };
     },
   },
   {
@@ -90,8 +90,9 @@ const Gestures: Gesture[] = [
     pose: (u) => {
       // Braço direito cruzado na frente do peito, a mão esquerda puxando pelo cotovelo; na segunda metade, o outro.
       const right = u < 1.3;
-      const cross: Palm = [-0.22, 1.28, 0.16];
-      const pull: Palm = [-0.02, 1.18, 0.3];
+      // Na altura do peito e à frente dele: com o braço a 1,28 m e 16 cm à frente, o antebraço entrava 4 cm no peito.
+      const cross: Palm = [-0.2, 1.38, 0.27];
+      const pull: Palm = [0, 1.3, 0.36];
       return right ? { r: cross, l: pull, elbow: 'down' } : { l: cross, r: pull, elbow: 'down' };
     },
   },
@@ -104,6 +105,8 @@ const Gestures: Gesture[] = [
 
 /** Entrada e saída de cada gesto (s). */
 const GestureBlend = 0.38;
+/** Quanto a mão sai para a frente (m) no meio da ida e da volta dos gestos à frente do corpo. */
+const TransitionArc = 0.14;
 /** Intervalo entre gestos (s). */
 const GapMin = 1.2;
 const GapMax = 3.2;
@@ -161,6 +164,22 @@ export class IdleLife {
     }
   }
 
+  /** Nomes dos gestos (laboratório). */
+  static gestureNames(): string[] {
+    return Gestures.map((g) => g.name);
+  }
+
+  /** Começa o gesto `name` agora (laboratório: validar um por um). Falso se o nome não existe. */
+  start(name: string): boolean {
+    const i = Gestures.findIndex((g) => g.name === name);
+    if (i < 0) return false;
+    this.lastIndex = i;
+    this.gesture = Gestures[i];
+    this.gestureT = 0;
+    this.current = name;
+    return true;
+  }
+
   /** Aplica braços e cabeça. Chamar por último entre os IKs dos braços. */
   apply(): void {
     if (this.w < 1e-3) return;
@@ -185,6 +204,9 @@ export class IdleLife {
       const a = base[side];
       const b = pose[side];
       const p = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+      // Mãos que vão para a frente do corpo fazem um arco para a frente na ida e na volta: em linha reta, a mão que ia da
+      // coxa para o ombro oposto (alongar o braço) cortava a frente do quadril.
+      if (pose.elbow === 'down') p[2] += TransitionArc * 4 * k * (1 - k);
       const target = rig.root.position.clone().addScaledVector(left, out * p[0]).addScaledVector(up, p[1]).addScaledVector(fwd, p[2]);
       const elbow = k > 0.5 ? pose.elbow : 'back';
       const side3 = left.clone().multiplyScalar(out);

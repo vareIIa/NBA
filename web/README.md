@@ -86,6 +86,19 @@ O `npm run e2e` salva os prints e o vídeo em `test-results/entrega/` (`01-quadr
   que volta). Dribles que começam com a bola no ar trazem a bola para a mão na hora.
 - **Corte acelerando** (Hashizume et al., ISBS 2014): o impulso dos dribles laterais cresce e se mantém, somado ao
   embalo para a frente; o step-back joga o impulso no meio (o salto).
-- **Sem a bola** o boneco usa parado/andando/correndo sem drible.
+- **Sem a bola** o boneco usa parado/andando/correndo sem drible. Parado, `src/anim/IdleLife.ts` solta os braços e de
+  tempos em tempos faz um gesto (mãos na cintura, palmas, alongar o braço...); `animator.playIdleGesture(nome)` dispara um
+  pelo nome no laboratório.
+- **Braço nunca atravessa o tronco nem a roupa** (`src/anim/ArmClearance.ts`, último passo dos braços): tronco,
+  quadril e coxas (estas só sem bola) viram cilindros de seção elíptica medidos na regata e na bermuda vestidas. Cotovelo
+  dentro gira o braço no ombro; antebraço, punho ou mão dentro giram o antebraço no cotovelo. A saída é suave na
+  distância e no tempo (60 ms). Fica livre só a mão da bola no behind the back, que segue o caminho desenhado por trás
+  do quadril. A métrica `braço-corpo` do laboratório mede o que sobra.
+- **Retarget do Mixamo** (`src/mocap/Retarget.ts`): desconta a inclinação de repouso do pescoço do mixamorig (22° no
+  IdleStand; o nosso, 4°), senão a cabeça ficava ~18° baixa em todo clipe. Nas pernas do Mixamo (`applyMixamoLegs`) a
+  pelve fica com a inclinação para a frente do clipe da CMU (a do Mixamo vem do tronco inteiro e empinava a bunda), girando
+  em volta das articulações do quadril (as pernas não mudam), e o
+  sobe-e-desce do quadril cai a 40% (13,6 → ~8,5 cm no sprint). Chaves de comparação no animador:
+  `armClearanceEnabled`, `mixamoPelvisPitchFix` e `mixamoBounceKeep` (1 = clipe inteiro).
 - O teste `npm run e2e` mede a bola no drible: nunca abaixo do raio, nunca a mais de 1,3 m do jogador, e conta os
   quiques e as trocas de mão.

@@ -36,6 +36,11 @@ export interface LabMetrics {
   ballBodyFrames: number; // quadros com sobreposição > 1 cm
   ballBodyWorst: { part: string; frame: number; depth: number; mode: string } | null;
   ballBodyByMode: Record<string, number>; // quadros com bola no corpo por estado da bola (presa / no ar)
+  // Braço no corpo: o quanto cotovelo, antebraço, punho ou mão ficam DENTRO do tronco, do quadril ou da coxa (volumes
+  // medidos na regata e na bermuda, ArmClearance) na pose final. O diretor viu braço atravessando a regata (2026-10-16).
+  armBodyMax: number; // m
+  armBodyFrames: number; // quadros com penetração > 1 cm
+  armBodyWorst: { part: string; frame: number; depth: number } | null;
   // Flicks (o que o olho vê como "pulo" ou "sumiço"): segunda diferença da posição entre quadros (m/s²). Um salto de
   // 4 cm num quadro já passa de 140 m/s²; o quadro do quique (a bola inverte no chão) não conta.
   ballKinkFrames: number; // bola mudando de trajetória de repente
@@ -204,6 +209,9 @@ export class Lab {
       ballBodyFrames: 0,
       ballBodyWorst: null,
       ballBodyByMode: {},
+      armBodyMax: 0,
+      armBodyFrames: 0,
+      armBodyWorst: null,
       ballKinkFrames: 0,
       ballKinkMax: 0,
       ballKinkWorst: null,
@@ -351,6 +359,12 @@ export class Lab {
       m.ballBodyByMode[mode] = (m.ballBodyByMode[mode] ?? 0) + 1;
       if (!m.ballBodyWorst || ballBody > m.ballBodyWorst.depth)
         m.ballBodyWorst = { part: ballPart, frame: m.frames, depth: +ballBody.toFixed(3), mode };
+    }
+    const arm = this.animator.armBodyPenetration();
+    m.armBodyMax = Math.max(m.armBodyMax, arm.depth);
+    if (arm.depth > 0.01) {
+      m.armBodyFrames++;
+      if (!m.armBodyWorst || arm.depth > m.armBodyWorst.depth) m.armBodyWorst = { part: arm.part, frame: m.frames, depth: +arm.depth.toFixed(3) };
     }
     this.frameFlags = { legGap, sole, ballBody, legPair, ballPart };
   }
