@@ -477,12 +477,12 @@ export class Hub {
   // ---------------------------------------------------------------- jogo
 
   /**
-   * Sinalização do canal direto (offer/answer/ICE do WebRTC): vai como chegou para o outro da sala, com ou sem partida.
-   * O servidor não lê; quem recebe valida (src/net/PeerLink.ts).
+   * Sinalização do canal direto (offer/answer/ICE do WebRTC): vai como chegou para o outro da sala, só com partida
+   * (o canal sobe no match.start). O servidor não lê; quem recebe valida (src/net/PeerLink.ts).
    */
   private relaySignal(player: Player, text: string): void {
     const room = player.room;
-    if (!room) return;
+    if (!room?.referee) return;
     const other = this.opponentOf(room, this.sideOf(room, player));
     if (other?.conn) this.raw(other.conn, text);
   }

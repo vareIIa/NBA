@@ -7,12 +7,15 @@
 // Canal: sem ordem e sem retransmissão (UDP de verdade). Uma amostra de pose perdida não faz falta (a próxima chega em
 // 50 ms e o boneco interpola) e não segura as outras, como um pacote perdido segura tudo no TCP do WebSocket.
 //
-// Comandos de animação (Payload.c: drible, arremesso, bandeja…) não podem sumir: o boneco deixaria de fazer o lance.
-// O 'st' que leva comandos ganha um número (r); quem recebe confirma na hora ('ack') e descarta repetidos, e quem mandou
-// repete o quadro a cada envio até a confirmação. Um quadro perdido chega de novo no envio seguinte (~50 ms), ainda
-// dentro do buffer do boneco (~70–100 ms). Um canal confiável do SCTP também não perderia, mas reenvia só depois do
-// próprio timer (centenas de ms) e segura na fila tudo o que vem atrás. Se o canal cair, o que não foi confirmado vai
-// pela sala (com o mesmo r: repetido não toca duas vezes).
+// Comandos de animação (Payload.c: drible, arremesso, bandeja…) não podem sumir, repetir nem trocar de ordem: o boneco
+// deixaria de fazer o lance, faria duas vezes ou fora de ordem. Todo 'st' que leva comandos ganha um número de
+// sequência (r), pelo canal ou pela sala, e quem recebe entrega esses quadros em ordem de r e uma vez só (segura um que
+// chegou antes do anterior, até ele chegar). O primeiro de cada partida leva s=1 (começo da sequência): sem ele, quem
+// recebe não saberia se um quadro que chegou pelo canal passou na frente de outro que ainda vem pela sala. Pelo canal, quem recebe confirma na hora ('ack') e quem mandou repete o
+// quadro a cada envio até a confirmação: um quadro perdido chega de novo no envio seguinte (~33 ms), ainda dentro do
+// buffer do boneco. Um canal confiável e ordenado do SCTP também não perderia, mas reenvia só no timer dele (centenas de
+// ms) e segura na fila as poses que vêm atrás. Se o canal cair, o que não foi confirmado vai pela sala antes do quadro
+// novo (mesmo r: repetido não toca duas vezes). Quadro só de pose não tem número: o mais novo vale (PoseBuffer).
 //
 // Quem conecta: o lugar 1 pede ('req') e o lugar 0 oferece; o lugar 1 é quem tenta de novo quando falha.
 //
@@ -30,11 +33,13 @@ export type RtcSignal =
   | { k: 'offer' | 'answer'; a: string; sdp: string }
   | { k: 'ice'; a: string; c: RTCIceCandidateInit };
 
-/** Um 'st' como sai e chega pela sala; r = número do quadro confiável (só no que já passou pelo canal). */
+/** Um 'st' como sai e chega; r = número de sequência de quem mandou, só nos quadros com comando (os dois caminhos). */
 export interface StateMsg {
   t: 'st';
   d: unknown;
   r?: number;
+  /** 1 = o primeiro quadro com comando da partida (começo da sequência de r). */
+  s?: 1;
 }
 
 /** Quadros do canal: estado, confirmação de um estado confiável e o ping do canal. */
@@ -52,6 +57,10 @@ export const RetryMs = [1000, 3000, 8000, 20_000, 30_000];
 export const ReliableTtlMs = 1500;
 /** Reenvio de um quadro confiável sem confirmação: depois de max(isto, 1,2 × ping do canal). */
 const ResendMinMs = 30;
+/** Quadro com comando que chegou antes do anterior espera este tanto por ele; depois, segue sem ele. */
+export const HoldMs = 800;
+/** r fora desta distância do último entregue: sequência nova (o outro recarregou a página), começa dela. */
+const SeqWindow = 256;
 /** Fila de saída do canal acima disto: congestionado, o envio vai pela sala. */
 const MaxBuffered = 256 * 1024;
 /** Mesmo limite de ritmo da sala (Hub.MaxFramesPerSecond): quadros acima disto por segundo são ignorados. */
@@ -102,9 +111,9 @@ export interface PeerLinkOptions {
   mode: P2PMode;
   /** Manda sinalização ao outro jogador pela sala ('rtc'). */
   signal: (d: RtcSignal) => void;
-  /** Um 'st' do outro jogador que chegou pelo canal (já sem repetidos). */
+  /** Um 'st' do outro jogador que chegou pelo canal, já em ordem e sem repetidos. */
   deliver: (msg: StateMsg) => void;
-  /** Manda um quadro pronto pela sala: o confiável que o canal não confirmou antes de cair. */
+  /** Manda um quadro pronto pela sala: o com comando que o canal não confirmou antes de cair. */
   viaLobby: (text: string) => void;
   iceServers?: RTCIceServer[];
   /** Relógio (ms). */
@@ -127,9 +136,10 @@ export interface LinkStats {
   tx: { direto: number; sala: number };
   rx: { direto: number; sala: number };
   resent: number;
-  /** Quadros confiáveis que chegaram repetidos (descartados) e os que venceram sem confirmação. */
+  /** Quadros com comando repetidos (descartados), vencidos sem confirmação e buracos na sequência dados por perdidos. */
   dup: number;
   expired: number;
+  skipped: number;
 }
 
 interface Attempt {
@@ -164,11 +174,15 @@ export class PeerLink {
   private resent = 0;
   private dup = 0;
   private expired = 0;
-  /** Número do próximo quadro confiável (começa num valor sorteado: quem recarregou a página não repete números). */
+  private skipped = 0;
+  /** Número do próximo quadro com comando (começa num valor sorteado: quem recarregou a página não repete números). */
   private nextR = Math.floor(Math.random() * 2 ** 30);
+  /** O próximo quadro com comando começa uma sequência (s=1): o primeiro da partida. */
+  private startNext = true;
   private readonly unacked = new Map<number, { text: string; first: number; last: number }>();
-  /** Quadros confiáveis já entregues (r → quando), para descartar repetidos. */
-  private readonly seen = new Map<number, number>();
+  /** Último r entregue em ordem (null: nenhum ainda) e os que chegaram antes do anterior, esperando por ele. */
+  private lastR: number | null = null;
+  private readonly held = new Map<number, { msg: StateMsg; at: number }>();
   private rateStart = 0;
   private rateCount = 0;
   private readonly now: () => number;
@@ -201,6 +215,7 @@ export class PeerLink {
    * sala privada (na partida rápida o canal não sobe: o IP de cada um não vai para um desconhecido).
    */
   matchStart(you: Side, allowed = true): void {
+    this.startNext = true;
     if (this.state === 'off') return;
     if (!allowed) {
       this.close();
@@ -214,6 +229,8 @@ export class PeerLink {
 
   /** O oponente caiu ou voltou para a sala. O canal pode continuar de pé com a sala fora (não derruba). */
   opponent(connected: boolean): void {
+    // Voltou (talvez com a página nova, sem saber onde a minha sequência estava): o próximo comando começa uma.
+    if (connected) this.startNext = true;
     if (this.state === 'off' || !this.allowed) return;
     this.clearRetry();
     if (connected && this.driver && !this.healthy()) {
@@ -241,7 +258,7 @@ export class PeerLink {
         void this.answer(s.a, s.sdp);
         return;
       case 'answer':
-        void this.accept(s.a, s.sdp);
+        void this.acceptAnswer(s.a, s.sdp);
         return;
       case 'ice':
         this.addCandidate(s.a, s.c);
@@ -250,40 +267,70 @@ export class PeerLink {
   }
 
   /**
-   * Manda um 'st' pelo canal se ele está saudável (true). false = mande pela sala. Antes de cada envio, repete os
-   * quadros confiáveis sem confirmação; se o canal não está saudável, eles vão pela sala.
+   * Manda um 'st': pelo canal se ele está saudável (devolve null), senão devolve o texto para mandar pela sala. O quadro
+   * com comando ganha o número r nos dois casos. Antes, repete pelo canal os sem confirmação; com o canal fora, eles vão
+   * pela sala antes deste (viaLobby), na ordem.
    */
-  send(msg: StateMsg): boolean {
+  send(msg: StateMsg): string | null {
+    const frame: StateMsg = { t: 'st', d: msg.d };
+    if (carriesCommands(msg.d)) {
+      frame.r = this.nextR++;
+      if (this.startNext) frame.s = 1;
+      this.startNext = false;
+    }
+    const text = JSON.stringify(frame);
     if (!this.healthy()) {
       this.flushToLobby();
       this.tx.sala++;
-      return false;
+      return text;
     }
     this.resendDue();
-    const frame: StateMsg = { t: 'st', d: msg.d };
-    if (carriesCommands(msg.d)) {
-      const r = this.nextR++;
-      frame.r = r;
-      const text = JSON.stringify(frame);
+    if (frame.r !== undefined) {
       const now = this.now();
-      this.unacked.set(r, { text, first: now, last: now });
-      this.raw(text);
-    } else {
-      this.raw(JSON.stringify(frame));
+      this.unacked.set(frame.r, { text, first: now, last: now });
     }
+    this.raw(text);
     this.tx.direto++;
-    return true;
+    return null;
   }
 
-  /** Um 'st' que chegou pela sala: false se é um confiável repetido (já chegou pelo canal). */
-  fromLobby(msg: StateMsg): boolean {
-    if (typeof msg.r === 'number' && !this.firstTime(msg.r)) return false;
-    this.rx.sala++;
-    return true;
+  /**
+   * Um 'st' do outro jogador (pelo canal ou pela sala). Devolve o que entregar ao boneco agora, em ordem: o quadro só de
+   * pose na hora; o com comando quando chega a vez dele (pode vir junto com os que esperavam por ele, ou nada).
+   */
+  receive(msg: StateMsg, via: 'direto' | 'sala'): StateMsg[] {
+    const out = this.releaseExpired();
+    const r = msg.r;
+    const st: StateMsg = { t: 'st', d: msg.d };
+    if (typeof r !== 'number' || !Number.isInteger(r)) {
+      this.rx[via]++;
+      out.push(st);
+      return out;
+    }
+    const last = this.lastR;
+    const near = last !== null && Math.abs(r - last) <= SeqWindow;
+    if (this.held.has(r) || (near && r <= last!)) {
+      this.dup++; // repetido (ou atrasado demais: a vez dele já passou)
+      return out;
+    }
+    this.rx[via]++;
+    if (msg.s === 1 || (last !== null && !near)) {
+      // Começo de sequência (match.start de quem mandou) ou número longe do último (a página dele é nova): começa
+      // deste. Os que esperavam de antes saem primeiro; os que já são desta sequência ficam para depois dele.
+      out.push(...this.releaseBelow(last === null || near ? r : Infinity));
+      this.lastR = r - 1;
+    }
+    // Sem começo conhecido (lastR null): espera o anterior ou o começo, até HoldMs.
+    this.held.set(r, { msg: st, at: this.now() });
+    if (this.lastR !== null) out.push(...this.drainHeld());
+    return out;
   }
 
   /** Saiu da sala ou do online: derruba o canal (a próxima partida, em outra sala, começa do zero). */
   close(): void {
+    this.held.clear();
+    this.lastR = null;
+    this.startNext = true;
     if (this.state === 'off') return;
     this.clearRetry();
     this.teardown();
@@ -306,6 +353,7 @@ export class PeerLink {
       resent: this.resent,
       dup: this.dup,
       expired: this.expired,
+      skipped: this.skipped,
     };
   }
 
@@ -373,7 +421,7 @@ export class PeerLink {
     }
   }
 
-  private async accept(id: string, sdp: string): Promise<void> {
+  private async acceptAnswer(id: string, sdp: string): Promise<void> {
     const at = this.at;
     if (!at || at.id !== id || at.remoteSet) return;
     try {
@@ -502,12 +550,8 @@ export class PeerLink {
     switch (f.t) {
       case 'st': {
         if (f.d === undefined) return;
-        if (typeof f.r === 'number') {
-          this.raw(JSON.stringify({ t: 'ack', r: f.r } satisfies Frame));
-          if (!this.firstTime(f.r)) return;
-        }
-        this.rx.direto++;
-        this.opts.deliver({ t: 'st', d: f.d });
+        if (typeof f.r === 'number') this.raw(JSON.stringify({ t: 'ack', r: f.r } satisfies Frame));
+        for (const msg of this.receive(f, 'direto')) this.opts.deliver(msg);
         return;
       }
       case 'ack':
@@ -524,16 +568,43 @@ export class PeerLink {
     }
   }
 
-  /** Primeira vez que o confiável r chega (por qualquer caminho). Guarda os últimos ~5 s. */
-  private firstTime(r: number): boolean {
-    if (this.seen.has(r)) {
-      this.dup++;
-      return false;
+  /** Entrega, em ordem, os que esperavam e já são a vez (o seguinte ao último entregue). */
+  private drainHeld(): StateMsg[] {
+    const out: StateMsg[] = [];
+    let next = this.held.get(this.lastR! + 1);
+    while (next) {
+      this.held.delete(++this.lastR!);
+      out.push(next.msg);
+      next = this.held.get(this.lastR! + 1);
     }
+    return out;
+  }
+
+  /**
+   * Buraco na sequência que não fechou em HoldMs (o quadro que faltava se perdeu de vez, ou o começo nunca veio): segue
+   * sem ele, entregando em ordem os que esperavam.
+   */
+  private releaseExpired(): StateMsg[] {
+    const out: StateMsg[] = [];
     const now = this.now();
-    this.seen.set(r, now);
-    if (this.seen.size > 256) for (const [k, t] of this.seen) if (now - t > 5000) this.seen.delete(k);
-    return true;
+    while (this.held.size > 0) {
+      const first = Math.min(...this.held.keys());
+      if (now - this.held.get(first)!.at < HoldMs) break;
+      if (this.lastR !== null) this.skipped += first - this.lastR - 1;
+      this.lastR = first - 1;
+      out.push(...this.drainHeld());
+    }
+    return out;
+  }
+
+  /** Entrega já, em ordem e pulando os buracos, os que esperam com número abaixo de `limit` (sequência anterior). */
+  private releaseBelow(limit: number): StateMsg[] {
+    const keys = [...this.held.keys()].filter((k) => k < limit).sort((x, y) => x - y);
+    return keys.map((k) => {
+      const msg = this.held.get(k)!.msg;
+      this.held.delete(k);
+      return msg;
+    });
   }
 
   private resendDue(): void {

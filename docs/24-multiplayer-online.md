@@ -156,23 +156,29 @@ não mudou e o `OnlineMatch` só pergunta ao `NetClient` o ritmo de envio: os do
 - **O que vai direto:** só o `st` (estado do jogador para o boneco do outro). Lobby, juiz (`g.*`, `match.state`),
   ping e relógio do servidor continuam no WebSocket da sala.
 - **Conexão:** no `match.start`, o lugar 1 pede (`rtc {k:'req'}`) e o lugar 0 oferece; offer, answer e candidatos ICE
-  passam pela sala na mensagem `rtc`, que o servidor repassa ao outro da sala sem ler (quem recebe valida). STUN
+  passam pela sala na mensagem `rtc`, que o servidor repassa ao outro da sala, só com partida, sem ler (quem recebe
+  valida). STUN
   público e grátis (Google e Cloudflare); **sem TURN** (D14). Tentativa que não abre em 10 s falhou; o lugar 1 tenta
   de novo depois de 1, 3, 8, 20 e 30 s e desiste até a próxima partida. Revanche e volta de uma queda reaproveitam o
   canal se ele estiver de pé.
 - **Canal sem ordem e sem retransmissão** (`ordered: false, maxRetransmits: 0`, UDP de verdade): pose perdida não faz
   falta (a próxima chega em 33 ms) e não segura as seguintes, como um pacote perdido segura tudo no TCP do WebSocket.
-- **Comandos de animação não se perdem** (decisão): o `st` que leva comandos (`Payload.c`: drible, arremesso,
-  bandeja, defesa…) ganha um número `r`; quem recebe confirma na hora (`ack`) e descarta repetidos; quem mandou repete
-  o quadro a cada envio até a confirmação (no máximo 1,5 s: depois disso o boneco já passou do lance). Um quadro
-  perdido chega de novo ~33–50 ms depois, dentro do buffer do boneco. Por que não um canal confiável do SCTP: ele também
-  não perde, mas reenvia só no timer dele (centenas de ms) e, ordenado, segura na fila as poses que vêm atrás. Por que
-  não mandar os comandos repetidos N vezes sem confirmação: uma rajada de perda maior que N envios (Wi-Fi) ainda
-  apagaria o lance.
+- **Comandos de animação: nem perdidos, nem repetidos, nem fora de ordem** (decisão). Todo `st` que leva comandos
+  (`Payload.c`: drible, arremesso, bandeja, defesa…) ganha um número de sequência `r`, pelo canal ou pela sala; o
+  primeiro de cada partida leva também `s: 1` (começo). Quem recebe entrega esses quadros em ordem de `r` e uma vez
+  só: um que chegou antes do anterior espera por ele (até 0,8 s; depois disso, o que faltava se perdeu de vez e a fila
+  segue). Isso cobre a troca de caminho: um comando que ainda vem pela sala (~130 ms) não é passado pelo seguinte, que
+  chegou pelo canal (~2 ms). Pelo canal, quem recebe confirma na hora (`ack`) e quem mandou repete o quadro a cada
+  envio até a confirmação (no máximo 1,5 s: depois disso o boneco já passou do lance): um quadro perdido chega de novo
+  ~33 ms depois, dentro do buffer do boneco. Quadro só de pose não tem número e não espera nada (vale o mais novo).
+  Por que não o canal confiável e ordenado do SCTP: ele também não perde, mas reenvia só no timer dele (centenas de ms)
+  e segura na fila as poses que vêm atrás; com 0,1–1% de perda numa rede doméstica, a 30 envios/s, seria um engasgo do
+  boneco a cada poucos segundos ou minutos. Por que não mandar os comandos repetidos N vezes sem confirmação: uma rajada
+  de perda maior que N envios (Wi-Fi) ainda apagaria o lance.
 - **Volta para a sala sem o jogador perceber:** cada lado manda um ping pelo canal a cada 200 ms. Sem nada chegando
   por 400 ms (canal mudo: NAT esqueceu a rota, Wi-Fi caiu), o `st` passa a sair pela sala, e os quadros com comando
-  ainda sem confirmação vão junto (com o mesmo `r`: repetido não toca duas vezes). O ping voltou: o `st` volta para o
-  canal. Sem conexão direta (CGNAT dos dois lados, rede que bloqueia UDP), tudo fica na sala como antes.
+  ainda sem confirmação vão antes dele, na ordem (mesmo `r`: repetido não toca duas vezes). O ping voltou: o `st` volta
+  para o canal. Sem conexão direta (CGNAT dos dois lados, rede que bloqueia UDP), tudo fica na sala como antes.
 - **30 envios por segundo pelo canal** (`NetClient.stateHz`): não passa pela sala, então não gasta a cota do plano
   grátis (§3), e o buffer do boneco acompanha o intervalo entre envios (60 ms, o piso, contra ~75 ms a 20 Hz). Pela
   sala continua 20 por segundo.
@@ -183,8 +189,8 @@ não mudou e o `OnlineMatch` só pergunta ao `NetClient` o ritmo de envio: os do
   URL, ou `VITE_P2P=0|falha` no build. O debug da partida (`window.__garrafao.online().link`) mostra o estado do
   canal, por onde o `st` está saindo (`via`), o ping do canal, a rota (`host`/`srflx`) e as contagens por caminho. O
   ping do HUD continua sendo o da sala (o do juiz).
-- **Compatível com o protocolo 2** (a versão não mudou): um cliente antigo ignora `rtc` e fica na sala; um servidor
-  antigo recusa `rtc` e o cliente novo fica na sala.
+- **Protocolo 3** (`rtc`, `r` e `s` no `st`). Sala e sites saem juntos (`npm run publicar`) e a recarga por versão do
+  `NetClient` faz uma aba aberta antes da publicação pegar o jogo novo sozinha.
 
 **Medido (2026-10-16, `web/tools/latencia-online.mjs`).** Duas abas headless na mesma máquina, no Rio, os dois
 jogadores andando de um lado para o outro, 20–30 s. "Rede" vai do relógio de quem mandou à chegada no outro (relógios
@@ -207,7 +213,9 @@ mais o buffer.
   `--origem=https://garrafao.garrafao-web.workers.dev` para medir o jogo publicado (opções no topo do arquivo).
 
 Testes: `src/net/peerLink.test.ts` (rede de mentira: conexão, comando perdido e repetido, canal mudo e de volta,
-falha forçada, partida rápida, sinalização torta; e o `Hub` repassando `rtc`) e `e2e/online-p2p.spec.ts` (dois
+troca de caminho com o comando da sala chegando depois do seguinte pelo canal, buraco que não fecha, começo da
+sequência, página nova do outro, falha forçada, partida rápida, sinalização torta; e o `Hub` repassando `rtc` só com
+partida) e `e2e/online-p2p.spec.ts` (dois
 navegadores: o estado vai direto; cortado em silêncio, volta pela sala com o boneco seguindo; o canal volta; e uma
 partida inteira com `?p2p=falha`). O `e2e/online.spec.ts` passa contra um Vite normal (canal direto) e contra um com
 `VITE_P2P=falha` (tudo pela sala).
@@ -310,12 +318,12 @@ Um endpoint (`/ws`), quadros JSON `{t, ...}`, até 64 KB, até 120 por segundo p
 
 | Cliente → servidor | |
 |---|---|
-| `hello {v, card, token?}` | Identidade (cartão da build: nome, altura, envergadura, OVR, defesa de perímetro, roubo, toco, impulsão, controle de bola, níveis de Glove e Unpluckable) e reconexão. Protocolo 2 desde a defesa |
+| `hello {v, card, token?}` | Identidade (cartão da build: nome, altura, envergadura, OVR, defesa de perímetro, roubo, toco, impulsão, controle de bola, níveis de Glove e Unpluckable) e reconexão. Protocolo 2 desde a defesa, 3 desde o canal direto |
 | `ping {c}` | A cada 2 s: latência e relógio do servidor (amostra de menor ida e volta) |
-| `rtc {d}` | Sinalização do canal direto (pedido, offer, answer, ICE) para o outro da sala, com ou sem partida (§5.1) |
+| `rtc {d}` | Sinalização do canal direto (pedido, offer, answer, ICE) para o outro da sala, só com partida (§5.1) |
 | `queue.join` / `queue.leave` | Partida rápida |
 | `room.create {rules?}` / `room.join {code}` / `room.leave` / `room.ready` / `room.rules` / `room.rematch` | Sala |
-| `st {d}` | Estado do meu jogador para o boneco do outro (o servidor repassa sem ler), quando o canal direto não está de pé |
+| `st {d, r?, s?}` | Estado do meu jogador para o boneco do outro (o servidor repassa sem ler), quando o canal direto não está de pé. `r`: número de sequência dos quadros com comando; `s: 1`: o primeiro da partida (§5.1) |
 | `g.release` / `g.result` / `g.claim` / `g.cleared` `{seq, ...}` | Relatos da jogada para o juiz |
 | `g.block {seq}` | Quem arremessou: tomei toco, a bola fica solta já |
 | `g.steal {seq, exp}` | Quem defende: tapa na bola com a exposição que viu (0..1); o juiz sorteia |
@@ -327,7 +335,7 @@ Um endpoint (`/ws`), quadros JSON `{t, ...}`, até 64 KB, até 120 por segundo p
 | `match.start {room, you, state}` | Partida começou (também na revanche e ao voltar de uma queda) |
 | `match.state {state, event}` | Cada mudança: fase, placar, posse, bola, limpar, relógio, vencedor + o evento (cesta, rebote, roubo, toco…) |
 | `opponent {connected, graceEndsAt}` | O outro caiu / voltou |
-| `st {d, r?}` | Estado do oponente pela sala (`r`: quadro com comando que o canal direto não confirmou antes de cair) |
+| `st {d, r?, s?}` | Estado do oponente pela sala, como ele mandou |
 | `rtc {d}` | Sinalização do canal direto vinda do oponente |
 
 ### 6.5 Rodar e testar no PC

@@ -9,8 +9,11 @@
 //   - O servidor é o juiz: placar, posse, check-ball, relógio de posse, rebote (o primeiro pedido válido leva), roubo
 //     (sorteado aqui, src/net/defense.ts), toco, vitória, queda de conexão e revanche.
 
-/** 2: defesa (roubo, toco, contestação com o estado do defensor) e cartão com os ratings de defesa. */
-export const ProtocolVersion = 2;
+/**
+ * 2: defesa (roubo, toco, contestação com o estado do defensor) e cartão com os ratings de defesa.
+ * 3: canal direto entre os jogadores (sinalização 'rtc', 'st' com número r nos quadros com comando; src/net/PeerLink.ts).
+ */
+export const ProtocolVersion = 3;
 export const WsPath = '/ws';
 /** Porta do servidor de desenvolvimento (web/server/dev.ts). */
 export const DevServerPort = 8790;
@@ -161,8 +164,11 @@ export type ClientMsg =
   | { t: 'room.ready'; ready: boolean }
   | { t: 'room.rules'; rules: Partial<MatchRules> }
   | { t: 'room.rematch'; want: boolean }
-  /** Estado do próprio jogador para o oponente (o servidor não lê d, só repassa). */
-  | { t: 'st'; d: unknown }
+  /**
+   * Estado do próprio jogador para o oponente (o servidor não lê, só repassa). r = número de sequência de quem manda,
+   * só nos quadros com comando de animação: quem recebe entrega esses em ordem e uma vez só (src/net/PeerLink.ts).
+   */
+  | { t: 'st'; d: unknown; r?: number }
   /** O atacante soltou o arremesso (o relógio de posse para). */
   | { t: 'g.release'; seq: number }
   /** O arremesso resolveu: primeiro toque da bola no chão, ou um erro que já não entra (caindo abaixo do aro sem cesta). */
@@ -201,7 +207,7 @@ export type ServerMsg =
   | { t: 'match.start'; room: RoomInfo; you: Side; state: MatchState; serverTime: number }
   | { t: 'match.state'; state: MatchState; event: MatchEvent | null; serverTime: number }
   | { t: 'opponent'; connected: boolean; graceEndsAt: number }
-  /** Estado do oponente. r = número do quadro confiável que o canal direto não confirmou e veio pela sala. */
+  /** Estado do oponente, como ele mandou (r: ver o 'st' do cliente). */
   | { t: 'st'; d: unknown; r?: number }
   | { t: 'rtc'; d: unknown };
 

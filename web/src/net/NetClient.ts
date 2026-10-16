@@ -131,8 +131,8 @@ export class NetClient {
 
   /** O 'st' vai pelo canal direto quando ele está saudável; o resto (e o 'st' sem canal) vai pela sala. */
   send(msg: ClientMsg): void {
-    if (msg.t === 'st' && this.link.send(msg)) return;
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+    const text = msg.t === 'st' ? this.link.send(msg) : JSON.stringify(msg);
+    if (text !== null && this.ws?.readyState === WebSocket.OPEN) this.ws.send(text);
   }
 
   /** Canal direto: estado, caminho atual do 'st', ping do canal e contagens (debug, e2e, medição de latência). */
@@ -262,9 +262,9 @@ export class NetClient {
         this.link.signal(msg.d);
         return;
       case 'st':
-        // Confiável que já tinha chegado pelo canal direto (o outro lado repetiu pela sala quando o canal caiu).
-        if (!this.link.fromLobby(msg as StateMsg)) return;
-        break;
+        // Em ordem e sem repetidos com o que chega pelo canal direto (os quadros com comando têm número).
+        for (const st of this.link.receive(msg as StateMsg, 'sala')) this.dispatch(st);
+        return;
       case 'error':
         if (msg.code !== 'rate_limit') console.warn('multiplayer:', msg.code, msg.message);
         this.lastError = msg.message;
