@@ -207,7 +207,10 @@ export class IdleLife {
       // Mãos que vão para a frente do corpo fazem um arco para a frente na ida e na volta: em linha reta, a mão que ia da
       // coxa para o ombro oposto (alongar o braço) cortava a frente do quadril.
       if (pose.elbow === 'down') p[2] += TransitionArc * 4 * k * (1 - k);
-      const target = rig.root.position.clone().addScaledVector(left, out * p[0]).addScaledVector(up, p[1]).addScaledVector(fwd, p[2]);
+      // Alvos medidos no boneco (1,86 m): a altura da build escala o root (setBodyScale) e eles acompanham, senão num
+      // jogador de 2,24 m as palmas batiam na frente da barriga.
+      const scale = rig.root.scale.y;
+      const target = rig.root.position.clone().addScaledVector(left, out * p[0] * scale).addScaledVector(up, p[1] * scale).addScaledVector(fwd, p[2] * scale);
       const elbow = k > 0.5 ? pose.elbow : 'back';
       const side3 = left.clone().multiplyScalar(out);
       const pole =
