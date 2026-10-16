@@ -1,5 +1,8 @@
 // Cliente do multiplayer: uma conexão WebSocket com o Hub (protocol.ts), reconexão automática com o token da aba,
 // latência e relógio do servidor (ping a cada 2 s; o offset vem da amostra de menor ida e volta).
+// Na partida, o estado do jogador ('st') vai pelo canal direto com o oponente (PeerLink, WebRTC) quando ele está de pé,
+// e pela sala quando não: quem usa o cliente só chama send({t:'st'}) e on('st') e não vê a diferença.
+import { type LinkStats, PeerLink, type StateMsg, p2pModeFrom } from './PeerLink.ts';
 import {
   type ClientMsg,
   DevServerPort,
@@ -18,6 +21,8 @@ type Handler<T extends ServerMsg['t']> = (msg: Extract<ServerMsg, { t: T }>) => 
 const TokenKey = 'garrafao.mp.token';
 const PingMs = 2000;
 const RetryMs = [500, 1000, 2000, 4000, 8000];
+/** Envios de estado por segundo pelo canal direto (stateHz). */
+const DirectStateHz = 30;
 
 /**
  * Endereço do servidor de salas, nesta ordem: ?mp=<url> na página, VITE_MP_URL (ou VITE_SALA_URL) no build, a porta do
@@ -77,11 +82,21 @@ export class NetClient {
   private samples: { rtt: number; offset: number }[] = [];
   private offset = 0;
   private welcomed: ((ok: boolean) => void) | null = null;
+  /** Canal direto com o oponente (?p2p=0 desliga, ?p2p=falha testa o fallback; VITE_P2P no build). */
+  private readonly link: PeerLink;
 
   constructor(
     private card: PlayerCard,
     readonly url: string = defaultServerUrl(),
-  ) {}
+  ) {
+    const param = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('p2p') : null;
+    this.link = new PeerLink({
+      mode: p2pModeFrom(param, import.meta.env?.VITE_P2P as string | undefined),
+      signal: (d) => this.send({ t: 'rtc', d }),
+      deliver: (msg) => this.dispatch(msg),
+      viaLobby: (text) => this.ws?.readyState === WebSocket.OPEN && this.ws.send(text),
+    });
+  }
 
   /** Conecta (ou reconecta) e espera o welcome. false = o servidor não respondeu. */
   connect(timeoutMs = 6000): Promise<boolean> {
@@ -104,6 +119,7 @@ export class NetClient {
     this.wanted = false;
     window.clearTimeout(this.retryTimer);
     window.clearInterval(this.pingTimer);
+    this.link.close();
     this.ws?.close(1000, 'bye');
     this.ws = null;
     this.setStatus('closed');
@@ -113,8 +129,23 @@ export class NetClient {
     this.card = card;
   }
 
+  /** O 'st' vai pelo canal direto quando ele está saudável; o resto (e o 'st' sem canal) vai pela sala. */
   send(msg: ClientMsg): void {
+    if (msg.t === 'st' && this.link.send(msg)) return;
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
+
+  /** Canal direto: estado, caminho atual do 'st', ping do canal e contagens (debug, e2e, medição de latência). */
+  linkStats(): LinkStats {
+    return this.link.stats();
+  }
+
+  /**
+   * Envios de estado por segundo: pela sala, `lobbyHz` (cada quadro conta no plano grátis do Durable Object); pelo
+   * canal direto, pelo menos DirectStateHz (não passa pela sala, e o buffer do boneco encolhe com o intervalo).
+   */
+  stateHz(lobbyHz: number): number {
+    return this.link.healthy() ? Math.max(lobbyHz, DirectStateHz) : lobbyHz;
   }
 
   on<T extends ServerMsg['t']>(type: T, handler: Handler<T>): () => void {
@@ -215,8 +246,24 @@ export class NetClient {
         this.onPong(msg.c, msg.s);
         break;
       case 'match.start':
+        this.lastMatchState = msg.state;
+        this.link.matchStart(msg.you, !msg.room.quick); // partida rápida (desconhecido): sem canal direto
+        break;
       case 'match.state':
         this.lastMatchState = msg.state;
+        break;
+      case 'opponent':
+        this.link.opponent(msg.connected);
+        break;
+      case 'room.left':
+        this.link.close();
+        break;
+      case 'rtc':
+        this.link.signal(msg.d);
+        return;
+      case 'st':
+        // Confiável que já tinha chegado pelo canal direto (o outro lado repetiu pela sala quando o canal caiu).
+        if (!this.link.fromLobby(msg as StateMsg)) return;
         break;
       case 'error':
         if (msg.code !== 'rate_limit') console.warn('multiplayer:', msg.code, msg.message);
@@ -224,6 +271,10 @@ export class NetClient {
         if (msg.code === 'version') this.onVersionMismatch();
         break;
     }
+    this.dispatch(msg);
+  }
+
+  private dispatch(msg: ServerMsg): void {
     const set = this.handlers.get(msg.t);
     if (set) for (const h of [...set]) h(msg);
   }

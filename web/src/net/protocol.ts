@@ -151,6 +151,8 @@ export interface RoomInfo {
 export type ClientMsg =
   | { t: 'hello'; v: number; card: PlayerCard; token?: string }
   | { t: 'ping'; c: number }
+  /** Sinalização do canal direto com o oponente (src/net/PeerLink.ts): o servidor repassa ao outro da sala sem ler. */
+  | { t: 'rtc'; d: unknown }
   | { t: 'queue.join' }
   | { t: 'queue.leave' }
   | { t: 'room.create'; rules?: Partial<MatchRules> }
@@ -199,7 +201,9 @@ export type ServerMsg =
   | { t: 'match.start'; room: RoomInfo; you: Side; state: MatchState; serverTime: number }
   | { t: 'match.state'; state: MatchState; event: MatchEvent | null; serverTime: number }
   | { t: 'opponent'; connected: boolean; graceEndsAt: number }
-  | { t: 'st'; d: unknown };
+  /** Estado do oponente. r = número do quadro confiável que o canal direto não confirmou e veio pela sala. */
+  | { t: 'st'; d: unknown; r?: number }
+  | { t: 'rtc'; d: unknown };
 
 /** Alfabeto do código da sala: sem 0/O nem 1/I/L (ditado por voz ou lido num print sem confusão). */
 export const RoomCodeAlphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

@@ -18,6 +18,9 @@
   inteiro (fila, salas privadas, partidas) roda num Durable Object só, um "mini-servidor" que mantém os jogadores
   conectados. Ele fica no leste dos EUA (§3), não no Brasil. O amigo abre o link
   `https://garrafao.garrafao-web.workers.dev/?sala=K7QF` e entra.
+- **O movimento de um jogador vai direto ao navegador do outro (WebRTC, §5.1)**, sem passar pelos EUA: o boneco do
+  oponente fica ~60 ms atrás do jogador em vez de ~230 ms. A sala continua sendo o lobby e o juiz. Se a conexão direta
+  não sair, tudo volta pela sala sem o jogador perceber.
 - Se o diretor preferir o site no Vercel/Netlify, dá do mesmo jeito: só o lobby fica no Cloudflare, e o site aponta para
   ele (variável `VITE_MP_URL=wss://<nome>.workers.dev/ws` no build; `?mp=<url>` na página também troca).
 
@@ -45,7 +48,8 @@
   - **Sobra para jogar ~14 h por dia de graça.** Com mais gente, o plano pago custa US$ 5/mês.
 - **Onde o lobby roda:** Durable Objects ainda não nascem na América do Sul. A dica `sam` do Worker cai no leste dos
   EUA, e um objeto não muda de lugar depois de criado (docs da Cloudflare, "Data location", conferido em 2026-10-16).
-  Medido do Rio (borda GIG a ~10 ms): ping de ~140 ms até o lobby. Para jogar entre amigos dá; para baixar, ver §5.
+  Medido do Rio (borda GIG a ~10 ms): ping de ~140 ms até o lobby. O estado dos jogadores não passa mais por lá
+  (canal direto, §5.1); o que segue pelos EUA é o juiz (§5.2).
 - Assets: até 20 mil arquivos e 25 MiB por arquivo no grátis. O maior arquivo do jogo tem 6,2 MB (`hoops_player.glb`).
 
 ## 4. Como publicar (Cloudflare)
@@ -116,15 +120,15 @@ na tela é um **boneco que repete os comandos de animação** do outro jogador, 
 - Do outro lado, o `RemotePlayer` tem o próprio `PlayerAnimator`, a roupa branca e a própria bola. Ele toca os mesmos
   comandos e, enquanto o outro está com a bola no drible, a bola fica presa à mão **do boneco** (a rede nunca tira a
   bola da mão dele). No voo e com a bola solta, mostra a bola que veio pela rede (quem arremessou manda nela).
-- Posição e velocidade chegam 20 vezes por segundo e são interpoladas ~100 ms no passado; o atraso fica escondido
-  atrás da animação. Teletransporte (bola de saída) não é interpolado: o boneco pula para o lugar novo.
+- Posição e velocidade chegam 30 vezes por segundo pelo canal direto (20 pela sala) e são interpoladas 60–100 ms no
+  passado; o atraso fica escondido atrás da animação. Teletransporte (bola de saída) não é interpolado: o boneco pula
+  para o lugar novo.
 - **Relógio:** cada mensagem leva o relógio de quem mandou. Quem recebe estima a diferença pelo menor atraso visto e
   toca comandos e posições na mesma linha do tempo, então um drible começa exatamente onde o jogador estava.
 - **Nada que vem do outro jogador é confiável:** toda mensagem é validada (tipos, números finitos, nomes de dribles
   conhecidos) e um comando que falhar é descartado sem derrubar o jogo.
-- **WebSocket pela sala primeiro, WebRTC depois.** O lobby fica no leste dos EUA (§3), então o estado de um jogador
-  vai do Brasil aos EUA e volta ao outro: ~140 ms de ping medido do Rio. Conexão direta entre os navegadores (WebRTC)
-  cortaria a ida aos EUA, mas sofre com o CGNAT das operadoras. Pode entrar depois sem mudar o boneco.
+- **Caminho:** direto entre os navegadores (WebRTC, §5.1); pela sala quando a conexão direta não sai. O boneco não
+  sabe por onde veio.
 
 **Medido (2026-10-16, teste de eco `web/tools/eco-boneco.mjs`).** O boneco repete o próprio jogador com 60 ms de rede
 + até 25 ms de jitter, 20 envios/s, Chromium headless a 60 FPS:
@@ -140,6 +144,101 @@ na tela é um **boneco que repete os comandos de animação** do outro jogador, 
 Rodar de novo: `node tools/eco-boneco.mjs <pasta> [roteiro] [opções]` com `ECO_ORIGIN` apontando para um Vite sem HMR
 (o roteiro usa o formato do `tools/capturar.mjs`; `'{"offset":[0,0,0],"hideLocal":true}'` mostra só o boneco).
 
+### 5.1 Canal direto entre os jogadores (WebRTC)
+
+> Pedido (2026-10-16): baixar a latência entre os dois jogadores. Antes, todo o estado passava pelo Durable Object no
+> leste dos EUA (§3): ~140 ms de ping do Rio, mais ~100 ms de buffer do boneco.
+
+Código: `web/src/net/PeerLink.ts` (canal), `NetClient` (escolhe o caminho), `Hub` (repassa a sinalização). O boneco
+não mudou e o `OnlineMatch` só pergunta ao `NetClient` o ritmo de envio: os dois continuam com `net.send({t:'st'})` e
+`net.on('st')`.
+
+- **O que vai direto:** só o `st` (estado do jogador para o boneco do outro). Lobby, juiz (`g.*`, `match.state`),
+  ping e relógio do servidor continuam no WebSocket da sala.
+- **Conexão:** no `match.start`, o lugar 1 pede (`rtc {k:'req'}`) e o lugar 0 oferece; offer, answer e candidatos ICE
+  passam pela sala na mensagem `rtc`, que o servidor repassa ao outro da sala sem ler (quem recebe valida). STUN
+  público e grátis (Google e Cloudflare); **sem TURN** (D14). Tentativa que não abre em 10 s falhou; o lugar 1 tenta
+  de novo depois de 1, 3, 8, 20 e 30 s e desiste até a próxima partida. Revanche e volta de uma queda reaproveitam o
+  canal se ele estiver de pé.
+- **Canal sem ordem e sem retransmissão** (`ordered: false, maxRetransmits: 0`, UDP de verdade): pose perdida não faz
+  falta (a próxima chega em 33 ms) e não segura as seguintes, como um pacote perdido segura tudo no TCP do WebSocket.
+- **Comandos de animação não se perdem** (decisão): o `st` que leva comandos (`Payload.c`: drible, arremesso,
+  bandeja, defesa…) ganha um número `r`; quem recebe confirma na hora (`ack`) e descarta repetidos; quem mandou repete
+  o quadro a cada envio até a confirmação (no máximo 1,5 s: depois disso o boneco já passou do lance). Um quadro
+  perdido chega de novo ~33–50 ms depois, dentro do buffer do boneco. Por que não um canal confiável do SCTP: ele também
+  não perde, mas reenvia só no timer dele (centenas de ms) e, ordenado, segura na fila as poses que vêm atrás. Por que
+  não mandar os comandos repetidos N vezes sem confirmação: uma rajada de perda maior que N envios (Wi-Fi) ainda
+  apagaria o lance.
+- **Volta para a sala sem o jogador perceber:** cada lado manda um ping pelo canal a cada 200 ms. Sem nada chegando
+  por 400 ms (canal mudo: NAT esqueceu a rota, Wi-Fi caiu), o `st` passa a sair pela sala, e os quadros com comando
+  ainda sem confirmação vão junto (com o mesmo `r`: repetido não toca duas vezes). O ping voltou: o `st` volta para o
+  canal. Sem conexão direta (CGNAT dos dois lados, rede que bloqueia UDP), tudo fica na sala como antes.
+- **30 envios por segundo pelo canal** (`NetClient.stateHz`): não passa pela sala, então não gasta a cota do plano
+  grátis (§3), e o buffer do boneco acompanha o intervalo entre envios (60 ms, o piso, contra ~75 ms a 20 Hz). Pela
+  sala continua 20 por segundo.
+- **Só em sala privada:** a conexão direta mostra o IP público de cada um ao outro (é o candidato do STUN). Na sala
+  com código os dois se conhecem; na partida rápida (desconhecido) o canal não sobe e tudo vai pela sala. Para ligar
+  também na partida rápida, é o `!msg.room.quick` no `match.start` do `NetClient`.
+- **Desligar ou testar a falha:** `?p2p=0` (só a sala) e `?p2p=falha` (tenta sem candidato nenhum: nunca conecta) na
+  URL, ou `VITE_P2P=0|falha` no build. O debug da partida (`window.__garrafao.online().link`) mostra o estado do
+  canal, por onde o `st` está saindo (`via`), o ping do canal, a rota (`host`/`srflx`) e as contagens por caminho. O
+  ping do HUD continua sendo o da sala (o do juiz).
+- **Compatível com o protocolo 2** (a versão não mudou): um cliente antigo ignora `rtc` e fica na sala; um servidor
+  antigo recusa `rtc` e o cliente novo fica na sala.
+
+**Medido (2026-10-16, `web/tools/latencia-online.mjs`).** Duas abas headless na mesma máquina, no Rio, os dois
+jogadores andando de um lado para o outro, 20–30 s. "Rede" vai do relógio de quem mandou à chegada no outro (relógios
+das duas abas acertados pelo do Node); "boneco atrás" é o que o relógio do boneco usa: a menor rede dos últimos 3 s
+mais o buffer.
+
+| Caminho do estado | Ping da sala | Rede jogador→jogador (mediana / p90) | Buffer do boneco | Boneco atrás do jogador |
+|---|---|---|---|---|
+| Jogo publicado (sala no leste dos EUA), antes | 153–167 ms | 132 / 171–177 ms | ~100 ms | **~230 ms** |
+| Sala local com +65 ms por sentido (o atraso do Durable Object), `?p2p=0` | ~132 ms | 132 / 135 ms | 75 ms | ~205 ms |
+| Mesma sala, canal direto a 20 Hz | ~132 ms | 2,5–2,9 / 5–6 ms | 72 ms | ~75 ms |
+| Mesma sala, **canal direto a 30 Hz** (o que ficou) | ~132 ms | 1,5–2,2 / 2,5 ms | 60 ms | **~62 ms** |
+
+- Entre duas casas, a rede direta é o ping entre os dois jogadores (dentro do Brasil, tipicamente 5–30 ms: estimado,
+  não medido aqui). O buffer não muda.
+- O STUN responde daqui e o NAT desta rede é do tipo "cone" (o mesmo endereço público para três servidores STUN): a
+  conexão direta deve sair com a maioria dos amigos. Quem estiver atrás de CGNAT simétrico só fica sem canal se o outro
+  também estiver; aí joga pela sala, como antes.
+- Rodar de novo: `node tools/latencia-online.mjs --origem=<Vite sem HMR> --sala-local=8793 --atraso=65 [--p2p=0]`, ou
+  `--origem=https://garrafao.garrafao-web.workers.dev` para medir o jogo publicado (opções no topo do arquivo).
+
+Testes: `src/net/peerLink.test.ts` (rede de mentira: conexão, comando perdido e repetido, canal mudo e de volta,
+falha forçada, partida rápida, sinalização torta; e o `Hub` repassando `rtc`) e `e2e/online-p2p.spec.ts` (dois
+navegadores: o estado vai direto; cortado em silêncio, volta pela sala com o boneco seguindo; o canal volta; e uma
+partida inteira com `?p2p=falha`). O `e2e/online.spec.ts` passa contra um Vite normal (canal direto) e contra um com
+`VITE_P2P=falha` (tudo pela sala).
+
+### 5.2 Sala em São Paulo (VM grátis da Oracle) × canal direto: decisão
+
+Alternativa estudada: tirar o lobby do Durable Object e rodar o mesmo `Hub` num servidor Node (`web/server/dev.ts`)
+numa VM grátis da Oracle Cloud em São Paulo. Medido daqui (Rio, 2026-10-16, conexão TCP): Oracle São Paulo ~20 ms,
+Oracle Vinhedo ~20 ms, Oracle Ashburn (leste dos EUA) ~127 ms, borda da Cloudflare (GIG) ~15–20 ms.
+
+| | Durable Object + canal direto (feito) | Lobby Node numa VM Always Free em São Paulo |
+|---|---|---|
+| Movimento do oponente (`st`) | o ping entre os dois (mesma máquina: ~2 ms) + buffer de 60 ms | ~20 ms (2 × ~10 ms até SP) + buffer |
+| Juiz: placar, rebote disputado, roubo, toco | ida e volta até os EUA: ~150 ms | **~20 ms** |
+| Quem não conecta direto (CGNAT dos dois lados) | sala nos EUA: ~130 ms, como antes | ~20 ms para todo mundo |
+| Custo | grátis | grátis (Always Free: duas VMs AMD de 1/8 OCPU e 1 GB, ou Ampere A1 até 2 OCPU e 12 GB; só na região escolhida no cadastro, que pede cartão) |
+| Manutenção | nenhuma: `npm run publicar` | uma VM Linux para cuidar: atualizações, firewall, serviço, monitoramento; `wss://` exige certificado (domínio + Let's Encrypt, ou Cloudflare Tunnel) |
+| Risco de sumir | — | a Oracle pode recolher VM grátis ociosa (CPU, rede e memória abaixo de 20% em 7 dias, e um lobby de 1x1 fica assim quase sempre); capacidade de A1 costuma faltar |
+| Disponibilidade | plataforma da Cloudflare | uma VM só: caiu, não tem jogo |
+
+Fonte das regras do Always Free: docs da Oracle, "Always Free Resources" (conferido em 2026-10-16).
+
+**Decisão (2026-10-16): fica o Durable Object com o canal direto.** Ele tira o atraso que o jogador vê o tempo todo
+(o boneco do oponente e a contestação, que lê o estado do defensor) sem custo e sem servidor para cuidar, e funciona
+para todo mundo (quem não conecta direto joga como antes). O que continua a ~150 ms é a ida e volta do juiz: algumas
+vezes por posse (rebote disputado, sorteio do roubo, cesta), e quase sempre atrás de uma animação (contagem do check,
+comemoração). **Rever se os testes de jogo mostrarem rebote ou roubo injusto:** o passo seguinte é o lobby em São
+Paulo (o mesmo `Hub`, `npm run server` atrás de um Cloudflare Tunnel para o `wss://`), com o canal direto mantido (os
+dois somam). Antes disso, conferir se a Cloudflare passou a criar Durable Objects na América do Sul: um objeto novo
+(outro nome em `idFromName`) com a dica `sam` nasceria lá, de graça e sem VM.
+
 ## 6. Netcode e regras do 1x1
 
 Código: `web/src/net/` (protocolo, cliente, `hub/`), `web/server/dev.ts`, `web/src/menu/OnlineLobby.ts`,
@@ -153,7 +252,7 @@ Código: `web/src/net/` (protocolo, cliente, `hub/`), `web/server/dev.ts`, `web/
 | A bola (drible, voo, bola solta depois do erro) | **o navegador de quem tem a posse** | A física da bola já roda a 120 Hz no Freestyle de quem arremessou |
 | Placar, posse, check-ball, rebote, roubo (sorteio), toco (bola solta), limpar a bola, relógio de posse, vitória, queda de conexão | **servidor (`Referee`)** | Os dois veem o mesmo placar; um relato atrasado de outra posse é ignorado (`seq`) |
 | Contestação e toco do meu arremesso | **meu navegador** (com o estado do defensor que chegou) | A soltura é minha; o toco desvia a minha bola na hora |
-| O oponente na minha tela | boneco remoto (§5) | Estado dele 20×/s, ~100 ms no passado |
+| O oponente na minha tela | boneco remoto (§5) | Estado dele 30×/s direto de um navegador ao outro (20×/s pela sala sem o canal), ~60 ms no passado (§5.1) |
 
 O servidor nunca simula a bola nem o corpo: ele recebe relatos (`g.release`, `g.result`, `g.claim`, `g.cleared`,
 `g.block`, `g.steal`) e decide. Entre amigos isso basta; ranqueado exige validar os relatos (distância, tempo de voo) ou servidor autoritativo.
@@ -213,9 +312,10 @@ Um endpoint (`/ws`), quadros JSON `{t, ...}`, até 64 KB, até 120 por segundo p
 |---|---|
 | `hello {v, card, token?}` | Identidade (cartão da build: nome, altura, envergadura, OVR, defesa de perímetro, roubo, toco, impulsão, controle de bola, níveis de Glove e Unpluckable) e reconexão. Protocolo 2 desde a defesa |
 | `ping {c}` | A cada 2 s: latência e relógio do servidor (amostra de menor ida e volta) |
+| `rtc {d}` | Sinalização do canal direto (pedido, offer, answer, ICE) para o outro da sala, com ou sem partida (§5.1) |
 | `queue.join` / `queue.leave` | Partida rápida |
 | `room.create {rules?}` / `room.join {code}` / `room.leave` / `room.ready` / `room.rules` / `room.rematch` | Sala |
-| `st {d}` | Estado do meu jogador para o boneco do outro (o servidor repassa sem ler) |
+| `st {d}` | Estado do meu jogador para o boneco do outro (o servidor repassa sem ler), quando o canal direto não está de pé |
 | `g.release` / `g.result` / `g.claim` / `g.cleared` `{seq, ...}` | Relatos da jogada para o juiz |
 | `g.block {seq}` | Quem arremessou: tomei toco, a bola fica solta já |
 | `g.steal {seq, exp}` | Quem defende: tapa na bola com a exposição que viu (0..1); o juiz sorteia |
@@ -227,7 +327,8 @@ Um endpoint (`/ws`), quadros JSON `{t, ...}`, até 64 KB, até 120 por segundo p
 | `match.start {room, you, state}` | Partida começou (também na revanche e ao voltar de uma queda) |
 | `match.state {state, event}` | Cada mudança: fase, placar, posse, bola, limpar, relógio, vencedor + o evento (cesta, rebote, roubo, toco…) |
 | `opponent {connected, graceEndsAt}` | O outro caiu / voltou |
-| `st {d}` | Estado do oponente |
+| `st {d, r?}` | Estado do oponente pela sala (`r`: quadro com comando que o canal direto não confirmou antes de cair) |
+| `rtc {d}` | Sinalização do canal direto vinda do oponente |
 
 ### 6.5 Rodar e testar no PC
 
@@ -244,6 +345,8 @@ E2E com dois navegadores: `E2E_ORIGIN=<Vite sem HMR> npx playwright test e2e/onl
 na 8791, ou em `E2E_HUB_PORT`, com `HUB_SORTE=1`: o sorteio do roubo sai sempre; `?sorte=1` faz o mesmo com o toco).
 No ar: `E2E_MP=wss://garrafao.garrafao-web.workers.dev/ws E2E_ORIGIN=<site publicado>` usa a sala publicada (o roubo
 vira sorteio de verdade). A defesa foi publicada assim em 2026-10-16 e os 3 casos passaram no Worker e na Vercel.
+Canal direto: `e2e/online-p2p.spec.ts` (sala na 8792); para o fallback, rode os dois arquivos contra um Vite com
+`VITE_P2P=falha`. Latência: `tools/latencia-online.mjs` (§5.1).
 
 ### 6.6 O que ainda falta para ficar como o 2K
 
@@ -261,12 +364,15 @@ Duas sessões receberam o mesmo pedido e dividiram assim:
 |---|---|---|
 | Protocolo, lobby e salas (`Hub`), servidor de desenvolvimento (Node), modo 1x1, ganchos no Freestyle, §6 | `web/src/net/`, `web/server/`, `web/src/main.ts` | "Multiplayer 1v1 no Vercel/Netlify" |
 | Publicação (Worker + Durable Object, build sem modelos brutos), este documento menos o §6, boneco do adversário | `web/deploy/`, `docs/24`, `web/src/online/` | esta |
+| Canal direto WebRTC, medição de latência, §5.1–5.2 (aberta pela da publicação, combinada com a do 1v1) | `web/src/net/PeerLink.ts`, `web/tools/latencia-online.mjs`, `web/e2e/online-p2p.spec.ts` | "latência do 1x1" |
 
 ## 8. Riscos
 
 - **Trapaça:** cada cliente manda no próprio jogador e no voo da própria bola. Entre amigos, tudo bem; ranqueado exige
   servidor autoritativo (`12-arquitetura-tecnica.md` §4).
-- **WebSocket é TCP:** um pacote perdido segura os seguintes por um instante. O buffer de interpolação absorve a maior
-  parte; WebRTC (UDP) resolve se incomodar.
+- **Sala longe:** o juiz continua no leste dos EUA (~150 ms de ida e volta do Rio). Decisão e próximo passo em §5.2.
+- **Conexão direta mostra o IP:** cada jogador vê o IP público do outro (candidato do STUN). Por isso o canal só sobe
+  em sala privada (§5.1).
+- **CGNAT e redes que bloqueiam UDP:** sem TURN (D14), quem não conecta direto joga pela sala, com o atraso de antes.
 - **Limite diário do plano grátis:** se estourar, a sala recusa conexões até 00:00 UTC (21:00 em Brasília). O jogo
   deve mostrar a mensagem, não travar.

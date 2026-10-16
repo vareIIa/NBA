@@ -272,8 +272,9 @@ export class OnlineMatch {
     this.tryClear();
 
     this.sendAcc += dt;
-    if (this.sendAcc >= 1 / SendHz) {
-      this.sendAcc %= 1 / SendHz;
+    const period = 1 / net.stateHz(SendHz); // mais rápido pelo canal direto (NetClient.stateHz)
+    if (this.sendAcc >= period) {
+      this.sendAcc %= period;
       const owner = iOwn && game.ballMesh.visible;
       const m = game.ballMesh;
       const ball = owner
@@ -304,6 +305,7 @@ export class OnlineMatch {
       winner: s.winner,
       net: this.deps.net.status,
       rtt: Math.round(this.deps.net.rtt),
+      link: this.deps.net.linkStats(),
       me: { x: +game.position.x.toFixed(2), y: +game.position.y.toFixed(2), phase: game.phase, ballVisible: game.ballMesh.visible },
       remote: { x: +this.remotePos.x.toFixed(2), y: +this.remotePos.y.toFixed(2), ball: !!this.remote.ballWorld(this.ballTmp) },
       ballAt: ((b) => (b ? [+b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2)] : null))(this.ballCore()),
