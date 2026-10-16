@@ -1,13 +1,18 @@
 // Fila do HY 3D Studio: cole numa aba em https://hy3d.tencent.ai/robots.txt (logada).
 // Antes, defina localStorage.fila = JSON.stringify([{n, geo, col, apose?, rig?}, ...]).
 // Cada item passa por: geometria (texto) -> textura PBR [-> rig se rig:true].
+// Item com `from: <n de outro item>` (sem `geo`) só pinta outra textura na geometria daquele item (ex.: o kit branco na
+// mesma regata do kit vermelho): 1 crédito e a mesma forma, então o encaixe vale para os dois.
 // Sem a retopologia do site (vivia em "servidor lotado"): o Blender reduz os polígonos (Tools/Animacao/vestir.py).
 // Casa as obras pelo requestId que nós mesmos geramos; no máximo 5 tarefas por conta.
+// Outra sessão no mesmo Chrome com fila própria: antes de colar, `window.FILA_KEY = 'fila_<nome>'` (o localStorage é da
+// origem e seria dividido).
+var K = window.FILA_KEY || 'fila';
 window.hy = async (p, b = {}) => { const t = await (await fetch('/api/game3d/' + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) })).text(); return JSON.parse(t.trim().split('\n').pop()); };
 window.rid = () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
 window.rsp = w => Object.values(w.modelInfo || {}).find(v => v && typeof v == 'object' && (v.fbxUrl || v.glbUrl || v.rigFbxUrl));
 window.tick = async () => {
-  const F = JSON.parse(localStorage.fila);
+  const F = JSON.parse(localStorage[K]);
   const L = (await hy('general_info/get_works_list', { page: 1, pageSize: 60 })).data.list;
   const byReq = {}; for (const w of L) { try { byReq[JSON.parse(w.inputInfo).requestId] = w; } catch (e) {} }
   let running = L.filter(w => w.status == 0 || w.status == 1).length;
@@ -21,6 +26,11 @@ window.tick = async () => {
   };
   for (const it of F) {
     if (it.stage == 'done' || it.stage == 'failed') continue;
+    if (!it.stage && it.from) {
+      const src = F.find((x) => x.n == it.from);
+      if (src?.geoWid && src.out_geo?.fbx) await submit(it, 'texture_painting/text2texture_v31', { worksType: 1, worksId: '', dependOnWorksId: src.geoWid, fbxUrl: src.out_geo.fbx, imageUrl: '', glbUrl: '', pbrImageUrl: '', prompt: it.col, editType: 0, partFbxUrl: '', localNames: null, property: null, viewsImage: {}, segmentationInfo: '', keepUv: false, enablePbr: true, seamLess: false, texRes: '', texFmt: '' }, 'tex');
+      continue;
+    }
     if (!it.stage) { await submit(it, 'geometry_generation/text2geometry', { model: '', singleImage: '', viewsImage: {}, faceCount: 50000, boundingBoxList: null, worksType: 1, dependOnWorksId: '', modelVersion: 'v3.1', apose: !!it.apose, prompt: it.geo }, 'geo'); continue; }
     const w = byReq[it.req]; if (!w) continue; it.wid = w.worksId;
     if (w.status == 3 || w.status == 4) {
@@ -31,11 +41,12 @@ window.tick = async () => {
     }
     if (w.status != 2) continue;
     const o = rsp(w); it['out_' + it.stage] = { fbx: o?.fbxUrl || o?.rigFbxUrl, glb: o?.glbUrl, img: o?.imageUrl };
+    if (it.stage == 'geo') it.geoWid = w.worksId;
     if (it.stage == 'geo' || it.stage == 'retopo') await submit(it, 'texture_painting/text2texture_v31', { worksType: 1, worksId: '', dependOnWorksId: w.worksId, fbxUrl: o.fbxUrl, imageUrl: '', glbUrl: '', pbrImageUrl: '', prompt: it.col, editType: 0, partFbxUrl: '', localNames: null, property: null, viewsImage: {}, segmentationInfo: '', keepUv: false, enablePbr: true, seamLess: false, texRes: '', texFmt: '' }, 'tex');
     else if (it.stage == 'tex' && it.rig) await submit(it, 'bone_skinning/bone_skinning', { worksType: 1, dependOnWorksId: w.worksId, fbxUrl: o.fbxUrl, isWithBone: false, isKeepBone: false, modelVersion: '' }, 'rig');
     else it.stage = 'done';
   }
-  localStorage.fila = JSON.stringify(F);
+  localStorage[K] = JSON.stringify(F);
   window.__last = new Date().toISOString();
 };
 clearInterval(window.__iv);

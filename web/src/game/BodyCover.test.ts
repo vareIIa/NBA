@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { coveredVertices, rayTriangle, skinnedWorldPositions, triangleSoup } from './BodyCover';
+import { ArmBones, coveredVertices, rayTriangle, skinnedWorldPositions, triangleSoup } from './BodyCover';
 
 describe('BodyCover', () => {
   it('raio acerta o triângulo à frente e erra o de trás', () => {
@@ -41,6 +41,25 @@ describe('BodyCover', () => {
         expect(legacy[i]).toBe(0);
       }
       if (y < 0.25 || y > 0.75) expect(covered[i]).toBe(0);
+    }
+  });
+
+  it('pele de braço sob uma peça que não segue o braço continua (o deltoide sai de baixo da alça)', () => {
+    // "Corpo": cilindro de raio 0,15; a metade de cima é "braço" (upperarm_l), a de baixo, tronco. "Regata": tubo de raio
+    // 0,2 que cobre tudo e só segue o tronco.
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 1, 24, 10, true).translate(0, 0.5, 0));
+    const shirt = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.2, 24, 4, true).translate(0, 0.5, 0));
+    body.updateMatrixWorld();
+    shirt.updateMatrixWorld();
+    const p = skinnedWorldPositions(body);
+    const bone = (v: number) => (p[v * 3 + 1] > 0.5 ? 'upperarm_l' : 'spine_02');
+    const shirtBones = new Set(['spine_02', 'spine_03']);
+    const accept = (v: number) => !ArmBones.test(bone(v)) || shirtBones.has(bone(v));
+    const covered = coveredVertices(p, body.geometry.getIndex()!.array, triangleSoup([shirt]), 0.12, 0.04, 0, accept);
+    for (let i = 0; i < covered.length; i++) {
+      const y = p[i * 3 + 1];
+      if (y > 0.55) expect(covered[i]).toBe(0);
+      if (y < 0.45) expect(covered[i]).toBe(1);
     }
   });
 });

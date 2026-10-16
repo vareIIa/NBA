@@ -40,6 +40,55 @@ export function triangleSoup(meshes: (THREE.SkinnedMesh | THREE.Mesh)[]): Float3
   return new Float32Array(chunks);
 }
 
+/**
+ * Ossos de cada triângulo da sopa (mesma ordem de `triangleSoup`): os que pesam mais de 10% em algum dos 3 vértices,
+ * com os ossos de pano (`pano_*`) contados como o osso pai. `null` = peça sem pele (vale para qualquer osso).
+ */
+export function triangleBones(meshes: (THREE.SkinnedMesh | THREE.Mesh)[]): (Set<string> | null)[] {
+  const out: (Set<string> | null)[] = [];
+  for (const m of meshes) {
+    const idx = triIndex(m.geometry);
+    const sk = m as THREE.SkinnedMesh;
+    const si = sk.isSkinnedMesh ? m.geometry.getAttribute('skinIndex') : null;
+    const sw = sk.isSkinnedMesh ? m.geometry.getAttribute('skinWeight') : null;
+    for (let t = 0; t + 2 < idx.length; t += 3) {
+      if (!si || !sw) {
+        out.push(null);
+        continue;
+      }
+      const set = new Set<string>();
+      for (let k = 0; k < 3; k++)
+        for (let c = 0; c < 4; c++) {
+          if (sw.getComponent(idx[t + k], c) <= 0.1) continue;
+          let bone: THREE.Object3D | null = sk.skeleton.bones[si.getComponent(idx[t + k], c)];
+          while (bone && bone.name.startsWith('pano_')) bone = bone.parent;
+          if (bone) set.add(bone.name);
+        }
+      out.push(set);
+    }
+  }
+  return out;
+}
+
+/** Osso com maior peso em cada vértice (nome), ou '' sem pele. */
+export function dominantBones(mesh: THREE.SkinnedMesh | THREE.Mesh): string[] {
+  const n = mesh.geometry.getAttribute('position').count;
+  const sk = mesh as THREE.SkinnedMesh;
+  const si = sk.isSkinnedMesh ? mesh.geometry.getAttribute('skinIndex') : null;
+  const sw = sk.isSkinnedMesh ? mesh.geometry.getAttribute('skinWeight') : null;
+  const out: string[] = new Array(n).fill('');
+  if (!si || !sw) return out;
+  for (let i = 0; i < n; i++) {
+    let best = 0;
+    for (let c = 1; c < 4; c++) if (sw.getComponent(i, c) > sw.getComponent(i, best)) best = c;
+    out[i] = sk.skeleton.bones[si.getComponent(i, best)]?.name ?? '';
+  }
+  return out;
+}
+
+/** Pele de braço: só some sob uma peça que também segue aquele osso (a alça da regata segue o tronco). */
+export const ArmBones = /^(upperarm|lowerarm|hand|palm|fingers|thumb)_/;
+
 /** Möller–Trumbore: distância ao longo do raio até o triângulo, ou -1. */
 export function rayTriangle(o: ArrayLike<number>, d: ArrayLike<number>, tri: Float32Array, i: number): number {
   const ax = tri[i], ay = tri[i + 1], az = tri[i + 2];
@@ -107,8 +156,8 @@ class TriangleGrid {
         for (let z = Math.floor(lo[2] / c); z <= Math.floor(hi[2] / c); z++) fn(`${x},${y},${z}`);
   }
 
-  /** O raio o + s·d (0 < s < len) bate em algum triângulo? */
-  hits(o: number[], d: number[], len: number): boolean {
+  /** O raio o + s·d (0 < s < len) bate em algum triângulo (aceito por `accept`, que recebe o índice do triângulo)? */
+  hits(o: number[], d: number[], len: number, accept?: (tri: number) => boolean): boolean {
     const id = ++this.query;
     const lo = [0, 0, 0], hi = [0, 0, 0];
     for (let k = 0; k < 3; k++) (lo[k] = Math.min(o[k], o[k] + d[k] * len)), (hi[k] = Math.max(o[k], o[k] + d[k] * len));
@@ -119,7 +168,7 @@ class TriangleGrid {
         if (this.stamp[t / 9] === id) continue;
         this.stamp[t / 9] = id;
         const hit = rayTriangle(o, d, this.tri, t);
-        if (hit > 0 && hit < len) {
+        if (hit > 0 && hit < len && (!accept || accept(t / 9))) {
           found = true;
           return;
         }
@@ -137,19 +186,24 @@ class TriangleGrid {
  * peça a menos de `maxIn` (a pele furou o tecido: peito ou coxa mais largos que a peça; sem essa pele, aparece o
  * tecido que está logo abaixo). Depois a máscara é erodida `erode` anéis: perto da barra e do decote a pele continua um
  * pouco por baixo do tecido, e o recorte (serrilhado, por triângulo) não aparece pela fresta entre o pano e o corpo.
+ *
+ * `accept(vértice, triângulo)`: só conta o triângulo da peça que se move com aquele vértice do corpo. A pele do deltoide
+ * que no bind (braços em T) fica sob a alça sai de baixo dela quando o braço desce; escondida, virava buraco no ombro.
  */
-export function coveredVertices(p: Float32Array, idx: ArrayLike<number>, cover: Float32Array, maxDist: number, maxIn = 0.04, erode = 1): Uint8Array {
+export function coveredVertices(
+  p: Float32Array,
+  idx: ArrayLike<number>,
+  cover: Float32Array,
+  maxDist: number,
+  maxIn = 0.04,
+  erode = 1,
+  accept?: (vertex: number, tri: number) => boolean,
+): Uint8Array {
   const n = vertexNormals(p, idx);
   const count = p.length / 3;
   // Costuras: cópias da mesma posição viram um vértice só (normal média e vizinhança comum).
-  const rep = new Int32Array(count);
-  const welded = new Map<string, number[]>();
-  for (let i = 0; i < count; i++) {
-    const key = `${p[i * 3].toFixed(4)},${p[i * 3 + 1].toFixed(4)},${p[i * 3 + 2].toFixed(4)}`;
-    (welded.get(key) ?? welded.set(key, []).get(key)!).push(i);
-  }
-  for (const group of welded.values()) {
-    for (const i of group) rep[i] = group[0];
+  const { rep, groups } = weld(p);
+  for (const group of groups) {
     if (group.length < 2) continue;
     let x = 0, y = 0, z = 0;
     for (const i of group) (x += n[i * 3]), (y += n[i * 3 + 1]), (z += n[i * 3 + 2]);
@@ -161,19 +215,18 @@ export function coveredVertices(p: Float32Array, idx: ArrayLike<number>, cover: 
   const o = [0, 0, 0], d = [0, 0, 0];
   for (let i = 0; i < count; i++) {
     if (rep[i] !== i) continue;
+    const ok = accept ? (tri: number) => accept(i, tri) : undefined;
     for (let k = 0; k < 3; k++) (d[k] = n[i * 3 + k]), (o[k] = p[i * 3 + k] - d[k] * 0.002);
-    if (grid.hits(o, d, maxDist)) {
+    if (grid.hits(o, d, maxDist, ok)) {
       out[i] = 1;
       continue;
     }
     if (maxIn <= 0) continue;
     for (let k = 0; k < 3; k++) (d[k] = -n[i * 3 + k]), (o[k] = p[i * 3 + k] - d[k] * 0.002);
-    if (grid.hits(o, d, maxIn)) out[i] = 1;
+    if (grid.hits(o, d, maxIn, ok)) out[i] = 1;
   }
   if (erode > 0) {
-    const nbr: number[][] = Array.from({ length: count }, () => []);
-    for (let t = 0; t + 2 < idx.length; t += 3)
-      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) if (a !== b) nbr[rep[idx[t + a]]].push(rep[idx[t + b]]);
+    const nbr = neighbors(idx, rep, count);
     for (let r = 0; r < erode; r++) {
       const next = out.slice();
       for (let i = 0; i < count; i++) if (out[i] && nbr[i].some((j) => !out[j])) next[i] = 0;
@@ -184,14 +237,63 @@ export function coveredVertices(p: Float32Array, idx: ArrayLike<number>, cover: 
   return out;
 }
 
+/** Cópias da mesma posição (costuras de UV) apontam para um representante. */
+function weld(p: Float32Array): { rep: Int32Array; groups: number[][] } {
+  const count = p.length / 3;
+  const rep = new Int32Array(count);
+  const welded = new Map<string, number[]>();
+  for (let i = 0; i < count; i++) {
+    const key = `${p[i * 3].toFixed(4)},${p[i * 3 + 1].toFixed(4)},${p[i * 3 + 2].toFixed(4)}`;
+    (welded.get(key) ?? welded.set(key, []).get(key)!).push(i);
+  }
+  for (const group of welded.values()) for (const i of group) rep[i] = group[0];
+  return { rep, groups: [...welded.values()] };
+}
+
+/** Vizinhos por aresta, entre representantes. */
+function neighbors(idx: ArrayLike<number>, rep: Int32Array, count: number): number[][] {
+  const nbr: number[][] = Array.from({ length: count }, () => []);
+  for (let t = 0; t + 2 < idx.length; t += 3)
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) if (a !== b) nbr[rep[idx[t + a]]].push(rep[idx[t + b]]);
+  return nbr;
+}
+
+/**
+ * Devolve a pele coberta que está a até `rings` anéis de um vértice visível marcado em `seed`. No ombro (pele de braço e
+ * da clavícula que fica) o recorte serrilhado do trapézio deixava uma fresta entre a pele e a alça, e por ela aparecia o
+ * avesso escuro da regata. Essa faixa fica sob a alça e se move com a clavícula e o tronco, como a alça.
+ */
+export function uncoverNear(covered: Uint8Array, p: Float32Array, idx: ArrayLike<number>, seed: (v: number) => boolean, rings: number): Uint8Array {
+  const count = covered.length;
+  const { rep } = weld(p);
+  const nbr = neighbors(idx, rep, count);
+  const out = covered.slice();
+  let front = new Set<number>();
+  for (let i = 0; i < count; i++) if (!covered[i] && seed(i)) front.add(rep[i]);
+  for (let r = 0; r < rings; r++) {
+    const next = new Set<number>();
+    for (const i of front) for (const j of nbr[i]) if (out[j]) (out[j] = 0), next.add(j);
+    front = next;
+  }
+  for (let i = 0; i < count; i++) out[i] = out[rep[i]];
+  return out;
+}
+
 /** Tira do índice de cada malha do corpo os triângulos com 2+ vértices cobertos. Devolve quantos saíram. */
 export function hideCoveredTriangles(body: THREE.SkinnedMesh[], garments: (THREE.SkinnedMesh | THREE.Mesh)[], maxDist = 0.12): number {
   const cover = triangleSoup(garments);
+  const triBones = triangleBones(garments);
   let removed = 0;
   for (const mesh of body) {
     const p = skinnedWorldPositions(mesh);
     const idx = triIndex(mesh.geometry);
-    const covered = coveredVertices(p, idx, cover, maxDist);
+    const dom = dominantBones(mesh);
+    const accept = (v: number, tri: number): boolean => {
+      const set = triBones[tri];
+      return !set || !ArmBones.test(dom[v]) || set.has(dom[v]);
+    };
+    const shoulder = (v: number) => ArmBones.test(dom[v]) || dom[v].startsWith('clavicle_');
+    const covered = uncoverNear(coveredVertices(p, idx, cover, maxDist, 0.04, 1, accept), p, idx, shoulder, 2);
     const keep: number[] = [];
     for (let t = 0; t + 2 < idx.length; t += 3) {
       if (covered[idx[t]] + covered[idx[t + 1]] + covered[idx[t + 2]] >= 2) removed++;
