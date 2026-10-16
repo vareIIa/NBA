@@ -4,9 +4,10 @@
 //  - Roubo: o defensor aperta X (Espaço/J); o cliente dele mede a exposição da bola que vê (longe do corpo, do lado
 //    dele, quicando) e manda g.steal; o JUIZ sorteia com stealChance (rating de roubo, Glove do defensor, controle de
 //    bola e Unpluckable do atacante, todos do cartão) e, se roubou, a posse troca como num rebote defensivo.
-//  - Toco: o defensor pula (Y/K) com os braços esticados; o cliente do ARREMESSADOR, na soltura, mede a mão do defensor
-//    (o estado que chegou pela rede) contra a subida da bola e sorteia com blockChance. Toco = bola desviada e solta já
-//    (g.block), sem esperar o primeiro quique.
+//  - Toco: o defensor pula (Y/K) com os braços esticados; o cliente do ARREMESSADOR, a cada quadro do voo, mede a mão do
+//    defensor ao longo do pulo contra a bola projetada pela física (o toco físico: sim/HoopsBlock, game/BlockWatch,
+//    docs/25 §3). Toco = bola desviada e solta já (g.block), sem esperar o primeiro quique.
+//  - Postura de defesa (stanceFor/slideFor): perto do atacante, agachado e deslizando mais rápido.
 import type { PlayerCard } from './protocol.ts';
 
 /** Um tapa a cada tanto (ms) por jogador: apertar sem parar não vira metralhadora de sorteios. */
@@ -16,7 +17,10 @@ export const StealMaxChance = 0.6;
 /** Alcance do tapa além da metade da envergadura (m): o passo do bote. */
 export const StealLungeM = 0.3;
 
-/** Pulo abaixo disto (m) não é toco: só a contestação com os braços. */
+/**
+ * Pulo abaixo disto (m) não é toco: só a contestação com os braços. Antigo: o jogo decide o toco pelo toco físico
+ * (sim/HoopsBlock + game/BlockWatch, docs/25 §3); BlockMinJumpM, blockReachM e blockChance ficam pelo teste do hub.
+ */
 export const BlockMinJumpM = 0.12;
 
 /** Valores por nível [Bronze, Prata, Ouro, HOF] (os mesmos de src/sim/HoopsBadges.ts; o teste confere). */
@@ -77,6 +81,19 @@ export function stealChance(defender: PlayerCard, attacker: PlayerCard, exposure
   const chance =
     base * clamp01(exposure) * security * tierFactor(GloveValues, defender.glove) * tierFactor(UnpluckableValues, attacker.unpluckable);
   return Math.min(StealMaxChance, Math.max(0, chance));
+}
+
+/**
+ * Postura de defesa (0..1) pela distância ao atacante (m): inteira até 2,4 m, some até 3,6 m. Quem defende fica agachado
+ * com as mãos abertas e desliza mais rápido (Freestyle.defenseSlide); correndo com RT, sem postura.
+ */
+export function stanceFor(distM: number): number {
+  return 1 - smooth01((distM - 2.4) / 1.2);
+}
+
+/** Deslize da postura (0..1, Freestyle.defenseSlide) pela defesa de perímetro: 25 → 0,65; 99 → 1; LT (defesa intensa) +0,15. */
+export function slideFor(stance: number, perimeterDefense: number | undefined, intense: boolean): number {
+  return clamp01(stance) * Math.min(1, 0.65 + 0.35 * rating01(perimeterDefense) + (intense ? 0.15 : 0));
 }
 
 /** Altura do pulo de contestação/toco (m) pela impulsão: 25 → 0,40; 99 → 0,75. */

@@ -6,7 +6,7 @@ import type { PlayerBuild } from '../build/PlayerBuild';
 import { Positions, displayName, formatFeet, formatMeters } from '../build/PlayerBuild';
 import { archetypeName, overall } from '../build/BuildRules';
 
-export type MainMenuChoice = 'freestyle' | 'builder' | 'online';
+export type MainMenuChoice = 'freestyle' | 'builder' | 'online' | 'cpu';
 
 interface ModeItem {
   id: string;
@@ -24,7 +24,7 @@ export const MainModes: readonly ModeItem[] = [
   { id: 'myplayer', label: 'Meu Jogador', desc: 'MyPlayer Builder: criar, editar e trocar de build', color: '#2de0b0', pitch: 'Crie o jogador: posição, altura, peso e envergadura mudam os limites de cada atributo, como no 2K.', choice: 'builder' },
   { id: 'online', label: 'Online 1x1', desc: 'Contra um amigo pela internet', color: '#19b5e6', pitch: 'Crie uma sala e mande o código (ou o link) para o seu amigo, ou entre na partida rápida. Até 11, check-ball, limpar a bola no rebote.', choice: 'online' },
   { id: 'career', label: 'Minha Carreira', desc: 'Da quadra de rua ao profissional', color: '#2f74d8', pitch: 'A carreira começa no streetball: 1x1 e 21 na quadra do bairro, circuito 3x3, semi-pro e a liga.' },
-  { id: 'oneonone', label: '1 contra 1', desc: 'Até 11, make it take it', color: '#e9a227', pitch: 'Você contra a IA (ou um amigo no sofá), com check-ball e regras de rua.' },
+  { id: 'oneonone', label: '1 contra 1', desc: 'Você contra a CPU, até 11', color: '#e9a227', pitch: 'Você contra a CPU com check-ball e regras de rua: ela marca, contesta, dá toco, rouba e ataca com a build dela. Cinco adversários de estilos diferentes, do Calouro ao Hall da Fama.', choice: 'cpu' },
   { id: 'threes', label: '3x3', desc: 'Rua e FIBA 3x3', color: '#8a4bdc', pitch: 'Times de três, meia quadra, relógio de 12 s no modo FIBA.' },
   { id: 'settings', label: 'Configurações', desc: 'Controles, câmera, áudio e vídeo', color: '#5a6272', pitch: 'Mapa do controle (igual ao 2K), câmera, volume e qualidade gráfica.' },
 ];

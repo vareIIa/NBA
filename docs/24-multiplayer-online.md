@@ -290,14 +290,19 @@ O servidor nunca simula a bola nem o corpo: ele recebe relatos (`g.release`, `g.
    ar); **RS para cima** (teclado **↑**) levanta as mãos enquanto segura; **X** (teclado **Espaço/J**) dá o tapa do roubo.
    A pose é procedural (`web/src/anim/DefenseMotion.ts`, no `PlayerAnimator`) e vai pelo gravador para o boneco do outro
    lado (ops `hands`, `contest`, `steal`). No ar o analógico não mexe o corpo até pousar. Pulo pela impulsão da build
-   (0,40 m no 25, 0,75 m no 99).
+   (0,40 m no 25, 0,75 m no 99). Perto do atacante (até ~3,6 m), sem RT, quem defende fica na **postura de defesa**
+   (agachado, mãos abertas, deslize e recuo mais rápidos; LT = defesa intensa; docs/25 §4); o boneco do defensor faz a
+   mesma postura do outro lado, pela mesma regra.
 5. **Contestação:** na soltura, o arremessador calcula a contestação com o `HoopsContest` (altura, envergadura e defesa
    de perímetro do defensor) usando o **estado real do defensor**: mãos e pulo da amostra mais nova que chegou (sem o
    buffer de ~100 ms do boneco). Sem botão, a posição sozinha conta até 40% das mãos (perto de 1,4 m).
-6. **Toco:** se o defensor está no ar (pulo ≥ 12 cm) com a mão a até 0,30–0,45 m (rating de toco) da subida da bola
-   nos primeiros 0,3 s, o cliente do arremessador sorteia (`blockChance`, `web/src/net/defense.ts`). Tocou: a bola
-   desvia para longe da cesta quando chega à mão e vai `g.block`; o juiz solta a bola na hora (evento `block`).
-   Enterrada (bola saindo para baixo) não toma toco.
+6. **Toco (físico, docs/25 §3):** a cada quadro do voo, o cliente do arremessador projeta a bola pela física (aro e
+   tabela) e a mão do defensor ao longo do pulo dele (a fase do pulo do boneco mais o atraso dele) e decide uma vez por
+   pulo, quando o contato está para acontecer (`web/src/game/BlockWatch.ts`, `web/src/sim/HoopsBlock.ts`). Pegou: a mão
+   do boneco vai até a bola, a bola espirra para longe da cesta no instante do contato e vai `g.block`; o juiz solta a
+   bola na hora (evento `block`) e, por 0,45 s, ninguém pega. Tocar na bola descendo acima do aro é **interferência**:
+   o arremessador relata `g.result` com cesta. Na bandeja e na enterrada o defensor no ar também arranca a bola antes
+   da soltura (toco no aro, mais difícil na enterrada).
 7. **Roubo:** o tapa sai sempre; com a bola do atacante no drible e ao alcance (meia envergadura + 0,3 m), o defensor
    manda `g.steal` com a exposição que viu (bola longe do corpo, do lado dele, no quique; drible baixo e bola presa
    protegem). O **juiz sorteia** com os cartões (`stealChance`: roubo 25 → 6%, 99 → 40% com a bola toda exposta;

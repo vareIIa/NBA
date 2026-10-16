@@ -33,6 +33,9 @@ export class CameraRig {
   private position = new Vec3();
   private target = new Vec3();
   private initialized = false;
+  /** Tranco do impacto (m) e o relógio dele. */
+  private shake = 0;
+  private shakeT = 0;
 
   constructor(
     aspect: number,
@@ -74,7 +77,21 @@ export class CameraRig {
       this.target = lerpVec(this.target, desiredTarget, alpha);
     }
     toThree(this.position, this.camera.position);
+    // Tranco do impacto (kick): só na câmera desenhada, não no caminho suave dela.
+    if (this.shake > 1e-3) {
+      this.shakeT += dt;
+      const s = this.shake;
+      this.camera.position.x += Math.sin(this.shakeT * 71) * s;
+      this.camera.position.y += Math.sin(this.shakeT * 53 + 1.3) * s * 0.7;
+      this.camera.position.z += Math.sin(this.shakeT * 61 + 2.1) * s;
+      this.shake *= Math.exp(-dt * 10);
+    }
     this.camera.lookAt(toThree(this.target));
+  }
+
+  /** Tranco curto da câmera num impacto (toco no aro, tapa na bola): `strength` em metros, some em ~0,3 s. */
+  kick(strength: number): void {
+    this.shake = Math.max(this.shake, strength);
   }
 
   /** Projeta um ponto do núcleo na tela (pixels). */

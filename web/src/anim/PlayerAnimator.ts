@@ -60,7 +60,8 @@ import {
 } from './ProceduralMoves';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { MixamoLocomotion } from '../mocap/MixamoLocomotion';
-import { type MixamoFile, retargetMixamo } from '../mocap/Retarget';
+import { type MixamoFile, mirrorMixamoClip, retargetMixamo } from '../mocap/Retarget';
+import { type RootTrack, extractRootMotion, rootDelta, sampleHeight, sampleRoot } from './RootMotion';
 import { smoothClip } from './ClipFilter';
 import {
   type MovePhase,
@@ -120,7 +121,8 @@ interface BaseState {
   legs?: string;
 }
 
-type ActionKind = MoveKind | 'Shot' | 'Celebrate';
+/** Plant: a virada de 180° ou a parada correndo sem a bola (playPlantTurn, playPlantStop), com root motion. */
+type ActionKind = MoveKind | 'Shot' | 'Celebrate' | 'Plant';
 
 interface ActiveAction {
   kind: ActionKind;
@@ -182,6 +184,8 @@ const NoBallLoops = new Set(['Hold_Idle', FreeIdleClip, 'Walk', 'Run']);
 const LegLayerBones = ['pelvis', 'hip_l', 'thigh_l', 'calf_l', 'foot_l', 'ball_l', 'hip_r', 'thigh_r', 'calf_r', 'foot_r', 'ball_r'];
 /** Ossos que a locomoção do Mixamo escreve (a pelve também na posição). */
 const MixamoLegBones = ['pelvis', 'thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r'];
+/** Sem a bola, também o corpo de cima (a spine_01 vai à parte, pela orientação do tronco do clone). */
+const MixamoUpperBones = ['spine_02', 'spine_03', 'neck_01', 'neck_02', 'head', 'clavicle_l', 'upperarm_l', 'lowerarm_l', 'hand_l', 'clavicle_r', 'upperarm_r', 'lowerarm_r', 'hand_r'];
 /** m/s: abaixo, as pernas do loop parado (base plantada do size-up); acima, as do Mixamo. */
 const MixamoLegSpeed = [0.15, 0.6];
 const MixamoLegRate = 8; // 1/s
@@ -305,6 +309,67 @@ const FlatLateralRatio = 1.5; // pé que anda de lado (velocidade lateral > 1,5x
 const FlatReach = 0.99; // fração do alcance da perna que o tornozelo pode usar
 const FlatDropMax = 0.08; // m: o quadril desce no máximo isso para o pé plano alcançar o chão
 const FlatDropRate = 25; // 1/s: a descida do quadril acompanha a perna que chega no limite (sem degrau)
+/** m: com o pé plano, o metatarso fica ~1 cm acima do ponto mais baixo da sola (pé direito do modelo; o esquerdo, ~3 cm). */
+const LockSoleToe = 0.01;
+/**
+ * Corpo inclinado pela aceleração (pêndulo invertido): para mudar de velocidade o apoio fica atrás do centro de massa
+ * (arranque), à frente (freada) ou por fora da curva (corte), e o corpo inteiro inclina atan(a/g). Antes só a coluna
+ * inclinava 1,4°/(m/s²) e o jogador freava e virava em pé, sem plantar (diretor, 2026-10-16: "o pé jogar um pouco pro
+ * lado e dar um impulso dele se jogando pro outro lado").
+ * gain: fração de atan(a/g) (o mocap já inclina um pouco); maxDeg: teto; omega/zeta: mola (o corpo tem inércia, a
+ * inclinação não treme com o ruído da aceleração); pivot: altura do ponto em que o corpo gira, em fração da altura da
+ * pelve (0 = no chão: a pelve anda inteira para o lado; 1 = na pelve: só gira); crouch: m de agachamento por m/s² de
+ * freada ou de corte (os joelhos absorvem a carga), até crouchMax; trunkShare: o que fica da inclinação antiga do tronco.
+ */
+// ballShare: com a bola o tronco já vem inclinado da postura de drible (infiltração baixa): fica só esta fração.
+const BodyLean = { gain: 0.45, maxDeg: 14, omega: 9, zeta: 0.9, pivot: 0.55, crouch: 0.004, crouchMax: 0.06, trunkShare: 0.35, ballShare: 0.55 };
+/**
+ * Plantadas correndo sem a bola, com root motion (o clipe dirige a posição e o rumo; ver RootMotion.ts):
+ *  - Turn: virada de 180° (Mixamo "Change Direction 180", ChangeDir). Freia em ~0,5 s girando o quadril 90°, desce o
+ *    quadril ~30 cm, planta o pé de fora bem à frente, inclina o tronco para o lado novo e sai com um passo cruzado: a
+ *    "plantada" que o jogo não tinha (diretor, 2026-10-16: "o pé jogar um pouco pro lado e dar um impulso dele se
+ *    jogando pro outro lado"). Turn_L é o clipe (vira para a esquerda), Turn_R o espelho.
+ *  - Stop: parada (Mixamo "Run To Stop", RunStop). O pé da frente pousa bem à frente e freia, o quadril desce ~20 cm e o
+ *    de trás vem; antes o corpo freava a 14 m/s² com os pés juntos e as pernas retas, inclinando para trás como uma
+ *    tábua. Stop_L planta o pé esquerdo (o clipe), Stop_R o direito (espelho).
+ * O trecho vai de `start` (procurado entre startMin e startMax: a fase da passada mais parecida com a de agora) a `end`.
+ * rate: o clipe acompanha a velocidade de entrada, entre rateMin e rateMax (a virada inteira levava ~1,1 s: com o mínimo
+ * ela fica em ~0,8 s); o deslocamento é escalado à parte (moveScale) para a entrada não pular de velocidade. lift: fração
+ * da descida do quadril do clipe abaixo da altura de entrada que é desfeita (a virada descia ~32 cm, quase sentada), com os
+ * pés no lugar (as pernas esticam pelo IK). cancelAt: a partir daí (s do clipe) o LS de volta corta a plantada.
+ */
+const PlantClip = {
+  Turn: { startMin: 0.3, startMax: 0.46, end: 1.36, rateMin: 1.2, rateMax: 1.5, lift: 0.5, cancelAt: Infinity },
+  Stop: { startMin: 0, startMax: 0.12, end: 0.78, rateMin: 1.15, rateMax: 1.45, lift: 0.35, cancelAt: 0.36 },
+};
+type PlantType = keyof typeof PlantClip;
+/**
+ * Hesitação com o corpo (diretor, 2026-10-16: "o boneco nem se mexe; devia se jogar um pouco pro lado, igual no basquete
+ * de verdade"). Por cima do clipe da CMU (quase parado): o quadril vai para o lado da bola e o tronco inclina para ele,
+ * o ombro descendo (o jab que vende o lado), segura e volta; correndo, o corpo também sobe e o tronco se endireita
+ * (vende a parada), e no fim o tronco vai à frente com o quadril carregando (o arranque).
+ * shift (m) e sideDeg: parado (pés pregados: quem dobra é o joelho do lado da bola); moving: fração disso correndo.
+ * rise (m) e upDeg: endireitar correndo; goDeg/goDrop: o arranque.
+ */
+// jab: o pé do lado da bola sai (m, para fora e para a frente) em jabSeconds e volta a partir de jabBack (fração do drible).
+const HesiBody = {
+  shift: 0.15,
+  sideDeg: 17,
+  moving: 0.75,
+  rise: 0.045,
+  upDeg: 16,
+  goDeg: 10,
+  goDrop: 0.035,
+  // Só para o lado e alto: com 16 cm para fora e 7 à frente a coxa ia até a bola (size-up: bola 7 cm na coxa) e o pé
+  // rente ao chão contava como deslizando.
+  jabOut: 0.1,
+  jabAhead: 0,
+  jabLift: 0.08,
+  jabSeconds: 0.15,
+  jabBack: 0.58,
+  /** m que a bola vai para fora (o lado da bola) com o corpo no lado. */
+  ballOut: 0.06,
+};
 
 const CelebrateClips = ['Celebrate_ArmsUp', 'Celebrate_Bow', 'Celebrate_Flex', 'Celebrate_HighFive'];
 /** Comemorações que mantêm as pernas do próprio clipe (vazio: todas usam pernas livres da locomoção). */
@@ -422,6 +487,14 @@ export class PlayerAnimator {
    * (?pe=clipe volta o pé para a orientação do clipe, como antes).
    */
   flatFootEnabled = typeof location === 'undefined' || new URLSearchParams(location.search).get('pe') !== 'clipe';
+  /** Trava de pé pela sola também (não só pelo metatarso): ver applyStance. Chave de A/B do laboratório. */
+  lockBySoleEnabled = true;
+  /** O pé de apoio plano encosta no piso (antes ficava na altura da sola do clipe): ver flattenFoot. Chave de A/B. */
+  groundFlatEnabled = true;
+  /** Corpo inclinado pela aceleração (applyBodyLean). Chave de A/B do laboratório. */
+  bodyLeanEnabled = true;
+  /** Inclinação do corpo (rad: f = para a frente, r = para a direita), descida do quadril (m) e as velocidades da mola. */
+  private readonly bodyLean = { f: 0, r: 0, d: 0, vf: 0, vr: 0, vd: 0 };
   legLayerEnabled = true;
   /**
    * Dribles que, em movimento, ficam com as pernas da locomoção (camada por osso; o tronco e os braços são do drible). O
@@ -612,6 +685,33 @@ export class PlayerAnimator {
       action.play();
       this.actions.set(FreeIdleClip, action);
       this.baseWeights.set(FreeIdleClip, 0);
+    }
+    // Plantadas (PlantClip): o clipe sem o deslocamento e o giro do quadril, que viram a trilha da raiz. O ChangeDir do
+    // Mixamo vira para a esquerda (o eixo do quadril vai de +X para -Z: a frente passa por +X) e o RunStop planta o pé
+    // esquerdo; os espelhos fazem o outro lado.
+    for (const [src, mirror, left, right] of [
+      ['ChangeDir', 'ChangeDirR', 'Turn_L', 'Turn_R'],
+      ['RunStop', 'RunStopR', 'Stop_L', 'Stop_R'],
+    ] as const) {
+      if (!mixamoFile?.clipes[src]) continue;
+      mirrorMixamoClip(mixamoFile, src, mirror);
+      for (const [from, name] of [
+        [src, left],
+        [mirror, right],
+      ] as const) {
+        const clone = cloneSkinned(this.model);
+        new THREE.Group().add(clone).updateMatrixWorld(true);
+        const { clip, root } = extractRootMotion(clone, retargetMixamo(clone, mixamoFile, from, { name, loop: false, smooth: 2 }).clip);
+        const action = this.mixer.clipAction(clip);
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+        action.enabled = true;
+        action.setEffectiveWeight(0);
+        action.play();
+        this.actions.set(name, action);
+        this.baseWeights.set(name, 0);
+        this.rootClips.set(name, root);
+      }
     }
     this.baseWeights.set(this.base.name, 1);
     this.inertial = new Inertializer([...this.bones.values()]);
@@ -929,6 +1029,26 @@ export class PlayerAnimator {
     return this.defense.state();
   }
 
+  /** Pulo de defesa em andamento: s desde o aperto e a altura (m); null fora dele. */
+  defenseJump(): { t: number; h: number } | null {
+    return this.defense.jumpPhase();
+  }
+
+  /** Postura de defesa (0..1): agachado com as mãos abertas (quem defende liga perto do atacante). */
+  setDefenseStance(w: number): void {
+    this.defense.setStance(w);
+  }
+
+  /** Postura de defesa agora (0..1). */
+  defenseStance(): number {
+    return this.defense.stance();
+  }
+
+  /** Toco: a mão `hand` chega a `target` (mundo, onde a bola vai estar) em `inS` s e segue o tapa na direção `dir`. */
+  playBlock(hand: Hand, target: THREE.Vector3, inS: number, dir?: THREE.Vector3): void {
+    this.defense.block(hand, target, inS, dir);
+  }
+
   /** Depois dos gestos do parado: braços da defesa e o pulo (DefenseMotion). */
   private applyDefense(dt: number): void {
     this.defense.update(dt, this.hasBall);
@@ -1095,7 +1215,7 @@ export class PlayerAnimator {
    */
   moveBallReturned(): boolean {
     const a = this.active;
-    return !a || a.fadingOut || a.kind === 'Shot' || a.kind === 'Celebrate' || a.released;
+    return !a || a.fadingOut || a.kind === 'Shot' || a.kind === 'Celebrate' || a.kind === 'Plant' || a.released;
   }
 
   /** A bola já saiu da mão no drible em andamento (o corte começou)? */
@@ -1231,7 +1351,8 @@ export class PlayerAnimator {
     this.applyLegLayer(dt, input);
     this.applyMixamoLegs(dt, input);
     this.inertial.apply(dt);
-    this.model.rotation.y = this.yawOffset;
+    this.applyRootClip();
+    this.model.rotation.y = this.yawOffset + this.rootYaw;
     this.root.updateMatrixWorld(true);
     this.applySpinPivot();
     this.detectEvents();
@@ -1663,6 +1784,168 @@ export class PlayerAnimator {
     return world;
   }
 
+  // ------------------------------------------------------------------------- plantadas: virada e parada (root motion)
+
+  /** Trilhas da raiz dos clipes das plantadas (Turn_L/R, Stop_L/R). */
+  private readonly rootClips = new Map<string, RootTrack>();
+  /**
+   * Plantada em andamento: clipe, tipo, trilha, tempo do clipe já entregue ao jogo, escala do giro e do deslocamento (a
+   * do deslocamento desfaz o rate: o corpo entra na velocidade de quem chega) e a altura da pelve na entrada.
+   */
+  private rootClip: { name: string; type: PlantType; root: RootTrack; last: number; yawScale: number; moveScale: number; height0: number } | null = null;
+  /** Giro (rad, em torno de +Y) da plantada que o jogo ainda não somou ao rumo (takeRootYaw). */
+  private rootYaw = 0;
+
+  /**
+   * Virada de 180° correndo sem a bola (PlantClip.Turn): `toRight` = para a direita do jogador; `speed` = velocidade de
+   * entrada (m/s); `angle` = quanto o corpo deve girar (rad; o giro do clipe, ~135° no trecho usado, é escalado até 1,1x;
+   * o resto o jogo gira correndo). Do começo ao fim o clipe dirige a posição e o rumo (takeRootMotion e takeRootYaw).
+   * false se os clipes não existem (sem o arquivo do Mixamo).
+   */
+  playPlantTurn(toRight: boolean, speed: number, angle = Math.PI): boolean {
+    return this.playPlant('Turn', [toRight ? 'Turn_R' : 'Turn_L'], speed, angle);
+  }
+
+  /**
+   * Parada correndo sem a bola (PlantClip.Stop): planta o pé que está chegando ao chão (o clipe e o espelho; fica o de
+   * passada mais parecida com a de agora). Mesmo root motion da virada, sem giro.
+   */
+  playPlantStop(speed: number): boolean {
+    return this.playPlant('Stop', ['Stop_L', 'Stop_R'], speed, 0);
+  }
+
+  /** A plantada já pode ser cortada (PlantClip.cancelAt): o LS de volta a encerra e a locomoção segue da velocidade dela. */
+  cancelPlant(): boolean {
+    const a = this.active;
+    const R = this.rootClip;
+    if (!a || a.fadingOut || a.kind !== 'Plant' || !R || a.action.time < PlantClip[R.type].cancelAt) return false;
+    a.action.time = a.end;
+    return true;
+  }
+
+  private playPlant(type: PlantType, names: string[], speed: number, angle: number): boolean {
+    const P = PlantClip[type];
+    let pick: { name: string; root: RootTrack; start: number; cost: number } | null = null;
+    for (const name of names) {
+      const root = this.rootClips.get(name);
+      if (!root || !this.actions.has(name)) continue;
+      const m = this.plantStart(name, P.startMin, P.startMax);
+      if (!pick || m.cost < pick.cost) pick = { name, root, start: m.t, cost: m.cost };
+    }
+    if (!pick) return false;
+    const { name, root, start } = pick;
+    // Velocidade da raiz do clipe na entrada (m/s no jogador da escala da build): o clipe acompanha a de quem chega.
+    const a = sampleRoot(root, start);
+    const b = sampleRoot(root, start + 0.1);
+    const native = (Math.hypot(b.x - a.x, b.z - a.z) / 0.1) * this.bodyScale;
+    const rate = THREE.MathUtils.clamp(native > 0.5 ? speed / native : 1, P.rateMin, P.rateMax);
+    const clipTurn = Math.abs(sampleRoot(root, P.end).yaw - a.yaw);
+    this.startAction({
+      kind: 'Plant',
+      timing: null,
+      clip: name,
+      start,
+      end: P.end,
+      release: Infinity,
+      catch: Infinity,
+      fromHand: 'r',
+      toHand: 'r',
+      rate,
+      startClock: this.clock,
+      duration: (P.end - start) / rate,
+      turnSign: 0,
+      feetStart: null,
+    });
+    this.rootClip = {
+      name,
+      type,
+      root,
+      last: start,
+      yawScale: angle > 0 && clipTurn > 1 ? THREE.MathUtils.clamp(angle / clipTurn, 0.7, 1.1) : 1,
+      moveScale: native > 0.5 ? THREE.MathUtils.clamp(speed / (native * rate), 0.6, 1.4) : 1,
+      height0: sampleHeight(root, start),
+    };
+    // O clipe é o corpo inteiro: as pernas e o tronco do Mixamo saem já (a inertialization suaviza a troca).
+    this.mixamoWeight = 0;
+    this.mixamoUpperWeight = 0;
+    return true;
+  }
+
+  /**
+   * Velocidade (mundo, m/s) da raiz da plantada agora, pela trilha do clipe: o jogo a usa como a velocidade do corpo
+   * durante a plantada e a saída continua dela. (Tirada do root motion entregue, o último quadro, com o tempo do clipe
+   * batendo no fim, dava um passo de milímetros: o jogador saía da virada a 0,2 m/s.)
+   */
+  plantVelocity(): THREE.Vector3 {
+    const R = this.rootClip;
+    const a = this.active;
+    if (!R || !a || a.kind !== 'Plant') return new THREE.Vector3();
+    const t = Math.min(a.action.time, PlantClip[R.type].end);
+    const h = 0.05;
+    const d = rootDelta(R.root, t - h, t);
+    const k = (a.rate / h) * R.moveScale * this.bodyScale;
+    return new THREE.Vector3(d.x * k, 0, d.z * k).applyQuaternion(this.root.quaternion);
+  }
+
+  /** Giro da plantada (rad, em torno de +Y do three) que o jogo ainda não somou ao rumo; zera o que foi entregue. */
+  takeRootYaw(): number {
+    const y = this.rootYaw;
+    this.rootYaw = 0;
+    return y;
+  }
+
+  /** Tempo do trecho [t0, t1] do clipe com as pernas (coxas e canelas) mais parecidas com as de agora, e o custo. */
+  private plantStart(name: string, t0: number, t1: number): { t: number; cost: number } {
+    const tracks = this.legTracksOf(name);
+    const legs = [2, 3, 7, 8]; // thigh_l, calf_l, thigh_r, calf_r em LegLayerBones
+    const cur = legs.map((i) => tracks[i].bone.quaternion.clone());
+    let best = t1;
+    let bestCost = Infinity;
+    const qb = new THREE.Quaternion();
+    for (let t = t0; t <= t1 + 1e-6; t += 1 / ClipFps) {
+      let cost = 0;
+      legs.forEach((i, k) => {
+        const r = tracks[i].q?.evaluate(t);
+        if (r) cost += cur[k].angleTo(qb.set(r[0], r[1], r[2], r[3]));
+      });
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = t;
+      }
+    }
+    return { t: best, cost: bestCost };
+  }
+
+  /**
+   * Root motion da plantada: o quanto a raiz do clipe andou e girou desde o quadro anterior (no referencial do jogador)
+   * vai para o deslocamento ainda não entregue (pivotOffset, como no spin) e para o giro (rootYaw). A malha mostra os dois
+   * até o jogo somá-los (applySpinPivot e o rotation.y da malha).
+   */
+  private applyRootClip(): void {
+    const R = this.rootClip;
+    if (!R) return;
+    const a = this.active;
+    if (!a || a.kind !== 'Plant' || a.clip !== R.name) {
+      this.rootClip = null;
+      return;
+    }
+    const now = Math.min(a.action.time, PlantClip[R.type].end);
+    if (now <= R.last) return;
+    const d = rootDelta(R.root, R.last, now);
+    R.last = now;
+    this.pivotOffset.x += d.x * R.moveScale;
+    this.pivotOffset.z += d.z * R.moveScale;
+    this.rootYaw += d.yaw * R.yawScale;
+  }
+
+  /** m que a pelve sobe agora na plantada (PlantClip.lift da descida do clipe abaixo da altura de entrada). */
+  private plantLift(): number {
+    const R = this.rootClip;
+    const a = this.active;
+    if (!R || !a || a.kind !== 'Plant') return 0;
+    return Math.max(0, R.height0 - sampleHeight(R.root, a.action.time)) * PlantClip[R.type].lift;
+  }
+
   /** Interpolantes das pernas e da pelve de um loop (criados uma vez por clipe). */
   private legTracksOf(clipName: string): { bone: THREE.Bone; q?: THREE.Interpolant; p?: THREE.Interpolant }[] {
     let tracks = this.legTracks.get(clipName);
@@ -1720,8 +2003,24 @@ export class PlayerAnimator {
    * andando e correndo; o tronco, os braços, o drible e a bola continuam do loop da CMU, e todo o pós-processo
    * (agachamento, base, trava de pé, IK, inclinação, braço da bola) roda por cima, como antes.
    */
-  private mixamo: { loco: MixamoLocomotion; pairs: [THREE.Bone, THREE.Object3D][]; pelvis: [THREE.Bone, THREE.Object3D] } | null = null;
+  private mixamo: {
+    loco: MixamoLocomotion;
+    pairs: [THREE.Bone, THREE.Object3D][];
+    pelvis: [THREE.Bone, THREE.Object3D];
+    /** Tronco, pescoço e braços do clone (o corpo de cima da corrida sem bola) e a spine_01 dele. */
+    upper: [THREE.Bone, THREE.Object3D][];
+    spine: THREE.Object3D;
+  } | null = null;
   private mixamoWeight = 0;
+  /**
+   * Corpo de cima do Mixamo correndo sem a bola (0..1): tronco e braços do mesmo clipe das pernas, balançando com a
+   * passada. Antes eram os do loop Run/Walk da CMU, com os braços dobrados e quase parados junto da cintura ("o braço não
+   * tem movimentação realista", diretor 2026-10-16). Chave de A/B do laboratório.
+   */
+  mixamoUpperEnabled = true;
+  private mixamoUpperWeight = 0;
+  /** Quanto do corpo de cima do Mixamo aparece neste quadro (peso dele x peso das pernas do Mixamo). */
+  private mixamoUpperShown = 0;
   /** Altura média do quadril da passada (mundo), para reduzir o quique (MixamoBounceKeep). */
   private mixamoBounceMean: number | null = null;
   /** MixamoBounceKeep (1 = quique inteiro do clipe; laboratório). */
@@ -1741,7 +2040,8 @@ export class PlayerAnimator {
     });
     const loco = new MixamoLocomotion(clone, file, { dribbleLayer: false });
     const pairs = MixamoLegBones.map((n) => [this.bone(n), src.get(n)!] as [THREE.Bone, THREE.Object3D]);
-    this.mixamo = { loco, pairs, pelvis: [this.bone('pelvis'), src.get('pelvis')!] };
+    const upper = MixamoUpperBones.map((n) => [this.bone(n), src.get(n)!] as [THREE.Bone, THREE.Object3D]);
+    this.mixamo = { loco, pairs, pelvis: [this.bone('pelvis'), src.get('pelvis')!], upper, spine: src.get('spine_01')! };
   }
 
   private applyMixamoLegs(dt: number, input: AnimInput): void {
@@ -1762,6 +2062,10 @@ export class PlayerAnimator {
     target *= THREE.MathUtils.smoothstep(along, MixamoAlong[0], MixamoAlong[1]);
     this.mixamoWeight += (target - this.mixamoWeight) * (1 - Math.exp(-MixamoLegRate * dt));
     const w = this.mixamoWeight;
+    // Corpo de cima sem a bola (aplicado no fim): o peso anda sempre, para não sobrar do Mixamo quando a bola chega parado.
+    const upTarget = this.mixamoUpperEnabled && !this.hasBall && !a ? 1 : 0;
+    this.mixamoUpperWeight += (upTarget - this.mixamoUpperWeight) * (1 - Math.exp(-MixamoLegRate * dt));
+    this.mixamoUpperShown = w < 1e-3 ? 0 : this.mixamoUpperWeight * w;
     if (w < 1e-3) return;
     // O tronco fica orientado como no loop do drible: a pelve do Mixamo gira no ritmo da passada dele e levava junto o
     // tronco e o braço da bola da CMU (estalos no braço correndo). A spine_01 desfaz a rotação nova da pelve.
@@ -1780,7 +2084,17 @@ export class PlayerAnimator {
     if (this.mixamoPelvisPitchFix) this.keepClipPelvisPitch(pelvis, pelvisClip, M.pairs);
     this.damperBounce(pelvis, w, dt);
     const pelvisWorld = pelvis.getWorldQuaternion(new THREE.Quaternion());
-    spine.quaternion.copy(pelvisWorld.invert().multiply(spineWorld));
+    spine.quaternion.copy(pelvisWorld.clone().invert().multiply(spineWorld));
+    // Sem a bola: o corpo de cima também é o do clone (braços balançando com a passada). A spine_01 pega a orientação do
+    // tronco do clone no referencial do corpo (o clone fica num grupo parado, sem giro): a pelve continua com a inclinação
+    // corrigida acima e quem inclina para a frente é a coluna, sem a bunda empinar.
+    const uw = this.mixamoUpperWeight * w;
+    if (uw > 1e-3) {
+      const pelvisModel = this.model.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(pelvisWorld);
+      const torso = pelvisModel.invert().multiply(M.spine.getWorldQuaternion(new THREE.Quaternion()));
+      spine.quaternion.slerp(torso, uw);
+      for (const [dst, s] of M.upper) dst.quaternion.slerp(s.quaternion, uw);
+    }
     pelvis.updateWorldMatrix(false, true);
   }
 
@@ -2139,7 +2453,9 @@ export class PlayerAnimator {
     const settling = !kind && input.hasBall && this.clock < this.standingSettleUntil;
 
     let crouchTarget: number;
-    if (kind === 'Shot') crouchTarget = 0;
+    // As plantadas (virada e parada) têm a descida, a inclinação e a carga delas (o clipe): nada de postura por cima.
+    const ownBody = kind === 'Plant';
+    if (kind === 'Shot' || ownBody) crouchTarget = 0;
     else if (a?.timing?.turnDeg && a) {
       const drop = this.pelvisAvg('Dribble_Idle_R', 0, Infinity) - this.pelvisAvg(a.clip, a.start * ClipFps, a.end * ClipFps);
       crouchTarget = THREE.MathUtils.clamp(s.crouchIdle + s.crouchSpin - drop, 0, 0.35);
@@ -2153,18 +2469,23 @@ export class PlayerAnimator {
       const drop = this.pelvisAvg('Dribble_Idle_R', 0, Infinity) - this.pelvisAvg(a.clip, a.start * ClipFps, a.end * ClipFps);
       crouchTarget = THREE.MathUtils.clamp(baseCrouch - drop, -0.02, 0.3);
     }
-    else if (!input.hasBall) crouchTarget = 0.03;
+    else if (!input.hasBall) crouchTarget = 0.03 + this.defense.stanceCrouch(); // + a postura de defesa (DefenseMotion)
     else if (this.base.base === 'Dribble_Low') crouchTarget = s.crouchLow;
     else if (this.base.base === 'Dribble_Run') crouchTarget = s.crouchRun;
     else if (speed > 0.35) crouchTarget = s.crouchWalk;
     else crouchTarget = s.crouchIdle;
     const k = 1 - Math.exp(-(stepBack ? 20 : a?.timing?.turnDeg ? 12 : 8) * dt);
     this.crouch += (crouchTarget - this.crouch) * k;
+    // Plantada: o quadril sobe parte da descida do clipe, no quadro (a descida dele já é suave), com os pés no lugar.
+    if (ownBody) this.crouch = -this.plantLift();
 
-    const shooting = kind === 'Shot';
+    const shooting = kind === 'Shot' || ownBody; // (as plantadas também: sem inclinação por cima)
     // A inclinação cresce com a velocidade PARA A FRENTE (indo para trás ou de lado o tronco não deita).
     const ahead = Math.max(0, input.forward);
-    const base = input.hasBall ? s.leanBaseDeg + ahead * s.leanPerSpeedDeg : 4 + ahead * 2;
+    // Sem a bola, o tronco correndo é o do Mixamo (já inclinado): a inclinação pela velocidade fica com 30% (mixamoUpperShown).
+    const base = input.hasBall ? s.leanBaseDeg + ahead * s.leanPerSpeedDeg : (4 + ahead * 2) * (1 - 0.7 * this.mixamoUpperShown);
+    // Com o corpo inteiro inclinando pela aceleração (applyBodyLean), o tronco fica só com uma parte da inclinação antiga.
+    const accelLean = s.leanPerAccelDeg * (this.bodyLeanEnabled ? BodyLean.trunkShare : 1);
     const spinning = !!a?.timing?.turnDeg;
     // Dobra do quadril: com a bola, fora do arremesso e da comemoração (e do spin, que tem a inclinação dele).
     // Correndo a dobra some (a inclinação da corrida já põe o peito à frente).
@@ -2187,8 +2508,8 @@ export class PlayerAnimator {
       ? 0
       : spinning
         ? s.leanSpinDeg
-        : Math.min(s.leanMaxDeg, Math.max(-s.leanMaxDeg, base + input.accelForward * s.leanPerAccelDeg + (stepBack?.leanDeg ?? 0) - leanFix));
-    const leanR = shooting ? 0 : Math.min(s.leanMaxDeg, Math.max(-s.leanMaxDeg, input.accelRight * s.leanPerAccelDeg));
+        : Math.min(s.leanMaxDeg, Math.max(-s.leanMaxDeg, base + input.accelForward * accelLean + (stepBack?.leanDeg ?? 0) - leanFix));
+    const leanR = shooting ? 0 : Math.min(s.leanMaxDeg, Math.max(-s.leanMaxDeg, input.accelRight * accelLean));
     const kl = 1 - Math.exp(-(stepBack ? 14 : spinning ? 10 : 6) * dt);
     this.leanForward += (leanF - this.leanForward) * kl;
     this.leanRight += (leanR - this.leanRight) * kl;
@@ -2222,12 +2543,19 @@ export class PlayerAnimator {
       pelvis.quaternion.copy(parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(hingeQ).multiply(pelvisWorld));
     }
     this.applyWeightShift(dt, input, a, u);
+    // Fora do arremesso/bandeja (o corpo é do desenho deles), da comemoração, do spin e do step-back (inclinação própria).
+    this.applyBodyLean(dt, input, kind === 'Shot' || kind === 'Celebrate' || ownBody || spinning || !!stepBack);
+    const hesi = this.hesitationShape(a, u, input);
+    if (hesi) this.applyHesitationHips(hesi);
     pelvis.updateWorldMatrix(true, true);
     // Pés na pose do clipe (já com a dobra do quadril): ponto mais baixo da sola e altura do calcanhar, base do pé plano.
     const soleL = this.lowestSole('l', footL);
     const soleR = this.lowestSole('r', footR);
     // Quanto a sola mais baixa fica abaixo do tornozelo na pose do clipe (o impulso da saída correndo a põe no chão).
     const soleDrop = { l: footL.getWorldPosition(v).y - soleL.h, r: footR.getWorldPosition(v).y - soleR.h };
+    // Sola do clipe ANTES do agachamento (os tornozelos foram lidos antes dele): soleL.h já desceu com o quadril (12 cm
+    // correndo com a bola), e um pé ainda no ar parecia apoiado.
+    const clipSole = { l: ankleL.y - soleDrop.l, r: ankleR.y - soleDrop.r };
     const riseL = this.footHeelRise('l');
     const riseR = this.footHeelRise('r');
 
@@ -2285,14 +2613,25 @@ export class PlayerAnimator {
     if (runOut && !planted) this.handOffPlant(ankleL, ankleR, toeY);
     const flatFeet = this.applyPlantedStance(planted, ankleL, ankleR, dt, feetMode, velocity);
     const lockable = this.footLockEnabled && !a?.feetStart && kind !== 'Shot' && !flatFeet;
-    this.applyFootLock('l', ankleL, toeY.l, lockable, dt, soleDrop.l);
-    this.applyFootLock('r', ankleR, toeY.r, lockable, dt, soleDrop.r);
+    // A trava lê a altura da ponta pelo metatarso (ball_*); com o pé plano o metatarso fica ~1–3 cm acima da sola (mais no
+    // pé esquerdo do modelo), e o pé do Mixamo com o declive corrigido passava o apoio inteiro sem travar (deslizando).
+    // Vale a mais baixa: o metatarso ou a sola + LockSoleToe.
+    // Fora do spin e das plantadas: neles a trava mais cedo piorava (spin: bola no corpo 3 -> 6 quadros; virada em
+    // disparada: SALTOS 63 -> 70). Só com as pernas do Mixamo foi pior no geral (pernas cruzando 637 -> 957 quadros).
+    const lockToe = this.lockBySoleEnabled && !spinning && !ownBody
+      ? { l: Math.min(toeY.l, clipSole.l + LockSoleToe * ProceduralScale), r: Math.min(toeY.r, clipSole.r + LockSoleToe * ProceduralScale) }
+      : toeY;
+    this.applyFootLock('l', ankleL, lockToe.l, lockable, dt, soleDrop.l);
+    this.applyFootLock('r', ankleR, lockToe.r, lockable, dt, soleDrop.r);
     // Pé de apoio com a sola no chão fica plano (não na ponta). Fora do arremesso, do spin e do passo procedural.
     const flatOk = this.flatFootEnabled && kind !== 'Shot' && !spinning && !a?.feetStart;
     this.flattenFoot('l', ankleL, footQL, soleL, riseL, dt, flatOk);
     this.flattenFoot('r', ankleR, footQR, soleR, riseR, dt, flatOk);
     this.keepFlatLegsInReach(ankleL, ankleR, dt);
-    this.keepFeetApart(ankleL, ankleR);
+    // Na plantada o clipe cruza as pernas de propósito (o passo cruzado do impulso da virada): sem a regra; depois ela volta
+    // em rampa (desfazer o cruzamento de uma vez empurrava um pé 20–30 cm num quadro quando a trava pegava o outro).
+    this.feetApartW = ownBody ? 0 : this.feetApartW + (1 - this.feetApartW) * (1 - Math.exp(-5 * dt));
+    this.keepFeetApart(ankleL, ankleR, this.feetApartW);
     solveTwoBoneIK(this.bone('thigh_l'), this.bone('calf_l'), footL, ankleL, forward, LegSoftReach);
     solveTwoBoneIK(this.bone('thigh_r'), this.bone('calf_r'), footR, ankleR, forward, LegSoftReach);
     // Joelhos para a frente e para fora, sobre a ponta dos pés: com a base aberta e o quadril baixo os joelhos caíam para
@@ -2347,9 +2686,16 @@ export class PlayerAnimator {
     const bodyQ = this.model.getWorldQuaternion(new THREE.Quaternion());
     const left = axis.set(1, 0, 0).applyQuaternion(bodyQ);
     const bodyForward = new THREE.Vector3(0, 0, 1).applyQuaternion(bodyQ);
+    // Hesitação (HesiBody): o tronco inclina para o lado da bola, se endireita correndo e vai à frente no arranque.
+    const hesiSide = hesi ? -hesi.side * HesiBody.sideDeg * hesi.sway * hesi.scale : 0;
+    const hesiPitch = hesi ? -HesiBody.upDeg * hesi.rise + HesiBody.goDeg * hesi.go : 0;
     const lean = new THREE.Quaternion()
-      .setFromAxisAngle(left, THREE.MathUtils.degToRad(this.leanForward * 0.5))
-      .multiply(q.setFromAxisAngle(bodyForward, THREE.MathUtils.degToRad(this.leanRight * 0.5)));
+      .setFromAxisAngle(left, THREE.MathUtils.degToRad((this.leanForward + hesiPitch) * 0.5))
+      .multiply(q.setFromAxisAngle(bodyForward, THREE.MathUtils.degToRad((this.leanRight + hesiSide) * 0.5)));
+    // Hesitação: a mão da bola fica abaixo do pivô da coluna, então a inclinação de lado a girava para dentro, contra a coxa
+    // (size-up: bola 7 cm na coxa). Ela fica onde estava e vai para fora junto com o corpo (a bola sai para o lado).
+    const hesiHand = hesi && a && hesi.sway > 0.01 ? a.fromHand : null;
+    const hesiPalm = hesiHand ? this.palmWorld(hesiHand, new THREE.Vector3()) : null;
     for (const name of ['spine_01', 'spine_02']) {
       const spine = this.bone(name);
       const spineWorld = spine.getWorldQuaternion(new THREE.Quaternion());
@@ -2357,12 +2703,21 @@ export class PlayerAnimator {
       spine.updateWorldMatrix(false, true);
     }
     // Cabeça erguida: o tronco deita, mas o jogador bom olha para a frente (Kyrie com o tronco a 60° e o rosto na cesta).
-    const headUp = new THREE.Quaternion().setFromAxisAngle(left, THREE.MathUtils.degToRad(-(this.leanForward + this.hinge) * s.headUpShare * 0.5));
+    // Na hesitação a cabeça desfaz ~60% da inclinação de lado (os olhos ficam no defensor).
+    const headUp = new THREE.Quaternion()
+      .setFromAxisAngle(left, THREE.MathUtils.degToRad(-(this.leanForward + this.hinge) * s.headUpShare * 0.5))
+      .multiply(new THREE.Quaternion().setFromAxisAngle(bodyForward, THREE.MathUtils.degToRad(-hesiSide * 0.3)));
     for (const name of ['neck_01', 'head']) {
       const b = this.bone(name);
       const bw = b.getWorldQuaternion(new THREE.Quaternion());
       b.quaternion.multiply(bw.clone().invert().multiply(headUp).multiply(bw));
       b.updateWorldMatrix(false, true);
+    }
+    if (hesi && hesiHand && hesiPalm) {
+      const out = new THREE.Vector3(1, 0, 0).applyQuaternion(this.root.quaternion).multiplyScalar(hesi.side * HesiBody.ballOut * hesi.sway * hesi.scale * this.bodyScale);
+      const pole = new THREE.Vector3(hesi.side, -0.3, -0.8).transformDirection(this.root.matrixWorld);
+      // Peso junto com o balanço: com peso 1 até o fim, o cotovelo do IK voltava para o do clipe num quadro (mão 10 cm).
+      this.reachPalm(hesiHand, hesiPalm.add(out), Math.min(1, hesi.sway / 0.25), pole);
     }
     // A pelve e os ossos voltam para a pose do clipe no próximo quadro (o mixer sobrescreve): nada acumula.
   }
@@ -2413,16 +2768,126 @@ export class PlayerAnimator {
   }
 
   /**
-   * Pernas nunca cruzam: no referencial do CORPO (no spin a malha gira em relação à raiz), o tornozelo esquerdo fica pelo
+   * Corpo inteiro inclinado pela aceleração (BodyLean): a pelve gira em volta de um ponto abaixo dela e desce com a carga
+   * da freada e do corte; o tronco e os braços vão junto (filhos da pelve) e o IK das pernas devolve os pés aos alvos (os
+   * apoiados ficam presos no chão). Depois do agachamento e do peso do drible, antes do IK das pernas.
+   */
+  private applyBodyLean(dt: number, input: AnimInput, off: boolean): void {
+    const B = this.bodyLean;
+    let tf = 0;
+    let tr = 0;
+    let td = 0;
+    if (this.bodyLeanEnabled && !off) {
+      const g = 9.81;
+      const gain = BodyLean.gain * (input.hasBall ? BodyLean.ballShare : 1);
+      tf = Math.atan(input.accelForward / g) * gain;
+      tr = Math.atan(input.accelRight / g) * gain;
+      const lim = THREE.MathUtils.degToRad(BodyLean.maxDeg);
+      const m = Math.hypot(tf, tr);
+      if (m > lim) {
+        tf *= lim / m;
+        tr *= lim / m;
+      }
+      // Carga nas pernas: a parte da aceleração contra a velocidade (freada) e a de lado (corte); arrancar não abaixa.
+      const speed = this.speedOf(input);
+      if (speed > 0.3) {
+        const along = (input.accelForward * input.forward + input.accelRight * input.right) / speed;
+        const across = Math.abs(input.accelForward * input.right - input.accelRight * input.forward) / speed;
+        td = Math.min(BodyLean.crouchMax, (Math.max(0, -along) + across) * BodyLean.crouch);
+      }
+    }
+    // Mola amortecida (sub-passos de 1/120 s: igual a 60 e a 144 Hz).
+    const w = BodyLean.omega;
+    const z = BodyLean.zeta;
+    for (let rest = Math.min(dt, 0.1); rest > 1e-6; ) {
+      const h = Math.min(rest, 1 / 120);
+      B.vf += (w * w * (tf - B.f) - 2 * z * w * B.vf) * h;
+      B.f += B.vf * h;
+      B.vr += (w * w * (tr - B.r) - 2 * z * w * B.vr) * h;
+      B.r += B.vr * h;
+      B.vd += (w * w * (td - B.d) - 2 * z * w * B.vd) * h;
+      B.d += B.vd * h;
+      rest -= h;
+    }
+    if (Math.abs(B.f) + Math.abs(B.r) + Math.abs(B.d) < 1e-4) return;
+    // +X da raiz = esquerda: girar em torno dela leva o "cima" para a frente; em torno da frente, para a direita.
+    const rootQ = this.root.getWorldQuaternion(new THREE.Quaternion());
+    const left = new THREE.Vector3(1, 0, 0).applyQuaternion(rootQ);
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(rootQ);
+    const R = new THREE.Quaternion().setFromAxisAngle(left, B.f).multiply(new THREE.Quaternion().setFromAxisAngle(fwd, B.r));
+    const pelvis = this.bone('pelvis');
+    const parent = pelvis.parent!;
+    pelvis.updateWorldMatrix(true, false);
+    const P = pelvis.getWorldPosition(new THREE.Vector3());
+    const pivot = new THREE.Vector3(P.x, P.y * BodyLean.pivot, P.z);
+    P.sub(pivot).applyQuaternion(R).add(pivot);
+    P.y -= B.d;
+    pelvis.position.copy(P.applyMatrix4(parent.matrixWorld.clone().invert()));
+    const world = pelvis.getWorldQuaternion(new THREE.Quaternion());
+    pelvis.quaternion.copy(parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(R).multiply(world));
+  }
+
+  /** Chave de A/B do laboratório: o corpo da hesitação (HesiBody). */
+  hesiBodyEnabled = true;
+  /** Jab da hesitação parada: o drible que já deu o passo, onde o pé estava e se ele já voltou. */
+  private readonly hesiJab = { action: null as ActiveAction | null, home: new THREE.Vector3(), back: false };
+
+  /**
+   * Curvas da hesitação (HesiBody) no progresso `u` do drible: `side` (+1 = esquerda, o lado da bola), quanto o corpo está
+   * no lado (sway), subido (rise, só correndo) e indo à frente (go), e a escala (1 parado, HesiBody.moving correndo).
+   */
+  private hesitationShape(a: ActiveAction | null, u: number, input: AnimInput): { side: number; sway: number; rise: number; go: number; scale: number } | null {
+    if (!this.hesiBodyEnabled || !a || a.kind !== 'Hesitation' || !this.hasBall) return null;
+    const ss = THREE.MathUtils.smoothstep;
+    const standing = this.moveStartedStanding;
+    // Correndo, o próprio movimento diz qual hesitação é: freando, a de parada (o corpo sobe e vende a parada); acelerando,
+    // a de arranque (escape com RT: só o jab de lado e o tronco à frente cedo). Decidido uma vez, no 1º sinal claro.
+    const st = this.hesiStyle;
+    if (st.action !== a) {
+      st.action = a;
+      st.at = -1;
+      st.go = false;
+    }
+    if (st.at < 0 && (Math.abs(input.accelForward) > 2 || u > 0.15)) {
+      st.at = u;
+      st.go = input.accelForward > 2;
+    }
+    const stop = !standing && st.at >= 0 && !st.go;
+    return {
+      side: sideSign(a.fromHand),
+      sway: ss(u, 0, 0.22) * (1 - ss(u, 0.55, 0.92)),
+      rise: stop ? ss(u, st.at, st.at + 0.2) * (1 - ss(u, 0.5, 0.75)) : 0,
+      go: st.go ? ss(u, 0.1, 0.35) * (1 - ss(u, 0.85, 1)) : ss(u, 0.55, 0.85) * (1 - ss(u, 0.9, 1)),
+      scale: standing ? 1 : HesiBody.moving,
+    };
+  }
+  /** Hesitação correndo: de parada ou de arranque (hesitationShape), por drible; `at` = progresso em que decidiu. */
+  private readonly hesiStyle = { action: null as ActiveAction | null, at: -1, go: false };
+
+  /** Hesitação, no quadril (antes do IK das pernas): para o lado da bola, sobe correndo e carrega no arranque. */
+  private applyHesitationHips(h: NonNullable<ReturnType<PlayerAnimator['hesitationShape']>>): void {
+    const pelvis = this.bone('pelvis');
+    const parent = pelvis.parent!;
+    const left = new THREE.Vector3(1, 0, 0).applyQuaternion(this.root.quaternion);
+    const offset = left
+      .multiplyScalar(h.side * HesiBody.shift * h.sway * h.scale * this.bodyScale)
+      .add(new THREE.Vector3(0, (HesiBody.rise * h.rise - HesiBody.goDrop * h.go) * this.bodyScale, 0));
+    pelvis.position.add(offset.applyQuaternion(parent.getWorldQuaternion(new THREE.Quaternion()).invert()).divide(parent.getWorldScale(new THREE.Vector3())));
+  }
+
+  /**
+   * Corpo inteiro inclinado pela aceleração (BodyLean): a pelve gira em volta de um ponto abaixo dela e desce com a carga
    * menos FeetMinGap à esquerda do direito. Quem anda é o pé que não está preso no chão (o preso escorregaria); com os
    * dois livres (ou os dois presos), metade cada um.
    */
-  private keepFeetApart(ankleL: THREE.Vector3, ankleR: THREE.Vector3): void {
+  private feetApartW = 1;
+  private keepFeetApart(ankleL: THREE.Vector3, ankleR: THREE.Vector3, weight = 1): void {
+    if (weight < 1e-3) return;
     const bodyQ = this.model.getWorldQuaternion(new THREE.Quaternion());
     const left = new THREE.Vector3(1, 0, 0).applyQuaternion(bodyQ).setY(0).normalize();
     const gap = ankleL.dot(left) - ankleR.dot(left);
     if (gap >= FeetMinGap) return;
-    const need = FeetMinGap - gap;
+    const need = (FeetMinGap - gap) * weight;
     const lockL = this.footLock.l.locked || this.plantWeight() > 0.5;
     const lockR = this.footLock.r.locked || this.plantWeight() > 0.5;
     const shareL = lockL === lockR ? 0.5 : lockL ? 0 : 1;
@@ -2609,9 +3074,11 @@ export class PlayerAnimator {
     let flatLow = Infinity;
     for (const p of sole.pts) flatLow = Math.min(flatLow, p.clone().multiply(scale).applyQuaternion(flatQ).y);
     // (A sola do clipe pode estar abaixo do chão: a ponta inclinada para baixo põe o bico 15 cm abaixo. O contato é no chão.)
+    // Pé de apoio encostado no piso (groundFlatEnabled): no trote do Mixamo o pé esquerdo pousa na ponta, ~2 cm mais alto
+    // que o direito, e com o pé plano ele ficava flutuando 1,5–2,6 cm no apoio inteiro. A sola só vale até FlatSoleMax.
     const flatAnkle = new THREE.Vector3(
       ankle.x + clipShift.x - flatShift.x,
-      Math.max(sole.h, 0) - flatLow,
+      (this.groundFlatEnabled ? 0 : Math.max(sole.h, 0)) - flatLow,
       ankle.z + clipShift.z - flatShift.z,
     );
     ankle.lerp(flatAnkle, w);
@@ -2669,14 +3136,17 @@ export class PlayerAnimator {
       if (this.plantBlend < 0.02 || p.handedOff) return false;
     }
     if (active && !p.active) {
-      // Entra na base: os pés pousam onde o clipe os pôs, no chão.
+      // Entra na base: os pés pousam onde o clipe os pôs, no chão. O pé que a trava de pé segurava (a parada correndo
+      // planta o pé longe do clipe) entra onde está: recomeçado no clipe, ele pulava ~20 cm num quadro.
       p.active = true;
       p.handedOff = false;
       for (const [side, ankle] of [
         ['l', ankleL],
         ['r', ankleR],
       ] as const) {
-        p[side].pos.set(ankle.x, this.restAnkleY, ankle.z);
+        const lock = this.footLock[side];
+        const from = this.footLockEnabled && lock.locked ? lock.pos : ankle;
+        p[side].pos.set(from.x, this.restAnkleY, from.z);
         p[side].t = 1;
       }
     }
@@ -2741,6 +3211,35 @@ export class PlayerAnimator {
         f.lift = (side === front ? SplitStance.liftFront : SplitStance.liftRear) * S;
       }
       stepping = true;
+    }
+    // Hesitação parada (HesiBody): o pé do lado da bola dá um jab para fora e um pouco à frente (vende o lado; o quadril vai
+    // junto, applyHesitationHips) e volta para onde estava a partir de jabBack.
+    if (this.hesiBodyEnabled && active && mode === 'hold' && cur?.kind === 'Hesitation') {
+      const f = p[cur.fromHand];
+      const u = this.progress(cur);
+      const J = this.hesiJab;
+      if (J.action !== cur && u < 0.3 && !stepping) {
+        J.action = cur;
+        J.home.copy(f.pos);
+        J.back = false;
+        const out = new THREE.Vector3(sideSign(cur.fromHand) * HesiBody.jabOut * S, 0, HesiBody.jabAhead * S)
+          .applyQuaternion(this.root.quaternion)
+          .multiplyScalar(this.bodyScale);
+        f.from.copy(f.pos);
+        f.to.copy(f.pos).add(out).setY(this.restAnkleY);
+        f.t = 0;
+        f.dur = HesiBody.jabSeconds;
+        f.lift = HesiBody.jabLift * S;
+        stepping = true;
+      } else if (J.action === cur && !J.back && u >= HesiBody.jabBack && f.t >= 1) {
+        J.back = true;
+        f.from.copy(f.pos);
+        f.to.copy(J.home);
+        f.t = 0;
+        f.dur = HesiBody.jabSeconds;
+        f.lift = HesiBody.jabLift * S * 0.6;
+        stepping = true;
+      }
     }
     if (this.stagger.front) {
       // Os pés ficam na base escalonada (largura também): sem isto o passinho de ajuste os levava de volta para o lado a

@@ -179,6 +179,28 @@ const CutTurnRate = 7;
 const EscapeAttackForward = 0.6;
 /** m/s²: freada depois do escape parado com o LS solto (o embalo do impulso leva o corpo mais um pouco; 14 cortava seco). */
 const EscapeBrake = 9;
+/**
+ * Virada de 180° correndo sem a bola (PlayerAnimator.playPlantTurn, clipe ChangeDir do Mixamo): correndo a mais de
+ * minSpeed (m/s) e com o LS (acima de `stick`) apontando a mais de minDeg da direção da corrida, o jogador planta o pé de
+ * fora, desce o quadril e sai empurrando para o lado novo; o clipe dirige a posição e o rumo até o impulso (root
+ * motion). Antes ele freava em pé, parava de frente para a câmera e só então virava (diretor, 2026-10-16). Fora da
+ * postura de defesa (de frente para o atacante).
+ */
+const PlantTurn = { minSpeed: 2.8, minDeg: 125, stick: 0.5 };
+/**
+ * Hesitação correndo: o núcleo zera o embalo (impulso para trás) e o drible freava a 30 m/s², de 3,9 para ~0,6 m/s em
+ * 0,1 s, um tranco sem corpo. A freada passa a ser de gente (brake, m/s²) e guarda `keep` da velocidade para a frente
+ * (o "hang" da hesitação de verdade), e o arranque de saída do núcleo leva de volta.
+ */
+const HesiRun = { minSpeed: 1.5, keep: 0.25, brake: 12 };
+/**
+ * Parada correndo sem a bola (PlayerAnimator.playPlantStop, clipe RunStop do Mixamo): correndo a mais de minSpeed (m/s) e
+ * com o LS solto (abaixo de `stick`), o pé da frente planta e o quadril desce; antes o corpo freava com os pés juntos,
+ * inclinando para trás. Depois que o pé plantou, o LS acima de `resume` corta a parada.
+ */
+const PlantStop = { minSpeed: 3, stick: 0.2, resume: 0.5 };
+/** `?virada=0` desliga as plantadas (virada e parada), para A/B. */
+const plantTurnEnabled = typeof location === 'undefined' || new URLSearchParams(location.search).get('virada') !== '0';
 /** Voo: depois desse tempo a bola é solta mesmo sem tocar o chão (presa na rede). */
 const FlightCapSeconds = 8;
 /** Buffer do X: um aperto que cai com o drible ainda em commit vale por este tempo (s). */
@@ -223,12 +245,19 @@ export class Freestyle {
   ball: BallState = makeBallState(); // só no voo (núcleo)
   /** Sem a bola, o corpo fica de frente para este ponto (núcleo): a defesa do Online 1x1 olha o atacante. */
   faceTarget: Vec3 | null = null;
+  /**
+   * Postura de defesa (0..1, Online 1x1 e 1x1 contra a CPU): de frente para o atacante (faceTarget) e sem RT, o deslize
+   * lateral e o recuo vão até ~3,5 m/s em vez dos ~2,1 m/s da passada sem bola (docs/06 §1).
+   */
+  defenseSlide = 0;
 
   // Drible em andamento (núcleo).
   private moveStart = -1;
   private moveDir = new Vec3(); // direção do impulso do movimento (núcleo, horizontal)
   private moveSpeed = 0;
   private moveCarry = new Vec3(); // embalo para a frente que o drible mantém (o bom jogador acelera no corte)
+  /** Freada (m/s²) dentro do drible atual: MoveAcceleration, ou a da hesitação correndo (HesiRun). */
+  private moveBrake = MoveAcceleration;
   private moveIsStepBack = false;
   /** O drible atual é um escape parado (RT sem LS): desliza de frente para a cesta, sem o giro do corte. */
   private moveIsEscape = false;
@@ -346,6 +375,47 @@ export class Freestyle {
   /** Bandeja ou enterrada em andamento: o HUD não mostra o medidor de timing. */
   get finishing(): boolean {
     return this.finish !== null || this.layup.busy;
+  }
+
+  /**
+   * Bandeja/enterrada antes da soltura (o toco no aro lê isto, docs/25 §3): a bola na mão (núcleo), se é enterrada e se
+   * quem finaliza já saiu do chão. null fora disso.
+   */
+  finishState(): { ball: Vec3; dunk: boolean; airborne: boolean } | null {
+    if (this.phase !== 'gather') return null;
+    const L = this.layup;
+    if (L.plan && !L.released && !L.hold) {
+      return { ball: fromThree(this.dribbler.position), dunk: !!L.plan.rim, airborne: L.time(this.now) >= L.plan.takeoffAt };
+    }
+    if (this.finish) {
+      return { ball: fromThree(this.dribbler.position), dunk: this.finish.kind === ShotType.Dunk, airborne: !!this.jump && this.now >= this.jump.takeoffAt };
+    }
+    return null;
+  }
+
+  /**
+   * Toco no aro (docs/25 §3): a bola sai da mão de quem finaliza, antes da soltura, com a velocidade do tapa. O corpo
+   * segue o plano até pousar (as mãos sobem vazias) e o lance conta como erro. false se não há finalização para tocar.
+   */
+  stripBall(velocity: Vec3, spin: Vec3): boolean {
+    const state = this.finishState();
+    if (!state || !this.context || !this.windows) return false;
+    if (this.finish) {
+      this.finish = null;
+      this.landing = { startAt: this.now, v0: this.velocity.flat() };
+    } else {
+      this.layup.released = true;
+    }
+    const evaluation: ShotEvaluation = { ...this.model.evaluate(this.context, this.windows, this.holdMs, 1), timing: TimingGrade.Good };
+    this.evaluation = evaluation;
+    this.decision = { ...this.model.decide(evaluation, this.rng), make: false };
+    this.ball = makeBallState(state.ball, velocity, spin);
+    this.flightTime = 0;
+    this.scoredThisShot = false;
+    this.accumulator = 0;
+    this.phase = 'flight';
+    this.events.onRelease?.(evaluation, this.windows, true);
+    return true;
   }
 
   isMoving(): boolean {
@@ -604,6 +674,11 @@ export class Freestyle {
     const forwardNow = Math.max(0, this.velocity.dot(this.facing));
     this.moveIsStepBack = kind === 'StepBack';
     this.moveCarry = spec.forwardSpeed < 0 ? new Vec3() : this.facing.scale(forwardNow * 0.9);
+    this.moveBrake = MoveAcceleration;
+    if (active.move === DribbleMove.Hesitation && forwardNow > HesiRun.minSpeed) {
+      this.moveCarry = this.facing.scale(forwardNow * HesiRun.keep);
+      this.moveBrake = HesiRun.brake;
+    }
     // Retreat: recua na velocidade da passada de costas (sem o arranque de 2 m/s, que virava um escorregão).
     if (active.move === DribbleMove.Retreat) this.moveSpeed = Math.min(this.moveSpeed, RetreatSpeed);
     // Spin / half spin: o deslocamento vem do pé de pivô (root motion do animador), não de um impulso.
@@ -650,15 +725,24 @@ export class Freestyle {
     const inMove = this.phase === 'dribble' && this.dribble.isMoveActive(now);
     // O escape parado acaba quando o corpo para ou o LS volta a mandar (a freada e a frente dele não ficam para depois).
     if (!inMove && this.moveIsEscape && (this.lastWish >= 0.2 || this.velocity.length2D() < 0.05)) this.moveIsEscape = false;
+    // Plantadas correndo sem a bola (PlantTurn, PlantStop): enquanto tocam, o clipe dirige o corpo (root motion, abaixo).
+    // Na parada, o LS de volta depois de o pé plantar a corta (o corpo segue da velocidade dela).
+    const turning = this.animator.actionKind() === 'Plant';
+    if (turning && wish.length2D() > PlantStop.resume) this.animator.cancelPlant();
+    if (!turning && this.ballFree()) this.tryPlant(wish, input);
 
-    if (this.phase === 'dribble' || this.ballFree()) {
+    if (turning) {
+      // A velocidade sai do root motion da plantada (abaixo).
+    } else if (this.phase === 'dribble' || this.ballFree()) {
       // Velocidade pela direção em relação ao corpo: de frente corre, de lado desliza (size-up) e para trás recua mais
       // devagar, como no jogo real (e a passada da animação acompanha, sem patinar).
       const wishDir = wish.length2D() > 1e-3 ? wish.normalized() : this.facing;
       const along = wishDir.dot(this.facing);
       // Para trás: ~1,4 m/s, a passada do loop de costas (Dribble_Back anda 1,36 m/s); o diretor recua devagar, alguns
       // passos (vídeo 19.46.14 7,4–9,8 s: ~1,5 m em 2,2 s). Mais rápido, o clipe não acompanhava e o pé escorregava.
-      const directional = along >= 0 ? 0.55 + 0.45 * along * along : 0.55 - 0.2 * -along;
+      let directional = along >= 0 ? 0.55 + 0.45 * along * along : 0.55 - 0.2 * -along;
+      // Postura de defesa: de lado e para trás o defensor desliza mais rápido que a passada sem bola.
+      if (this.defenseSlide > 0 && this.ballFree() && this.faceTarget && !input.sprint) directional = Math.max(directional, 0.55 + 0.35 * this.defenseSlide);
       const buildSpeed = this.ballFree() ? this.ratings.runSpeedScale : this.ratings.speedScale; // Velocidade / com bola
       const maxSpeed = (input.sprint ? SprintSpeed : JogSpeed) * this.dribble.speedScale() * directional * buildSpeed;
       let target = wish.scale(maxSpeed);
@@ -691,7 +775,7 @@ export class Freestyle {
       // No ar depois da soltura do jump shot: sem controle até pousar (como no 2K); o embalo do salto continua. Correndo
       // no ar, o corpo do arremesso deslizava e os pés pousavam longe do corpo.
       if (this.ballFree() && this.animator.shotAirborne()) target = this.velocity;
-      const brake = inMove ? MoveAcceleration : this.moveIsEscape && this.lastWish < 0.2 ? EscapeBrake : Deceleration;
+      const brake = inMove ? this.moveBrake : this.moveIsEscape && this.lastWish < 0.2 ? EscapeBrake : Deceleration;
       this.velocity = approachVelocity(this.velocity, target, dt, accel, brake);
     } else if (this.phase === 'gather' && this.finish) {
       // Bandeja/enterrada (UE: UpdateFinish): rumo à cesta na velocidade combinada, com rampa a partir da velocidade atual
@@ -716,9 +800,22 @@ export class Freestyle {
         this.velocity = this.landing.v0.scale(0.5 * (1 + Math.cos(Math.PI * t)));
       }
     }
-    this.position = this.position.add(this.velocity.scale(dt));
-    // Root motion do spin: o corpo girou em volta do pé de pivô; o jogador vai junto (zero fora do giro).
-    this.position = this.position.add(fromThree(this.animator.takeRootMotion()).withZ(0));
+    // Root motion do spin (o corpo girou em volta do pé de pivô) e das plantadas: o jogador vai junto (zero fora deles).
+    const rootMotion = fromThree(this.animator.takeRootMotion()).withZ(0);
+    if (turning) {
+      // Na plantada a posição é só a do clipe, e a velocidade é a da trilha dele: a saída continua dela.
+      this.position = this.position.add(rootMotion);
+      this.velocity = fromThree(this.animator.plantVelocity()).withZ(0);
+    } else {
+      this.position = this.position.add(this.velocity.scale(dt));
+      this.position = this.position.add(rootMotion);
+    }
+    // Giro da plantada (root motion): a frente acompanha o rumo do clipe.
+    const rootYaw = this.animator.takeRootYaw();
+    if (rootYaw !== 0) {
+      const yaw = Math.atan2(this.facing.x, this.facing.y) + rootYaw;
+      this.facing = new Vec3(Math.sin(yaw), Math.cos(yaw), 0);
+    }
     // Deriva do jump shot (fade para trás do Dirk, pouso à frente do Curry): o jogador vai junto com o corpo.
     this.position = this.position.add(fromThree(this.animator.takeShotDrift()).withZ(0));
     const { baselineX, halfCourtX, halfWidth } = this.layout;
@@ -733,7 +830,27 @@ export class Freestyle {
     if (bounded.y !== this.position.y) this.velocity = new Vec3(this.velocity.x, 0, 0);
     this.position = bounded;
 
-    this.updateFacing(dt, input, inMove);
+    // Na plantada o rumo é o do clipe (acima).
+    if (!turning) this.updateFacing(dt, input, inMove);
+  }
+
+  /** Começa a virada de 180° (PlantTurn) se o jogador corre e o LS aponta para trás, ou a parada (PlantStop) se o LS soltou. */
+  private tryPlant(wish: Vec3, input: InputState): void {
+    if (!plantTurnEnabled || (this.faceTarget && !input.sprint) || this.animator.actionKind() !== null || this.animator.shotAirborne()) return;
+    const speed = this.velocity.length2D();
+    if (speed >= PlantStop.minSpeed && wish.length2D() < PlantStop.stick) {
+      this.animator.playPlantStop(speed);
+      return;
+    }
+    if (speed < PlantTurn.minSpeed || wish.length2D() < PlantTurn.stick) return;
+    const v = this.velocity.flat().normalized();
+    const w = wish.flat().normalized();
+    const angle = Math.acos(clamp(v.dot(w), -1, 1));
+    if (angle < (PlantTurn.minDeg * Math.PI) / 180) return;
+    // Vira para o lado do LS; quase 180°, para o lado da cesta (o jogador olha o jogo enquanto vira).
+    const side = w.dot(this.right());
+    const toRight = Math.abs(side) > 0.17 ? side > 0 : this.right().dot(this.rimCenter().sub(this.position).flat()) > 0;
+    this.animator.playPlantTurn(toRight, speed, angle);
   }
 
   /**

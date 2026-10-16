@@ -31,6 +31,8 @@ import { fitLoadout } from './build/BuildBadges';
 import { displayName, formatMeters } from './build/PlayerBuild';
 import type { OnlineMatch } from './game/OnlineMatch';
 import type { OnlineStart } from './menu/OnlineLobby';
+import type { CpuStart } from './menu/CpuSetup';
+import type { CpuLevel } from './game/cpu/CpuRoster';
 
 /** Y do controle (botão 3 do mapeamento padrão): Salvar no criador. O Input só lê A, B e Start na pausa. */
 function padY(): boolean {
@@ -95,8 +97,11 @@ const arenaOn = params.get('arena') !== '0';
 // Menu principal estilo 2K (docs/23): abre antes do Freestyle para quem joga. Fica fora no Playwright (navigator.webdriver,
 // os testes e as ferramentas abrem "/" e esperam o Freestyle), no laboratório e com ?menu=0; ?menu=1 força.
 // O link de convite do online (?sala=CODE) também abre o menu (direto no lobby).
+// ?cpu=<adversário> abre direto o 1 contra 1 contra a CPU (sem o menu).
 const menuOn =
-  params.get('menu') === '1' || params.has('sala') || (params.get('menu') !== '0' && !navigator.webdriver && params.get('lab') !== '1');
+  params.get('menu') === '1' ||
+  params.has('sala') ||
+  (params.get('menu') !== '0' && !navigator.webdriver && params.get('lab') !== '1' && !params.has('cpu'));
 
 async function boot(): Promise<void> {
   if (arenaOn) ArenaDressing.preload(); // baixa os GLBs enquanto o jogador carrega
@@ -131,7 +136,7 @@ async function boot(): Promise<void> {
       // Bandeja e enterrada não têm green: sem medidor colorido e sem ding.
       if (!finish) hud.freezeMeter(evaluation);
       director?.onRelease(evaluation);
-      online?.onRelease();
+      online?.onRelease(finish);
       if (evaluation.timing === TimingGrade.Green) sfx.ding();
     },
     onFloorBounce: (speed) => sfx.bounce(speed),
@@ -165,7 +170,7 @@ async function boot(): Promise<void> {
   // Menu principal: o jogador escolhe (ou cria) a build; o Freestyle usa os ratings dela. Sem menu, a build ativa salva
   // (ou a padrão, que joga igual a antes do builder).
   let build = BuildSave.active();
-  let onlineStart: OnlineStart | null = null;
+  let onlineStart: OnlineStart | CpuStart | null = null;
   if (menuOn) {
     // Import dinâmico: as telas do menu só carregam quando o menu abre (o Freestyle dos testes não depende delas). Se o
     // menu falhar ao carregar (arquivo em edição), o Freestyle abre direto com a build ativa.
@@ -178,10 +183,27 @@ async function boot(): Promise<void> {
       (window as unknown as { __showroom: unknown }).__showroom = { showroom, animator, THREE };
       const result = await new MenuFlow(showroom).run();
       build = result.build;
-      onlineStart = result.online ?? null;
+      onlineStart = result.online ?? result.cpu ?? null;
     } catch (e) {
       console.error('menu não carregou; abrindo o Freestyle', e);
     }
+  }
+  // 1 contra 1 contra a CPU direto pela URL, sem o menu (?cpu=flash&nivel=pro; os testes usam; docs/25 §2).
+  if (!onlineStart && !menuOn && params.has('cpu')) {
+    const [{ makeCpuStart }, { cpuEntry }] = await Promise.all([import('./menu/CpuSetup'), import('./game/cpu/CpuRoster')]);
+    const levelOf = (v: string | null): CpuLevel | undefined => (v === 'rookie' || v === 'pro' || v === 'allstar' || v === 'hof' ? v : undefined);
+    const autoplay = params.get('autoplay');
+    onlineStart = makeCpuStart({
+      build,
+      name: params.get('nome'),
+      entry: cpuEntry(params.get('cpu') ?? ''),
+      level: levelOf(params.get('nivel')) ?? 'pro',
+      rules: params.has('alvo') ? { target: Math.max(1, Number(params.get('alvo')) || 11) } : undefined,
+      cpuFirst: params.get('ataque') === 'cpu',
+      sorte: params.get('sorte') === '1',
+      // ?autoplay=<nível>: o jogador também vira CPU (CPU contra CPU); sem nível, Profissional.
+      autoplay: autoplay === null ? undefined : (levelOf(autoplay) ?? 'pro'),
+    });
   }
   const ratings = playRatings(build);
   game.setRatings(ratings);
@@ -221,10 +243,17 @@ async function boot(): Promise<void> {
         sfx,
         // ?sorte=1 (testes): todo toco possível no MEU arremesso sai (o sorteio do toco é de quem arremessa).
         random: params.get('sorte') === '1' ? () => 0 : undefined,
-        // Saiu da partida: volta ao menu principal (sem o código do convite, para não entrar de novo na sala).
+        // Contra a CPU: o jogador dela no lugar do boneco remoto, sem o ping, e a bola dela também balança a rede.
+        opponent: 'opponent' in onlineStart ? onlineStart.opponent : undefined,
+        offline: 'offline' in onlineStart,
+        netTick: (ball, step) => netMesh?.stepWithBall(ball, step, game.sim.getConfig().ball.radius),
+        cameraForward: () => rig.forward(),
+        impact: (strength) => rig.kick(strength),
+        // Saiu da partida: volta ao menu principal (sem o código do convite nem a CPU da URL, para não entrar de novo).
         onExit: () => {
           const query = new URLSearchParams(location.search);
           query.delete('sala');
+          query.delete('cpu');
           query.set('menu', '1');
           location.search = query.toString();
         },
@@ -379,7 +408,7 @@ async function boot(): Promise<void> {
     stats.samples++;
   };
   window.__garrafao = { ...debug, ballStats: () => ({ ...stats }), match: () => director!.snapshot(), online: () => online?.debug() ?? null };
-  (window as unknown as { __debug: unknown }).__debug = { animator, game, THREE, gear };
+  (window as unknown as { __debug: unknown }).__debug = { animator, game, THREE, gear, rig };
 
   let last = performance.now();
   let gameClock = performance.now() / 1000;
@@ -473,7 +502,8 @@ async function boot(): Promise<void> {
     hud.update(dt, state.gamepadConnected);
     ring.update(dt, animator.root.position, animator.root.rotation.y);
     arena?.update(dt);
-    if (game.phase !== 'flight') netMesh.advance(dt);
+    // A rede anda sozinha sem bola em voo (a do jogador ou a da CPU, que a balança pelo netTick).
+    if (game.phase !== 'flight' && !online?.netBusy()) netMesh.advance(dt);
     netMesh.sync();
     director!.update(dt, state.sprint, (p) => rig.project(p, window.innerWidth, window.innerHeight));
     // Depois do director: o placar do online (o do servidor) é o que fica na tela.

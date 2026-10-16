@@ -19,6 +19,7 @@ import { overall } from '../build/BuildRules';
 import { BuildSave } from '../build/BuildSave';
 import { RepeatDelay, holdRepeats } from '../hud/PauseMenu';
 import { OnlineLobby, type OnlineStart } from './OnlineLobby';
+import { type CpuStart, CpuSetupScreen } from './CpuSetup';
 
 export interface MenuResult {
   build: PlayerBuild;
@@ -26,6 +27,8 @@ export interface MenuResult {
   test: boolean;
   /** Online 1x1: a partida que o servidor começou (com a conexão aberta). */
   online?: OnlineStart;
+  /** 1 contra 1 contra a CPU: a sala local e o oponente (docs/25). */
+  cpu?: CpuStart;
 }
 
 // Índices do mapeamento standard (Xbox).
@@ -77,6 +80,7 @@ export class MenuFlow {
       (choice) => {
         if (choice === 'freestyle') this.finish({ build: BuildSave.active(), test: false });
         else if (choice === 'online') this.showOnline(null);
+        else if (choice === 'cpu') this.showCpu();
         else this.show(this.list);
       },
     );
@@ -168,6 +172,20 @@ export class MenuFlow {
         autoJoin,
         onBack: () => this.show(this.main),
         onMatch: (online) => this.finish({ build, test: false, online }),
+      }),
+    );
+  }
+
+  // ------------------------------------------------------------------ 1 contra 1 contra a CPU
+
+  private showCpu(): void {
+    const build = BuildSave.active();
+    this.show(
+      new CpuSetupScreen({
+        build,
+        name: new URLSearchParams(location.search).get('nome'),
+        onBack: () => this.show(this.main),
+        onStart: (cpu) => this.finish({ build, test: false, cpu }),
       }),
     );
   }

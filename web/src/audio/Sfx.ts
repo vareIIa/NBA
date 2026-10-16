@@ -140,6 +140,30 @@ function renderRim(seed: number): Float32Array {
   return normalize(out, 0.5);
 }
 
+/**
+ * Tapa da mão na bola (toco e roubo): estalo de pele (ruído em banda ~1,6–2,4 kHz, ~10 ms) mais o baque oco da bola
+ * (corpo grave ~150 Hz e o "ping" da câmara de ar), mais curto que o quique. `heavy` = o toco (mais corpo e mais forte).
+ */
+function renderSlap(seed: number, heavy: boolean): Float32Array {
+  const n = Math.round(0.22 * Rate);
+  const out = new Float32Array(n);
+  const noise = makeNoise(seed);
+  const skin = new Biquad('bandpass', heavy ? 1600 : 2300, 1.1);
+  const crack = new Biquad('highpass', 3200, 0.7);
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / Rate;
+    phase += (2 * Math.PI * (heavy ? 150 : 175) * (1 + 0.6 * decay(t, 0.006))) / Rate;
+    const w = noise();
+    const slap = skin.process(w) * decay(t, heavy ? 0.011 : 0.007);
+    const c = crack.process(w) * decay(t, 0.0015);
+    const body = Math.sin(phase) * decay(t, heavy ? 0.03 : 0.018) * rise(t - 0.002, 0.002);
+    const ping = Math.sin(2 * Math.PI * 990 * t) * decay(t, 0.03) * (1 - decay(t, 0.003));
+    out[i] = 5 * slap + 0.8 * c + (heavy ? 0.9 : 0.5) * body + 0.15 * ping;
+  }
+  return normalize(out, heavy ? 0.95 : 0.7);
+}
+
 function renderDing(): Float32Array {
   const n = Math.round(0.7 * Rate);
   const out = new Float32Array(n);
@@ -173,6 +197,8 @@ export class Sfx {
     this.buffers.swish = [make(renderSwish(101)), make(renderSwish(211))];
     this.buffers.rim = [make(renderRim(5)), make(renderRim(9))];
     this.buffers.ding = [make(renderDing())];
+    this.buffers.block = [make(renderSlap(301, true)), make(renderSlap(457, true))];
+    this.buffers.slap = [make(renderSlap(613, false)), make(renderSlap(829, false))];
   }
 
   private play(name: string, gain: number, rate = 1): void {
@@ -200,5 +226,13 @@ export class Sfx {
   }
   ding(): void {
     this.play('ding', 0.8);
+  }
+  /** Toco: a mão bate na bola. */
+  block(): void {
+    this.play('block', 1);
+  }
+  /** Tapa do roubo que pega na bola. */
+  slap(): void {
+    this.play('slap', 0.8);
   }
 }

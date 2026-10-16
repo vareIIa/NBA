@@ -256,6 +256,15 @@ export class RemotePlayer {
     return this.animator.defenseState();
   }
 
+  /**
+   * Pulo de defesa do outro agora (s desde o aperto e altura), estimado pelo boneco: ele repete o pulo ~delay atrás, então
+   * a fase de agora é a dele mais o atraso. null fora do pulo. O toco do meu arremesso projeta daqui (game/BlockWatch).
+   */
+  defenseJump(): { t: number; h: number } | null {
+    const j = this.animator.defenseJump();
+    return j ? { t: j.t + this.clock.delay, h: j.h } : null;
+  }
+
   /** A bola do outro está na mão dele, no drible (nem no arremesso nem na bandeja), e se está no quique agora. */
   dribbleState(): { dribbling: boolean; bouncing: boolean; protect: boolean } {
     const dribbling = this.mode === 'hand' && this.animator.actionKind() !== 'Shot';
