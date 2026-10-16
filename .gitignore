@@ -24,3 +24,6 @@ opensim.log
 
 # Vídeos de referência de terceiros (análise interna, não versionar)
 referencias/real/
+
+# Modelos brutos do HY 3D Studio (25–45 MB cada; as versões otimizadas ficam em web/public/assets/gear)
+web/public/assets/models_raw/

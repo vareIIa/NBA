@@ -11,6 +11,7 @@ import { Input } from './game/Input';
 import { TimingGrade } from './sim';
 import { Hud } from './hud/Hud';
 import { Sfx } from './audio/Sfx';
+import { PlayerGear } from './game/PlayerGear';
 
 declare global {
   interface Window {
@@ -64,6 +65,19 @@ window.addEventListener('resize', () => {
 async function boot(): Promise<void> {
   hud.setLoading('Carregando o jogador…');
   const animator = await PlayerAnimator.load('assets/hoops_player.glb', 'assets/hoops_player.clips.json');
+  // Tênis, regata e bermuda do HY 3D (docs/20). ?roupa=0 volta ao boneco liso; ?uniforme=branco e ?tenis=<nome> trocam
+  // as peças. Sem os GLBs, segue sem roupa.
+  const kit = params.get('uniforme') === 'branco' ? 'branca' : 'vermelha';
+  const gear =
+    params.get('roupa') === '0'
+      ? null
+      : await PlayerGear.load(animator, {
+          shoes: `assets/gear/${params.get('tenis') ?? 'tenis_retro_alto_1'}.glb`,
+          jersey: `assets/gear/regata_${kit}.glb`,
+          shorts: `assets/gear/bermuda_${kit}.glb`,
+        }).catch(
+          (e) => (console.warn('roupa não carregou', e), null),
+        );
   hud.setLoading(null);
 
   let made = 0;
@@ -120,7 +134,7 @@ async function boot(): Promise<void> {
     stats.samples++;
   };
   window.__garrafao = { ...debug, ballStats: () => ({ ...stats }) };
-  (window as unknown as { __debug: unknown }).__debug = { animator, game, THREE };
+  (window as unknown as { __debug: unknown }).__debug = { animator, game, THREE, gear };
 
   let last = performance.now();
   let gameClock = performance.now() / 1000;
@@ -135,6 +149,7 @@ async function boot(): Promise<void> {
     const state = input.read();
     if (state.gamepadConnected && (state.shoot || state.sprint)) sfx.unlock();
     game.update(gameClock, dt, state, rig.forward());
+    gear?.update(dt);
     rig.playerFacing = game.facing;
     rig.update(dt, game.position, game.rimCenter());
 
