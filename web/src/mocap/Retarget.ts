@@ -142,6 +142,13 @@ interface CoreOptions {
    * descontar a diferença, a cabeça do jogador ficava ~18° baixa em todo clipe ("corcunda" no parado, diretor 2026-10-16).
    */
   neckPitchRest?: number;
+  /**
+   * Graus que o osso do pé da fonte (tornozelo -> metatarso) desce em relação ao chão com o pé plano. No mixamorig o
+   * metatarso fica 39° abaixo do tornozelo (IdleStand), no nosso esqueleto 13–17°: copiada crua, a direção deixava o pé
+   * ~25° apontado para baixo em todo clipe, o calcanhar no ar (o jogador andava e corria na ponta do pé, diretor
+   * 2026-10-16). A diferença é descontada no declive; o rumo do pé continua o da fonte.
+   */
+  footSlopeRest?: number;
 }
 
 /**
@@ -188,6 +195,8 @@ function retargetJoints(model: THREE.Object3D, rawFrames: JointFrame[], opts: Co
     const d = wp(`ball_${side}`).sub(wp(`foot_${side}`)).normalize();
     footSlope[side] = -Math.asin(THREE.MathUtils.clamp(d.y, -1, 1));
   }
+  // Quanto o pé da fonte com esqueleto sobe (rad) para o declive de repouso dela virar o nosso.
+  const footLift = (side: 'l' | 'r') => (opts.footSlopeRest === undefined ? 0 : THREE.MathUtils.degToRad(opts.footSlopeRest) - footSlope[side]);
 
   const frames = prepare(rawFrames, opts.smooth);
   const first = frames[0].j;
@@ -236,8 +245,17 @@ function retargetJoints(model: THREE.Object3D, rawFrames: JointFrame[], opts: Co
       const ank = p[`ank${S}` as Role]!;
       const ball = p[`ball${S}` as Role];
       if (ball) {
-        // Esqueleto: o osso do pé é o mesmo (tornozelo -> metatarso).
-        aim(bone(`foot_${side}`), bone(`ball_${side}`), ball.clone().sub(ank));
+        // Esqueleto: o osso do pé é o mesmo (tornozelo -> metatarso), com o declive de repouso descontado (footSlopeRest).
+        const dir = ball.clone().sub(ank).normalize();
+        const lift = footLift(side);
+        if (lift !== 0) {
+          // Sobe a ponta girando em torno do eixo lateral (a direita do quadril, perpendicular ao pé). Pelo rumo horizontal
+          // do pé o eixo virava quando o pé da fonte passava perto da vertical (fim do impulso): o pé girava 40–50° num quadro.
+          const axis = p.hipR!.clone().sub(p.hipL!);
+          axis.addScaledVector(dir, -axis.dot(dir)).normalize();
+          dir.applyAxisAngle(axis, lift);
+        }
+        aim(bone(`foot_${side}`), bone(`ball_${side}`), dir);
       } else {
         // Vídeo: rumo e inclinação do calcanhar -> ponta (a ponta sozinha treme), descontando o declive do osso.
         const sole = p[`toe${S}` as Role]!.clone().sub(p[`heel${S}` as Role]!).normalize();
@@ -327,8 +345,32 @@ function mixamoNeckRest(file: MixamoFile): number | undefined {
   return THREE.MathUtils.radToDeg(sum / c.quadros.length);
 }
 
+/** Pé do Mixamo com o declive de repouso descontado (footSlopeRest); `?pemixamo=cru` volta à direção crua (A/B). */
+const MixamoFootFix = typeof location === 'undefined' || new URLSearchParams(location.search).get('pemixamo') !== 'cru';
+
+/** Declive do pé da fonte em pé (graus, tornozelo -> metatarso para baixo): a média dos dois pés no IdleStand. */
+function mixamoFootRest(file: MixamoFile): number | undefined {
+  const c = file.clipes.IdleStand;
+  const J = file.juntas;
+  if (!c || !['ankL', 'ballL', 'ankR', 'ballR'].every((r) => J.includes(r))) return undefined;
+  let sum = 0;
+  for (const q of c.quadros) {
+    for (const [a, b] of [['ankL', 'ballL'], ['ankR', 'ballR']]) {
+      const d = new THREE.Vector3(...(q[J.indexOf(b)] as [number, number, number])).sub(new THREE.Vector3(...(q[J.indexOf(a)] as [number, number, number])));
+      sum += -Math.atan2(d.y, Math.hypot(d.x, d.z));
+    }
+  }
+  return THREE.MathUtils.radToDeg(sum / (2 * c.quadros.length));
+}
+
 /** Clipe do Mixamo (tools/mixamo-bake.mjs) -> clipe do nosso esqueleto, com a velocidade nativa. */
-export function retargetMixamo(model: THREE.Object3D, file: MixamoFile, clipName: string, opts: { name?: string; loop: boolean; smooth?: number }): RetargetedClip {
+export function retargetMixamo(
+  model: THREE.Object3D,
+  file: MixamoFile,
+  clipName: string,
+  // footFix: false = o pé com a direção crua da fonte (como antes; A/B pela URL ?pemixamo=cru).
+  opts: { name?: string; loop: boolean; smooth?: number; footFix?: boolean },
+): RetargetedClip {
   const c = file.clipes[clipName];
   if (!c) throw new Error(`clipe ${clipName} não está no arquivo`);
   const roles = file.juntas as Role[];
@@ -337,7 +379,15 @@ export function retargetMixamo(model: THREE.Object3D, file: MixamoFile, clipName
     roles.forEach((r, k) => (j[r] = new THREE.Vector3(q[k][0], q[k][1], q[k][2])));
     return { t: i / file.fps, j };
   });
-  return retargetJoints(model, frames, { name: opts.name ?? clipName, speed: 1, smooth: opts.smooth ?? 0, height: 'source', loop: opts.loop, neckPitchRest: mixamoNeckRest(file) });
+  return retargetJoints(model, frames, {
+    name: opts.name ?? clipName,
+    speed: 1,
+    smooth: opts.smooth ?? 0,
+    height: 'source',
+    loop: opts.loop,
+    neckPitchRest: mixamoNeckRest(file),
+    footSlopeRest: (opts.footFix ?? MixamoFootFix) ? mixamoFootRest(file) : undefined,
+  });
 }
 
 /**

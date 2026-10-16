@@ -72,4 +72,18 @@ export const Cenarios = {
   // Dribble_Side só quicam com a mão do outro lado (a bola ficava presa na mão).
   lado_esquerda_mao_esq: { hand: 'l', steps: wait(60, { moveX: -1 }) },
   lado_bola_cruza: { hand: 'r', steps: [...wait(30, { moveX: 1 }), ...flick(0, 1, { moveX: 1 }), ...wait(40, { moveX: 1 })] },
+  // Física da corrida sem bola (diretor, 2026-10-16: "o pé jogar um pouco pro lado e dar um impulso dele se jogando pro
+  // outro lado"): andar devagar, arrancar, parar, virar 180°/150° (a plantada do PlayerAnimator.playPlantTurn), vai-e-volta,
+  // zigue-zague e corte de 90°.
+  sb_anda_devagar: { hand: 'r', noBall: true, steps: wait(90, { moveY: 0.45 }) },
+  sb_arranca: { hand: 'r', noBall: true, steps: [...wait(10), ...wait(60, { moveY: 1, sprint: true })] },
+  sb_para: { hand: 'r', noBall: true, steps: [...wait(50, { moveY: 1, sprint: true }), ...wait(50)] },
+  sb_vira_180: { hand: 'r', noBall: true, steps: [...wait(55, { moveX: 1 }), ...wait(70, { moveX: -1 })] },
+  sb_vira_150: { hand: 'r', noBall: true, steps: [...wait(55, { moveX: 1 }), ...wait(70, { moveX: -0.87, moveY: 0.5 })] },
+  sb_vira_dispara: { hand: 'r', noBall: true, steps: [...wait(50, { moveY: 1, sprint: true }), ...wait(80, { moveY: -1, sprint: true })] },
+  sb_vai_volta: { hand: 'r', noBall: true, steps: [...wait(50, { moveX: 1 }), ...wait(60, { moveX: -1 }), ...wait(60, { moveX: 1 }), ...wait(40)] },
+  sb_zigue: { hand: 'r', noBall: true, steps: [...wait(40, { moveX: 0.7, moveY: 0.7 }), ...wait(35, { moveX: -0.7, moveY: 0.7 }), ...wait(35, { moveX: 0.7, moveY: 0.7 }), ...wait(30, { moveX: -0.7, moveY: 0.7 })] },
+  sb_corte_90: { hand: 'r', noBall: true, steps: [...wait(45, { moveY: 1 }), ...wait(55, { moveX: 1 })] },
+  // Hesitação correndo sem RT (a de parada: freia, o corpo sobe e arranca); com RT é a escape (corre_hesi_arranca).
+  corre_hesi_freia: { hand: 'r', steps: [...wait(30, { moveY: 1 }), ...flick(1, 0, { moveY: 1 }), ...wait(55, { moveY: 1 })] },
 };

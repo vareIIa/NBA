@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clipe do Mixamo</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #1b1d22; overflow: hidden; font: 14px system-ui, sans-serif; }
+      #view { width: 100vw; height: 100vh; display: block; }
+      .label { position: fixed; color: #fff; background: rgba(0, 0, 0, 0.55); padding: 4px 8px; border-radius: 4px; }
+      #fase { left: 50%; transform: translateX(-50%); bottom: 12px; }
+      .err { position: fixed; inset: 40px; color: #f88; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div class="label" id="fase"></div>
+    <script type="module" src="/src/mocap/clip-viewer.ts"></script>
+  </body>
+</html>

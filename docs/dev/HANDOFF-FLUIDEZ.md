@@ -728,3 +728,103 @@ Mudam 8 cenários; os outros 36 ficam iguais.
   recepção depois de um quadro de Side) e a bola fica 0,25 s na mão em vez de 0,12 s; estendendo o cenário o ritmo é igual.
 - Unitários (339) e e2e (`movement`, `freestyle`) passando. `tsc` acusa `e2e/_publicado.spec.ts` (arquivo de outra
   sessão, `hub` possivelmente nulo), fora deste trabalho.
+
+## 16. Física da corrida sem bola, plantadas e hesitação com corpo (2026-10-16, sessão nba-34)
+
+Pedido do diretor (com dois prints correndo sem bola): "corre um pouco com a ponta do pé", "anda na ponta do pé", "o braço
+não tem movimentação realista", "o personagem vai correndo de um lado pro outro, ele tem que ter a física: o pé jogar um
+pouco pro lado e dar um impulso dele se jogando pro outro lado", e na hesitação "o boneco nem se mexe; devia se jogar um
+pouco pro lado". Antes/depois: `docs/img/corrida-sem-bola-antes-depois.jpg`, `virada-180-antes-depois.jpg`,
+`parada-antes-depois.jpg`, `hesitacao-parada-antes-depois.jpg`, `hesitacao-correndo-antes-depois.jpg`.
+
+### Diagnóstico
+
+1. **Pé na ponta (causa raiz):** no mixamorig o osso do pé (tornozelo -> metatarso) desce 39° com o pé plano; no nosso
+   esqueleto, 13–17°. O retarget copiava a direção crua: todo clipe do Mixamo (locomoção, IdleStand) deixava o pé ~25°
+   apontado para baixo. O tornozelo do Mixamo também é mais alto, e as duas coisas se compensavam (a ponta encostava no
+   chão, o calcanhar ficava no ar). O `flattenFoot` corrigia devagar (10/s, o apoio da corrida dura ~0,2 s).
+2. **Braços:** sem bola, o tronco e os braços eram do loop Run/Walk da CMU (braços dobrados e quase parados na cintura);
+   só pelve e pernas vinham do Mixamo.
+3. **Física:** a inclinação pela aceleração era só da coluna (1,4°/(m/s²)); a virada freava em pé, parava de frente
+   para a câmera e só então girava; a parada inclinava o corpo reto para trás com os pés juntos.
+4. **Hesitação:** o clipe da CMU (gravado parado) quase não mexe o corpo; correndo, o drible freava a 30 m/s² (3,9 ->
+   0,6 m/s em 0,1 s) com as pernas do clipe parado.
+
+### O que mudou
+
+- `mocap/Retarget.ts`: `footSlopeRest` (declive do pé da fonte, medido no IdleStand) é descontado girando o pé em torno
+  do eixo lateral do quadril (pelo rumo horizontal do pé o eixo virava perto da vertical e o pé girava 40–50° num
+  quadro). `?pemixamo=cru` volta ao antigo. Teste: `mocap/retarget.test.ts` (pula sem o `mixamo_loco.json`).
+- `PlayerAnimator` (pés): trava de pé também pela sola da pose do clipe ANTES do agachamento (`clipSole`; a sola depois
+  dele estava 12 cm mais baixa com a bola e travava pé no ar), só com as pernas do Mixamo na locomoção
+  (`lockBySoleEnabled`); pé de apoio plano encosta no piso (`groundFlatEnabled`); a base parada que entra com um pé
+  preso pela trava começa com ele onde está (pulava ~20 cm depois da parada).
+- `PlayerAnimator.applyMixamoLegs`: sem a bola, tronco, pescoço e braços do clone do Mixamo (`MixamoUpperBones`,
+  `mixamoUpperEnabled`); a spine_01 pega a orientação do tronco do clone e a pelve continua com a inclinação corrigida
+  (sem a "bunda empinada"). A inclinação sem bola pela velocidade fica com 30% (o tronco do Mixamo já inclina).
+- `PlayerAnimator.applyBodyLean` (`BodyLean`, `bodyLeanEnabled`): o corpo inteiro inclina atan(a/g)·ganho (pêndulo
+  invertido: arrancar = à frente dos pés, frear = atrás, corte = para dentro da curva), com mola e com a pelve girando em
+  volta de um ponto abaixo dela; desce o quadril com a carga da freada/corte. Com a bola fica 55% (a postura de
+  infiltração já é baixa). A inclinação antiga só da coluna ficou com 35%.
+- **Plantadas com root motion** (`anim/RootMotion.ts` + `PlayerAnimator.playPlantTurn/playPlantStop/cancelPlant`,
+  `PlantClip`, ação `'Plant'`): clipes do Mixamo retargetados com o deslocamento e o giro do quadril tirados para uma
+  trilha de raiz (a pose fica "no lugar"); o jogo anda e gira a raiz pela trilha (`takeRootMotion` + `takeRootYaw` +
+  `plantVelocity`), como o spin. **Virada** (ChangeDir; `Turn_L` = o clipe, que vira para a esquerda; `Turn_R` =
+  espelho): freia girando 90°, planta o pé de fora, desce o quadril (metade da descida do clipe é desfeita) e sai com o
+  passo cruzado; ~0,8 s, entrada pela fase da passada mais parecida, giro escalado para o ângulo pedido.
+  **Parada** (RunStop; `Stop_L/R`): o pé da frente planta e freia; o LS de volta depois do plantio corta. A regra
+  "pernas nunca cruzam" sai durante a plantada e volta em rampa (o passo cruzado é de propósito).
+- `Freestyle`: `tryPlant` (sem a bola, fora da defesa): correndo ≥ 2,8 m/s com o LS a > 125° da corrida -> virada para
+  o lado do LS (quase 180°: para o lado da cesta); ≥ 3 m/s com o LS solto -> parada. Na plantada a posição é a do root
+  motion e a velocidade é a da trilha (a saída continua dela); `?virada=0` desliga.
+- **Hesitação** (`HesiBody`, `hesiBodyEnabled`): o quadril e o tronco vão para o lado da bola (ombro descendo, cabeça
+  desfazendo 60%), a bola vai para fora junto (IK com peso do balanço: a inclinação girava a bola para dentro da coxa) e,
+  parado, o pé do lado da bola dá um jab de 10 cm e volta. Correndo, o próprio movimento decide: freando é a de parada
+  (o corpo sobe e o tronco se endireita, depois vai à frente); acelerando (escape com RT) só o jab de lado e o tronco à
+  frente. `Freestyle`: a hesitação correndo freia a 12 m/s² e guarda 25% da velocidade (`HesiRun`). As pernas da
+  locomoção na hesitação correndo foram testadas de novo e continuam fora (pernas cruzando 0 -> 4 quadros).
+
+### Ferramentas novas
+
+- `clipe-mixamo.html?clipe=ChangeDir&cam=lado|frente|tras|cima|diag&espelho=1&vel=1` (`src/mocap/clip-viewer.ts`):
+  qualquer clipe do `mixamo_loco.json` no nosso jogador, retargetado como no jogo; `window.__clip.step(n)` para filmar.
+  Clipes ainda não usados que valem a pena: `StartWalk`, `SideStep`, `StrafeL/R`, `CrouchF/B/L/R` (defesa).
+- Cenários: `sb_anda_devagar`, `sb_arranca`, `sb_para`, `sb_vira_180`, `sb_vira_150`, `sb_vira_dispara`, `sb_vai_volta`,
+  `sb_zigue`, `sb_corte_90` e `corre_hesi_freia` (hesitação correndo sem RT; com RT é a escape, `corre_hesi_arranca`).
+- Para filmar uma vista com câmera parada no mundo (as do laboratório giram com o jogador): `window.__lab.lab` dá o
+  renderer e a cena (campos privados acessíveis no JS).
+
+### Números
+
+Laboratório, build congelado antes (5186) x depois (5187), mesmos cenários. Soma dos 58 cenários a 60 Hz (os 15
+principais a 144 Hz entre parênteses):
+
+| métrica | antes | depois |
+| --- | --- | --- |
+| pé na ponta (quadros de apoio) | 1259 (732) | 300 (176), −76% |
+| sola abaixo do piso (quadros) | 414 (192) | 160 (92) |
+| pernas cruzando (quadros) | 1044 (825) | 667 (511) |
+| bola no corpo (quadros) | 75 (53) | 47 (37) |
+| deslize médio do pé (soma, m/s) | 52 (12) | 39 (10) |
+| estalos | 3353 (2619) | 2892 (2516) |
+| SALTOS | 2255 (237) | 2163 (225) |
+| NaN | 0 | 0 |
+
+Sem bola (13 cenários): pé na ponta 445 -> 65 quadros, SALTOS 491 -> 402, deslize médio 12,1 -> 8,7. Virada em
+disparada: pernas cruzando 70 -> 41, pé na ponta 41% -> 9%; parada: pernas cruzando 79 -> 27, sola no chão 6 -> 0,
+SALTOS 36 -> 25; hesitação correndo (`corre_hesi_freia`): deslize 5,6 -> 4,0 m/s, SALTOS 49 -> 41. Unitários 403/403
+e e2e `movement`, `freestyle` e `finish` (19) passando.
+
+Pioram em um cenário só (picos de um quadro): deslize máximo em `corre_spin`/`spin_e_dispara`/`spin_na_linha` (~7 -> 9 m/s;
+some com `?pemixamo=cru`, o pé corrigido muda o pico do giro), `anda_entre_pernas` (6 -> 8,7) e `sb_vai_volta` (10 -> 14); SALTOS
+em `escape_e_corre_lado` (45 -> 52) e `sb_vira_dispara` (59 -> 65).
+
+### Pendências
+
+- O online não grava as plantadas (`AnimRecorder` não embrulha `playPlantTurn/playPlantStop/cancelPlant`): o boneco
+  remoto anda e gira pela rede, mas com a locomoção comum. Se entrarem no gravador, o `RemotePlayer` precisa descartar o
+  `takeRootYaw()` também (como já descarta o `takeRootMotion()`).
+- Plantadas só sem a bola. Com a bola a virada e a parada continuam pelos dribles e pela freada de sempre.
+- A virada usa ~135° do clipe; o resto (até 180°) o jogo gira correndo nos primeiros passos.
+- A hesitação parada ganhou estalos de braço (18 -> 30; os SALTOS em cm ficaram 13 -> 16), pelo movimento maior.
+- `combo_rapido`: o jab da hesitação aparece como deslize de pé (2 m/s) na métrica.
