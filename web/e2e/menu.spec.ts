@@ -32,8 +32,9 @@ test('menu → Meu Jogador → criar build → corpo → atributos → Shades Of
   await page.locator('.mn .mm-item').first().waitFor({ timeout: 60_000 });
   await page.evaluate(() => localStorage.removeItem('garrafao.builds.v1'));
   expect(await crumb(page)).toMatch(/Menu principal/i);
-  // Modos que não existem ainda: aparecem e avisam "em desenvolvimento".
-  await expect(page.locator('.mm-item.locked')).toHaveCount(4);
+  // Modos que não existem ainda (Carreira, 3x3, Configurações): aparecem e avisam "em desenvolvimento". O 1 contra 1
+  // (contra a CPU) e o Online 1x1 já entram.
+  await expect(page.locator('.mm-item.locked')).toHaveCount(3);
   await page.screenshot({ path: `${OUT}/01-menu.png` });
 
   // Meu Jogador → Criar nova build.
