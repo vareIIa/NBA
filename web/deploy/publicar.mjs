@@ -83,7 +83,12 @@ function cleanup() {
   try {
     execSync(`git worktree remove --force "${worktree}"`, { cwd: repo, stdio: 'ignore' });
   } catch {
-    rmSync(worktree, { recursive: true, force: true });
+    // No Windows um processo do teste (Vite, rolldown) pode segurar a pasta por alguns segundos depois de morto.
+    try {
+      rmSync(worktree, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+    } catch {
+      console.log(`\n(a cópia temporária ficou em ${worktree}; pode apagar quando quiser)`);
+    }
     execSync('git worktree prune', { cwd: repo, stdio: 'ignore' });
   }
   worktree = null;
