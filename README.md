@@ -25,6 +25,7 @@ Jogo de basquete **sim-arcade** em **Unreal Engine 5**: bonito como os grandes, 
 | ❓ | [Perguntas em aberto](docs/14-perguntas-abertas.md) |
 | ✅ | [Brief do produto e registro de decisões](docs/15-brief-e-decisoes.md) |
 | 🎥 | [Pipeline aberto: visual realista e mocap](docs/16-pipeline-aberto-visual-e-mocap.md) |
+| 🏅 | [Badges, Takeover e HUD de gameplay (padrão 2K23)](docs/19-badges-2k23.md) |
 | 🎬 | [Referências: clipes do diretor no 2K23 + análise](referencias/2k23/README.md) |
 
 ## Rodar o jogo

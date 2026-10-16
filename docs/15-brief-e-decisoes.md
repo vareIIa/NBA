@@ -40,6 +40,7 @@
 | D12 | 2026-10-04 | **Janela green maior** (~1,65×: rating 85 = ±50 ms) depois do 1º playtest; multiplicador ajustável no editor | Diretor |
 | D14 | 2026-10-04 | **Só assets gratuitos e open source** (sem pacotes pagos, ex.: o "Basketball" do Fab). Animação: todo o mocap útil da CMU (sujeitos 06, 102, 124, gestos), Mixamo só se o diretor quiser baixar (grátis, conta Adobe), e captura própria com ferramenta open source (Pose2Sim + RTMPose, saída 100% nossa) | Diretor |
 | D15 | 2026-10-14 | **Migrar o jogo inteiro para three.js** (web, TypeScript), substituindo a Unreal (D2). Motivos: iteração e testes muito mais fáceis (o desenvolvedor roda e testa no próprio ambiente, com Chromium/Playwright), menus/HUD em HTML, mais leve e barato. Plano em `docs/dev/HANDOFF-THREEJS.md` | Diretor |
+| D16 | 2026-10-14 | **Badges, Takeover e HUD de gameplay do NBA 2K23**: os 64 badges com os mesmos gatilhos, boosts e nerfs (substituem os Estilos do doc 09 §3), takeover primário/secundário/time e o HUD do vídeo de referência (faixa de timing/badge/nota, losango com a nota, cartão PTS/REB/AST/3P%, quadradinhos do takeover). Análise e ranking em `docs/19-badges-2k23.md` | Diretor |
 
 ## 4. Decisões pendentes (propostas com recomendação)
 

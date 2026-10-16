@@ -1,5 +1,11 @@
 # Criador de arremesso (menu de pausa)
 
+> **Atualização 2026-10-16:** as famílias deixaram de ser os clipes da CMU (`JumpShot`/`JumpShot2`) e viraram jogadores
+> de referência com corpo desenhado por parâmetros (Stephen Curry é o padrão; Klay, Ray Allen, Durant, Kobe, Dirk,
+> Oscar Robertson, Bird). A mistura das camadas de cima interpola os parâmetros da release em vez de misturar ossos de
+> dois clipes. Arremessos salvos com as famílias antigas viram Curry ao carregar. Detalhes em
+> `docs/22-arremessos-jump-shot.md`. O texto abaixo é o plano original.
+
 Objetivo: replicar o Jump Shot Creator do NBA 2K dentro do menu de pausa, sem a parte de VISUAL CUE. O jogador monta
 o próprio arremesso (base, duas camadas de cima, mistura, velocidade de soltura), salva vários e equipa um.
 
