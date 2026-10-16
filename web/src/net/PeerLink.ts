@@ -15,6 +15,9 @@
 // pela sala (com o mesmo r: repetido não toca duas vezes).
 //
 // Quem conecta: o lugar 1 pede ('req') e o lugar 0 oferece; o lugar 1 é quem tenta de novo quando falha.
+//
+// Privacidade: a conexão direta mostra o IP público de cada um ao outro (é o candidato do STUN). Por isso o canal só
+// sobe em sala privada (quem joga trocou o código com um amigo); na partida rápida, com desconhecido, tudo vai pela sala.
 import { MaxFrameBytes, type Side } from './protocol.ts';
 
 /** on = tenta a conexão direta; off = só a sala; fail = tenta sem candidato nenhum (nunca conecta: testes do fallback). */
@@ -147,6 +150,8 @@ export class PeerLink {
   private at: Attempt | null = null;
   /** Lugar 1: pede a conexão e tenta de novo. */
   private driver = false;
+  /** Partida em sala privada (match.start): só então o canal sobe e a sinalização do outro é ouvida. */
+  private allowed = false;
   private failures = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -191,9 +196,17 @@ export class PeerLink {
 
   // ---------------------------------------------------------------- ganchos do NetClient
 
-  /** match.start (começo, revanche ou volta de uma queda): o lugar 1 pede a conexão se ela não está de pé. */
-  matchStart(you: Side): void {
+  /**
+   * match.start (começo, revanche ou volta de uma queda): o lugar 1 pede a conexão se ela não está de pé. `allowed` =
+   * sala privada (na partida rápida o canal não sobe: o IP de cada um não vai para um desconhecido).
+   */
+  matchStart(you: Side, allowed = true): void {
     if (this.state === 'off') return;
+    if (!allowed) {
+      this.close();
+      return;
+    }
+    this.allowed = true;
     this.driver = you === 1;
     this.failures = 0;
     if (this.driver && this.state !== 'open' && this.state !== 'connecting') this.request();
@@ -201,7 +214,7 @@ export class PeerLink {
 
   /** O oponente caiu ou voltou para a sala. O canal pode continuar de pé com a sala fora (não derruba). */
   opponent(connected: boolean): void {
-    if (this.state === 'off') return;
+    if (this.state === 'off' || !this.allowed) return;
     this.clearRetry();
     if (connected && this.driver && !this.healthy()) {
       this.failures = 0;
@@ -211,7 +224,7 @@ export class PeerLink {
 
   /** Sinalização que chegou pela sala. */
   signal(raw: unknown): void {
-    if (this.state === 'off') return;
+    if (this.state === 'off' || !this.allowed) return;
     const s = parseSignal(raw);
     if (!s) return;
     switch (s.k) {
@@ -276,6 +289,7 @@ export class PeerLink {
     this.teardown();
     this.unacked.clear();
     this.driver = false;
+    this.allowed = false;
     this.state = 'idle';
   }
 

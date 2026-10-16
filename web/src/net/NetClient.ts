@@ -247,7 +247,7 @@ export class NetClient {
         break;
       case 'match.start':
         this.lastMatchState = msg.state;
-        this.link.matchStart(msg.you);
+        this.link.matchStart(msg.you, !msg.room.quick); // partida rápida (desconhecido): sem canal direto
         break;
       case 'match.state':
         this.lastMatchState = msg.state;

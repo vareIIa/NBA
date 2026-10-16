@@ -320,6 +320,21 @@ describe('PeerLink', () => {
     expect(a.link.send({ t: 'st', d: pose(1) })).toBe(false);
   });
 
+  it('partida rápida (desconhecido): o canal não sobe e a sinalização do outro é ignorada', async () => {
+    const { net, a, b } = pair();
+    a.link.matchStart(0, false);
+    b.link.matchStart(1, false);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(net.pcs).toHaveLength(0);
+    // Um cliente de outra versão que pedisse mesmo assim não recebe oferta (nem o IP).
+    a.link.signal({ k: 'req' });
+    b.link.signal({ k: 'offer', a: 'x', sdp: 'sdp-1' });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(net.pcs).toHaveLength(0);
+    expect(a.link.stats().state).toBe('idle');
+    expect(a.link.send({ t: 'st', d: pose(1) })).toBe(false);
+  });
+
   it('sair da sala derruba o canal; a próxima partida conecta de novo', async () => {
     const { a, b } = pair();
     a.link.matchStart(0);
