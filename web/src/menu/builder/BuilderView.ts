@@ -5,8 +5,9 @@
 //  - no meio, o jogador 3D (o showroom; a tela deixa o meio livre);
 //  - à direita, no topo, OVR e arquétipo ao vivo; embaixo, FÍSICO (medidores em semicírculo), BADGE UPGRADES (um
 //    escudo por categoria) e o botão de presets.
-// ←→ mudam ±1 (com o cap do corpo e o orçamento de BuildRules), ↑↓ andam, LB/RB pulam de grupo, Y abre os presets
-// (com a prévia na tabela: deltas verdes e vermelhos, como no MP Builder), A no botão termina. O mouse faz o mesmo.
+// ←→ mudam ±1 (com o cap do corpo e o orçamento de BuildRules) e, segurados, aceleram (2, 4, 8 por repetição); ↑↓
+// andam, LB/RB pulam de grupo, Y abre os presets (com a prévia na tabela: deltas verdes e vermelhos, como no MP
+// Builder), A no botão termina. Mouse: ◀ ▶ (segurar acelera igual), arrastar a barra até o valor, clique nos botões.
 // A lógica sem DOM está em BuilderModel.ts; os presets, em BuilderPresets.ts.
 import './builder.css';
 import { type MenuHint, type MenuScreen, type NavAction, el } from '../MenuScreen';
@@ -34,7 +35,21 @@ import {
 } from '../../build/BuildRules';
 import type { BadgeCategory } from '../../sim';
 import { BuildPresets, presetAttrs } from './BuilderPresets';
-import { FinishRow, GroupStarts, RowAttrs, attrDeltas, copyBuild, moveRow, nextCost, raiseBlock, remainingShare, stepAttribute } from './BuilderModel';
+import {
+  FinishRow,
+  GroupStarts,
+  RowAttrs,
+  type StepResult,
+  attrDeltas,
+  copyBuild,
+  holdSteps,
+  moveRow,
+  nextCost,
+  raiseBlock,
+  remainingShare,
+  setAttributeTo,
+  stepAttributeBy,
+} from './BuilderModel';
 
 export interface BuilderOptions {
   /** Rascunho com identidade e corpo já definidos. A tela devolve uma cópia alterada (não muda o objeto recebido). */
@@ -52,6 +67,10 @@ const SvgNs = 'http://www.w3.org/2000/svg';
  *  é limitado a 0,1 s por quadro e atrasaria a repetição com a tela lenta). */
 const HoldDelay = 380;
 const HoldEvery = 55;
+/** ←→ do teclado ou do controle: repetições com menos que isto entre si são o mesmo "segurar" (o controle espera
+ *  0,4 s antes de repetir; soltar a tecla ou o direcional encerra antes). */
+const StreakGap = 600;
+const HorizontalKeys = new Set(['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD']);
 
 /** Medidores do FÍSICO, na ordem do print (Speed, Strength / Acceleration, Vertical), com a cor de cada arco. */
 const Gauges: ReadonlyArray<readonly [AttributeId, string]> = [
@@ -142,7 +161,25 @@ export class BuilderView implements MenuScreen {
   private row = 0;
   /** Último "não dá" (teto ou pontos) na linha escolhida: aparece em vermelho na descrição. */
   private notice: { row: number; reason: 'cap' | 'points' } | null = null;
-  private hold: { dir: -1 | 1; next: number } | null = null;
+  /** Segurando ◀ ▶ com o mouse. */
+  private hold: { dir: -1 | 1; start: number; next: number } | null = null;
+  /** Segurando ←→ no teclado ou no controle (as repetições vêm do fluxo; aqui só se mede há quanto tempo). */
+  private streak: { dir: -1 | 1; row: number; start: number; last: number } | null = null;
+  private readonly keysHeld = new Set<string>();
+  /** Arrastando a barra de uma linha com o mouse. */
+  private drag: { index: number; track: HTMLElement } | null = null;
+  private readonly onKeyDown = (e: KeyboardEvent): void => {
+    if (HorizontalKeys.has(e.code)) this.keysHeld.add(e.code);
+  };
+  private readonly onKeyUp = (e: KeyboardEvent): void => {
+    if (!HorizontalKeys.has(e.code)) return;
+    this.keysHeld.delete(e.code);
+    if (!this.keysHeld.size) this.streak = null;
+  };
+  private readonly onBlur = (): void => {
+    this.keysHeld.clear();
+    this.streak = null;
+  };
   private presetOpen = false;
   private presetIndex = 0;
   private readonly presetCache = new Map<number, Attributes>();
@@ -303,11 +340,21 @@ export class BuilderView implements MenuScreen {
   }
 
   enter(): void {
+    // Captura, como o fluxo (que para a propagação na janela): soltar ←→ encerra a aceleração.
+    window.addEventListener('keydown', this.onKeyDown, true);
+    window.addEventListener('keyup', this.onKeyUp, true);
+    window.addEventListener('blur', this.onBlur);
     this.refresh();
   }
 
   leave(): void {
     this.hold = null;
+    this.streak = null;
+    this.drag = null;
+    this.keysHeld.clear();
+    window.removeEventListener('keydown', this.onKeyDown, true);
+    window.removeEventListener('keyup', this.onKeyUp, true);
+    window.removeEventListener('blur', this.onBlur);
     clearTimeout(this.settle);
   }
 
@@ -317,11 +364,12 @@ export class BuilderView implements MenuScreen {
 
   update(dt: number): void {
     for (const c of this.counters) c.tick(dt);
+    if (this.streak && !this.horizontalHeld()) this.streak = null;
     if (!this.hold) return;
     const now = performance.now();
     while (this.hold && now >= this.hold.next) {
       this.hold.next += HoldEvery;
-      if (!this.step(this.hold.dir)) this.hold = null;
+      if (!this.step(this.hold.dir, holdSteps(now - this.hold.start))) this.hold = null;
     }
   }
 
@@ -334,9 +382,16 @@ export class BuilderView implements MenuScreen {
       case 'nextTab':
         return this.select(moveRow(this.row, action));
       case 'left':
-      case 'right':
-        if (this.row < FinishRow) this.step(action === 'left' ? -1 : 1);
+      case 'right': {
+        if (this.row >= FinishRow) return;
+        const dir = action === 'left' ? -1 : 1;
+        const now = performance.now();
+        let s = this.streak;
+        if (!s || s.dir !== dir || s.row !== this.row || now - s.last > StreakGap) s = this.streak = { dir, row: this.row, start: now, last: now };
+        s.last = now;
+        this.step(dir, holdSteps(now - s.start));
         return;
+      }
       case 'confirm':
         // A num atributo leva ao botão; A no botão termina.
         return this.row === FinishRow ? this.done() : this.select(FinishRow);
@@ -357,30 +412,54 @@ export class BuilderView implements MenuScreen {
     this.scrollToRow();
   }
 
-  /** ±1 no atributo da linha escolhida. Devolve se mudou. */
-  private step(dir: -1 | 1): boolean {
+  /** `n` pontos (±) no atributo da linha escolhida. Devolve se mudou algo. */
+  private step(dir: -1 | 1, n = 1): boolean {
     const id = RowAttrs[this.row];
-    if (!id) return false;
-    const r = stepAttribute(this.build, id, dir);
-    const view = this.rows[this.row]!;
-    if (!r.changed) {
-      if (r.blocked === 'cap' || r.blocked === 'points') {
-        this.notice = { row: this.row, reason: r.blocked };
-        pulse(view.root, 'deny');
-        if (r.blocked === 'points') pulse(this.pot, 'deny');
-        this.refresh();
-      }
-      return false;
+    return id ? this.apply(stepAttributeBy(this.build, id, dir, n)) : false;
+  }
+
+  /** Aplica um passo (setas, mouse, arrastar). Bater no teto ou nos pontos avisa na descrição (e treme uma vez). */
+  private apply(r: StepResult): boolean {
+    const blocked = r.blocked === 'cap' || r.blocked === 'points' ? r.blocked : null;
+    const repeated = blocked !== null && this.notice?.row === this.row && this.notice.reason === blocked;
+    this.notice = blocked ? { row: this.row, reason: blocked } : null;
+    if (blocked && !repeated && !this.drag) {
+      pulse(this.rows[this.row]!.root, 'deny');
+      if (blocked === 'points') pulse(this.pot, 'deny');
     }
-    this.build = r.build;
-    this.notice = null;
-    this.options.onChange?.(this.build);
-    this.refresh();
-    return true;
+    if (r.changed) {
+      this.build = r.build;
+      this.options.onChange?.(this.build);
+    }
+    if (r.changed || blocked) this.refresh();
+    // Mexendo direto (setas, arrastar), o número da linha e o potencial acompanham na hora; a contagem animada fica
+    // para os presets e para o OVR, os medidores e os escudos.
+    this.rows[this.row]?.num.snap();
+    this.potLeft.snap();
+    return r.changed;
+  }
+
+  /** Arrastando a barra: o valor segue o mouse (0–99 na largura da barra), até onde o cap e os pontos deixam. */
+  private dragTo(clientX: number): void {
+    const d = this.drag;
+    const id = d ? RowAttrs[d.index] : undefined;
+    if (!d || !id) return;
+    const rect = d.track.getBoundingClientRect();
+    const t = rect.width > 0 ? Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) : 0;
+    this.apply(setAttributeTo(this.build, id, t * AttrCeil));
+  }
+
+  /** ←→ ainda apertado (tecla ou direcional/analógico do controle, com os mesmos limites do fluxo). */
+  private horizontalHeld(): boolean {
+    if (this.keysHeld.size) return true;
+    const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
+    if (!pad) return false;
+    return !!pad.buttons[14]?.pressed || !!pad.buttons[15]?.pressed || Math.abs(pad.axes[0] ?? 0) > 0.5;
   }
 
   private done(): void {
     this.hold = null;
+    this.drag = null;
     this.options.onDone(this.build);
   }
 
@@ -388,6 +467,7 @@ export class BuilderView implements MenuScreen {
     if (this.presetOpen) return;
     this.presetOpen = true;
     this.hold = null;
+    this.drag = null;
     this.presetLayer.classList.add('open');
     this.root.classList.add('previewing');
     this.presetItems.forEach((item, k) => (item.ovr.textContent = `OVR ${overall({ ...this.build, attrs: this.presetResult(k) })}`));
@@ -557,10 +637,12 @@ export class BuilderView implements MenuScreen {
     const minus = el('button', 'arr', val, '◀');
     const num = this.counter(el('b', '', val), AttrStart[id]);
     const plus = el('button', 'arr', val, '▶');
+    // A barra é a área de arrastar (a linha inteira de altura); o desenho fica na trilha dentro dela.
     const bar = el('div', 'bd-bar', root);
-    const cap = el('s', '', bar);
+    const track = el('div', 'bd-track', bar);
+    const cap = el('s', '', track);
     cap.style.width = pct(this.caps[id]);
-    const fill = el('i', '', bar);
+    const fill = el('i', '', track);
     const max = el('span', 'm', root, String(this.caps[id]));
     const delta = el('span', 'd', root);
     root.addEventListener('pointermove', (e) => {
@@ -575,7 +657,8 @@ export class BuilderView implements MenuScreen {
         if (this.presetOpen || e.button !== 0) return;
         e.preventDefault();
         this.select(index);
-        this.hold = this.step(dir) ? { dir, next: performance.now() + HoldDelay } : null;
+        const now = performance.now();
+        this.hold = this.step(dir) ? { dir, start: now, next: now + HoldDelay } : null;
         btn.setPointerCapture?.(e.pointerId);
       });
       const stop = (): void => {
@@ -585,6 +668,26 @@ export class BuilderView implements MenuScreen {
       btn.addEventListener('pointercancel', stop);
       btn.addEventListener('lostpointercapture', stop);
     }
+    bar.addEventListener('pointerdown', (e) => {
+      if (this.presetOpen || e.button !== 0) return;
+      e.preventDefault();
+      this.select(index);
+      this.drag = { index, track };
+      root.classList.add('drag');
+      bar.setPointerCapture?.(e.pointerId);
+      this.dragTo(e.clientX);
+    });
+    bar.addEventListener('pointermove', (e) => {
+      if (this.drag?.index === index) this.dragTo(e.clientX);
+    });
+    const endDrag = (): void => {
+      if (this.drag?.index !== index) return;
+      this.drag = null;
+      root.classList.remove('drag');
+    };
+    bar.addEventListener('pointerup', endDrag);
+    bar.addEventListener('pointercancel', endDrag);
+    bar.addEventListener('lostpointercapture', endDrag);
     return { id, root, num, cap, fill, max, delta };
   }
 

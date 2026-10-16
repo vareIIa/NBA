@@ -46,8 +46,16 @@ export function raiseBlock(b: PlayerBuild, id: AttributeId): 'cap' | 'points' | 
 export interface StepResult {
   build: PlayerBuild;
   changed: boolean;
-  /** Quando não mudou: teto do corpo, sem pontos, ou já no começo (não desce abaixo de AttrStart). */
+  /** Onde parou antes do pedido: teto do corpo, sem pontos, ou no começo (não desce abaixo de AttrStart). */
   blocked?: 'cap' | 'points' | 'floor';
+}
+
+/**
+ * ←→ segurado acelera: pontos por repetição conforme o tempo segurando (ms). Um toque é sempre 1; segurando, 2, 4 e 8
+ * (do 25 ao 99 em ~2,5 s no controle, que repete a cada 110 ms, e em ~1,5 s no teclado).
+ */
+export function holdSteps(heldMs: number): number {
+  return heldMs < 600 ? 1 : heldMs < 1200 ? 2 : heldMs < 2000 ? 4 : 8;
 }
 
 /** +1 ou −1 num atributo. Sobe só com canRaise; desce até AttrStart. Devolve uma build nova quando muda. */
@@ -59,6 +67,24 @@ export function stepAttribute(b: PlayerBuild, id: AttributeId, dir: -1 | 1): Ste
   const next = copyBuild(b);
   next.attrs[id] += dir;
   return { build: next, changed: true };
+}
+
+/** Até `n` passos na mesma direção, um por vez com as regras de stepAttribute; para onde não der mais. */
+export function stepAttributeBy(b: PlayerBuild, id: AttributeId, dir: -1 | 1, n: number): StepResult {
+  let build = b;
+  for (let i = 0; i < n; i++) {
+    const r = stepAttribute(build, id, dir);
+    if (!r.changed) return { build, changed: build !== b, blocked: r.blocked };
+    build = r.build;
+  }
+  return { build, changed: build !== b };
+}
+
+/** Leva o atributo até `target` (arrastar a barra com o mouse): para no teto, nos pontos ou no começo. */
+export function setAttributeTo(b: PlayerBuild, id: AttributeId, target: number): StepResult {
+  const goal = Math.round(target);
+  const now = b.attrs[id];
+  return stepAttributeBy(b, id, goal > now ? 1 : -1, Math.abs(goal - now));
 }
 
 /** Custo do próximo ponto deste atributo (null no teto). */
