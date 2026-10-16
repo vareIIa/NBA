@@ -89,6 +89,9 @@ Notas:
 - **Quem publica:** uma sessão só, a dona do release (em 2026-10-16, a "Multiplayer 1v1"). As outras sessões não rodam
   `deploy`, `wrangler`, `vercel`, `git commit` nem `git push`: pedem a ela. O servidor e os dois sites saem sempre
   juntos do mesmo build; publicar um só derruba o outro (versão do protocolo diferente).
+- `web/public/assets/mocap/mixamo_loco.json` (locomoção do Mixamo convertida) fica **fora do git** por causa da licença
+  do Mixamo (decisão do diretor, 2026-10-16) e existe só no PC dele. O jogo publicado leva o arquivo porque o build sai
+  da pasta local; publicar de um clone novo sai sem ele, e o jogo cai na locomoção da CMU.
 - `npm run publicar` (`web/deploy/publicar.mjs`): recusa se houver código não commitado em `web/`, roda `tsc`, `vitest`
   e `e2e/online.spec.ts` num Vite próprio (primeira porta livre a partir da 5182), faz **um** build e manda o mesmo
   `dist` para a Cloudflare e para a Vercel. `npm run deploy` e `deploy:vercel` continuam existindo, mas sozinhos

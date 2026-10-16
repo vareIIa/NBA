@@ -31,6 +31,11 @@ referencias/real/
 
 # FBX brutos do Mixamo (a licença proíbe redistribuir os arquivos brutos; ver docs/18)
 Tools/Animacao/mixamo/
+# Locomoção do Mixamo já convertida: o jogo publicado leva, o repositório público não (decisão do diretor,
+# 2026-10-16; docs/24 §4.1). Sem ele o jogo usa a locomoção da CMU.
+web/public/assets/mocap/mixamo_loco.json
+# Pose tirada de vídeo de referência de terceiros (como referencias/real/): só para a comparação local (mocap.html).
+web/public/assets/mocap/kyrie_cross.json
 
 # Modelos brutos do HY 3D Studio (25–45 MB cada; as versões otimizadas ficam em web/public/assets/gear)
 web/public/assets/models_raw/
