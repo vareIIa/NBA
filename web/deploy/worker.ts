@@ -1,13 +1,19 @@
 // Worker do Cloudflare (npm run deploy, docs/24): serve o jogo (web/dist) e a sala em tempo real (/ws) na mesma URL.
 // O lobby inteiro é um Durable Object só ("hub") rodando o Hub puro de web/src/net/hub, o mesmo do servidor de
 // desenvolvimento: fila, salas privadas e os relógios do 1x1, com tick a cada 100 ms enquanto houver alguém conectado.
+// As builds compartilhadas (/api/builds, docs/23 §6) moram em outro Durable Object ("builds", deploy/builds.ts).
 // Este arquivo não passa pelo tsc do jogo (os tipos do runtime vêm do wrangler, que só empacota).
 import { DurableObject } from 'cloudflare:workers';
 import { Hub } from '../src/net/hub/Hub.ts';
+import { isBuildsPath } from '../src/net/builds/buildsApi.ts';
+import { BuildsObject } from './builds.ts';
+
+export { BuildsObject };
 
 interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
   HUB: DurableObjectNamespace<HubObject>;
+  BUILDS: DurableObjectNamespace<BuildsObject>;
 }
 
 const TickMs = 100;
@@ -102,6 +108,15 @@ export class HubObject extends DurableObject<Env> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (isBuildsPath(url.pathname)) {
+      const stub = env.BUILDS.get(env.BUILDS.idFromName('builds'), { locationHint: 'sam' });
+      try {
+        return await stub.fetch(request);
+      } catch (error) {
+        console.error('builds: objeto indisponível', error);
+        return new Response(JSON.stringify({ error: 'builds indisponíveis' }), { status: 503 });
+      }
+    }
     if (url.pathname === '/ws') {
       // Um objeto só para o lobby inteiro. Durable Objects ainda não nascem na América do Sul: a dica 'sam' cai no leste
       // dos EUA (docs/24 §3). Vale só na criação; se a Cloudflare abrir a região, um nome novo de objeto nasceria aqui.

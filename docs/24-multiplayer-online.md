@@ -79,6 +79,7 @@ Notas:
 
 **Para jogar com os amigos, use https://garrafao.vercel.app** (o outro endereço é o mesmo jogo e a mesma sala).
 
+- O mesmo Worker atende as **builds compartilhadas** (`/api/builds`, Durable Object `BuildsObject`; docs/23 §6).
 - Os dois endereços servem o mesmo jogo e entram na **mesma sala**: um amigo pode abrir um e o outro o outro. Convite:
   `https://garrafao.vercel.app/?sala=CÓDIGO` (o lobby gera o link do site em que você está).
 - A sala vem de `web/.env.production` (`VITE_MP_URL`), lido em todo build de produção. Se o subdomínio do Worker mudar,
