@@ -509,9 +509,11 @@ export class JumpShotMotion {
     const worldPos = this.fromBody(x, y, z, out);
     if (t < s.takeoffAt) {
       if (t < t1) {
-        // O passo: de onde o pé estava (até no ar, na passada da corrida) até o plantio.
-        worldPos.x = THREE.MathUtils.lerp(startW.x, plant.x, k);
-        worldPos.z = THREE.MathUtils.lerp(startW.z, plant.z, k);
+        // O passo: de onde o pé estava (até no ar, na passada da corrida) até o plantio. Na horizontal ele chega antes e
+        // o fim do passo só desce (pousando enquanto andava, o pé arrastava ~5 cm no chão).
+        const kh = smooth(t0, t0 + 0.8 * (t1 - t0), t);
+        worldPos.x = THREE.MathUtils.lerp(startW.x, plant.x, kh);
+        worldPos.z = THREE.MathUtils.lerp(startW.z, plant.z, kh);
         worldPos.y = THREE.MathUtils.lerp(startW.y, worldPos.y, k) + stepLift;
       } else {
         if (!lock.planted) {

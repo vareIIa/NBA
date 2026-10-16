@@ -1,5 +1,5 @@
 // Pull-up no laboratório: corre (sprint ou trote) até perto da linha de 3, segura o X e solta; mede pés e pelve e salva
-// quadros de lado. node tools/pullup-folha.mjs <saida> [sprint=1] [corre=40] [segura=30] [quadros=90] [setup JSON]
+// quadros de lado (STICK='x,y' muda a direção da corrida, HAND=l para canhoto). node tools/pullup-folha.mjs <saida> [sprint=1] [corre=40] [segura=30] [quadros=90] [setup JSON]
 import { chromium } from '@playwright/test';
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -15,20 +15,23 @@ page.on('pageerror', (e) => console.log('ERRO', String(e)));
 await page.goto((process.env.BASE || 'http://127.0.0.1:5173') + '/?lab=1');
 await page.waitForFunction(() => window.__garrafao?.ready === true && window.__lab);
 const sprint = sprintArg === '1';
-await page.evaluate((setup) => {
+const [stickX, stickY] = (process.env.STICK || '0,1').split(',').map(Number);
+const hand = process.env.HAND === 'l' ? 'l' : 'r';
+await page.evaluate(([setup, hand]) => {
   if (setup) window.__debug.game.setShotSetup({ id: 'x', name: 'x', upperRelease2: 'Curry', blendPercent: 0, releaseSpeed: 1, ...JSON.parse(setup) });
-  window.__lab.place(12.5, -0.3, 'r');
+  window.__lab.place(12.5, -0.3, hand);
   window.__lab.step(30, {});
-}, setupArg);
+}, [setupArg, hand]);
 const rows = [];
 const total = Number(runArg) + Number(framesArg);
 for (let f = 0; f < total; f++) {
   const running = f < Number(runArg);
   const shoot = !running && f < Number(runArg) + Number(holdArg);
   const r = await page.evaluate(
-    ([shoot, running, sprint]) => {
+    ([shoot, running, sprint, sx, sy]) => {
       const { animator: A, game, THREE } = window.__debug;
-      window.__lab.step(1, { shoot, moveY: running || shoot ? 1 : 0, sprint: (running || shoot) && sprint });
+      const go = running || shoot ? 1 : 0;
+      window.__lab.step(1, { shoot, moveX: sx * go, moveY: sy * go, sprint: go > 0 && sprint });
       const P = (n) => A.bone(n).getWorldPosition(new THREE.Vector3());
       const fl = P('foot_l');
       const fr = P('foot_r');
@@ -43,7 +46,7 @@ for (let f = 0; f < total; f++) {
         shot: A.jumpShotState(),
       };
     },
-    [shoot, running, sprint],
+    [shoot, running, sprint, stickX, stickY],
   );
   rows.push(r);
   if (!running && (f - Number(runArg)) % 4 === 0) {
@@ -52,7 +55,8 @@ for (let f = 0; f < total; f++) {
   }
 }
 writeFileSync(join(out, 'rows.json'), JSON.stringify(rows));
-// Métricas: escorregão de pé apoiado (tornozelo baixo, y < 0.13) e maior mudança de velocidade vertical da pelve.
+// Métricas: escorregão de pé apoiado (tornozelo no chão nos dois quadros, y < 0,075) e maior mudança de velocidade
+// vertical da pelve.
 let slide = 0;
 let slideAt = -1;
 let jerk = 0;
@@ -62,7 +66,7 @@ for (let i = start + 1; i < rows.length; i++) {
   for (const k of ['fl', 'fr']) {
     const a = rows[i - 1][k];
     const b = rows[i][k];
-    if (a[1] < 0.115 && b[1] < 0.115) {
+    if (a[1] < 0.075 && b[1] < 0.075) {
       const d = Math.hypot(b[0] - a[0], b[2] - a[2]);
       if (d > slide) {
         slide = d;

@@ -121,4 +121,12 @@ decolagem (o corpo passa por cima deles freando), saindo da passada da corrida (
 trás na parada. Antes o passo era no referencial do corpo e o pé patinava com o embalo.
 
 Conferir: `node web/tools/pullup-folha.mjs <saída> [sprint=1] [corre=45] [segura=30] [quadros=80] ['{"lowerBase":"Booker"}']`
-com o Vite na 5173 (quadros de lado, escorregão do pé apoiado e tranco da pelve).
+com o Vite na 5173 (quadros de lado, escorregão do pé apoiado e tranco da pelve). `STICK='1,0.3'` corre de lado (o corpo
+gira para a cesta na parada) e `HAND=l` testa o canhoto; `BASE=http://127.0.0.1:5175` usa outro servidor.
+
+Medido em 2026-10-16 (sprint a ~4,1 m/s, de frente, de lado para os dois lados e canhoto): pé apoiado sem escorregar
+durante o arremesso, decolagem e pouso sem quebra de velocidade, salto ~0,38 m no pull-up (0,29 m parado). O passo de
+parada chega na horizontal em 80% do tempo e só desce no fim: pousando enquanto andava, o pé arrastava ~5 cm. Na
+comparação parada, Bird (set point baixo, quase sem salto), Kobe (salto alto e fade) e Dirk (uma perna) se distinguem de
+longe; Curry, Klay, Ray Allen, Durant e Booker diferem nos detalhes (altura do salto, cotovelo, follow-through), como os
+arremessos reais deles.
