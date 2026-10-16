@@ -215,3 +215,399 @@ Para **cada** drible ou situação (size-up, crossover parado e correndo, entre 
 - O dele é **andar alguns passos para trás driblando** (criando espaço) e depois parar e arremessar.
 - O saltinho atual parece o step-back **de arremesso** (segurar para trás no arremesso), que é outra coisa.
 - O trecho está num dos vídeos `19.51.*` do WhatsApp: ele disse que a sessão anterior só viu o finalzinho (o step-back de arremesso, por volta de 24 s do `19.51.44`). Procurar o trecho inteiro.
+
+## 8. Fase 0 e Fase 1 (sessão "Fluidez de dribbles e movimentos", 2026-10-15)
+
+**Fase 0 (estabilizar), aplicada no `PlayerAnimator.ts` / `TwoBoneIK.ts`:**
+
+- `anim/ClipFilter.ts`: passa-baixa binomial (5 pontos, fase zero) nas rotações de tronco, braços e pés de todos os
+  clipes ao carregar. Pelve, coxas, canelas e posições ficam de fora (filtrar a perna mudava o apoio e o pé deslizava).
+  `?filtro=0` desliga, para A/B no laboratório (`LAB_URL="&filtro=0" node tools/laboratorio.mjs ...`).
+- Soft IK (`solveTwoBoneIK(..., soft)`): braço freia nos últimos 8% do alcance (`ArmSoftReach`), perna 3%. A mão baixa
+  do drible deixava o braço quase reto e o IK estalava ali. `applyPole` perde força com a cadeia quase reta.
+- `plantWeight()`: o peso da base plantada chega a zero junto com o corte (antes o pé pulava ~10 cm ao sair dela) e
+  a orientação do pé segue esse peso (antes virava num quadro em 0,5).
+- `keepFeetApart()`: tornozelos a ≥ 10 cm na lateral do corpo, antes do IK das pernas.
+- Postura: `crouchRun` 0,2, `leanPerSpeedDeg` 5, `leanMaxDeg` 44 e cabeça erguida (`headUpShare` 0,65 da inclinação).
+- `lowDribbleEnabled` (A/B do IK do drible baixo).
+- Laboratório: andando 51 -> 17 estalos, correndo 58 -> 19, retreat 23 -> 7, spin 113 -> 82 (deslize 9,4 -> 4,8 m/s);
+  troca automática sem perna cruzando. O spin ainda cruza 4 quadros.
+
+**Fase 1 (vídeo -> mocap), prova com um clipe:**
+
+- Sem GPU NVIDIA (AMD RX 9070 XT): GVHMR/WHAM ficam de fora; eles também pedem o SMPL (cadastro do diretor).
+- `Tools/Animacao/video_para_pose.py`: MediaPipe Pose (CPU) num trecho do vídeo -> `pose.json` (33 pontos 3D por
+  quadro). Precisa de um venv com `mediapipe av pillow` e do modelo `pose_landmarker_heavy.task` (Google).
+- `web/public/assets/mocap/kyrie_cross.json`: crossover do Kyrie (`LZSlFyyCkhk` 9,0–10,9 s), 56/57 quadros.
+- `web/src/mocap/Retarget.ts`: pose -> clipe do nosso esqueleto (só direções; pelve e tronco pela orientação dos
+  quadris e ombros, coluna em 3 partes, membros por swing, pé pelo calcanhar -> ponta, altura pelo pé mais baixo;
+  sem deslocamento horizontal).
+- `web/mocap.html?cam=lado|frente|tras|cima&cmu=Cross_R2L&vel=0.4&filtro=3`: CMU (esq.) x Kyrie (dir.), sem pós-processo.
+- Folha: `node tools/mocap-folha.mjs <saída>` + `python Tools/Animacao/folha_mocap.py <vídeo> <pose.json> <saída> <jpg>`.
+  Resultado em `Saved/fluidez/fase1_retarget_kyrie_x_cmu*.jpg`.
+- O que já ficou melhor que a CMU: o Kyrie sai baixo, com passada de ataque e braço de proteção. Limites: a
+  profundidade do vídeo monocular subestima a inclinação do tronco (vista de lado ~30° contra ~45° do vídeo), sem
+  bola, sem deslocamento, sem torção dos antebraços, e o fator de câmera lenta (`vel`) é chute.
+
+## 9. Fase 2: pernas do Mixamo no jogo (2026-10-15)
+
+- **Clipes:** `Tools/Animacao/mixamo/` (FBX brutos, fora do git; 2 pacotes + 20 avulsos). As juntas por quadro saem pelo
+  Blender (`Tools/Animacao/mixamo_juntas_blender.py`; o FBXLoader do three não abre vários arquivos do Mixamo) e viram
+  `web/public/assets/mocap/mixamo_loco.json` com `node tools/mixamo-bake.mjs <saída> --extra <juntas.json>`.
+- **Retarget:** `src/mocap/Retarget.ts` (`retargetMixamo`, `mirrorMixamoClip`). Altura do quadril de origem escalada pela
+  razão das pernas; tendência linear do quadril = velocidade nativa.
+- **Mistura:** `src/mocap/MixamoLocomotion.ts`: parado, andar, trote em 8 direções (JogR = espelho do JogL), corrida e
+  disparo, todos na mesma fase (0 = pé esquerdo pousando), fase = distância / passada misturada.
+- **No jogo:** `PlayerAnimator.applyMixamoLegs` (logo depois de `applyLegLayer`): um esqueleto-clone escondido toca a
+  mistura; a pelve e as pernas dele substituem as do loop da CMU andando/correndo para a frente e para trás, e a
+  spine_01 desfaz a rotação nova da pelve (o tronco, o drible e a bola continuam da CMU). De lado fica a CMU (o trote do
+  Mixamo cruza os pés), e também nos dribles parados, no arremesso, na bandeja e na comemoração. Todo o pós-processo
+  roda por cima. `?loco=cmu` volta para a CMU; `mixamoLegsEnabled` para A/B no laboratório.
+- **Laboratório (CMU -> Mixamo):** deslize médio somado 10,52 -> 9,12; andando máx 2,82 -> 1,11 (média 0,74 -> 0,40);
+  crossover andando 3,24 -> 1,11; crossover de ataque 2,64 -> 1,11; retreat 5,39 -> 2,08. Pior: estalos correndo 18 -> 31
+  e no crossover de ataque 65 -> 88; de costas média 0,36 -> 0,64.
+- **Página:** `locomocao.html` (CMU x Mixamo crus lado a lado) e `node tools/locomocao-folha.mjs`.
+
+## 10. Polimento: contato mão-bola, emenda entre dribles e flicks (2026-10-15, à noite)
+
+Pedido do diretor: dribles fluidos e conectados como no 2K (LS + RS juntos), sem flicks nem personagem "piscando", e
+rever regras e planos.
+
+### O que mudou (arquitetura)
+
+1. **Contato mão-bola nos loops** (`PlayerAnimator` + `BallDribbler`, `ClipLibrary.dribbleHandShape/contactFrames`):
+   - A altura da mão da bola é uma curva **desenhada** no ritmo do loop (meios-cossenos entre os vales e os picos da palma
+     do clipe), numa faixa por loop (`stance.palmBottom/palmTop`, `...Run`, `...Low`), e o ponto da mão é fixo à frente da
+     ponta do pé (`dribbleForward` 0,2, `DribbleSwing` para a frente na descida). A curva medida da CMU tinha degraus
+     (correndo, a mão caía 27 cm num quadro) e o IK lia a altura "nativa" da pose já abaixada (a mão andava 4 cm).
+   - **Soltura na metade da descida** (a mão ainda empurrando) com a velocidade da mão; a descida da bola é empurrada
+     (acelera até o chão, sem salto de velocidade). **Recepção a 65% da subida**; na subida o desvio até a palma real
+     entra em smoothstep; na recepção a mão "cede" (absorb, Δv·t·e^(-t/τ)).
+   - Soltura do loop com a bola no ar é ignorada; desvio da bola no ar para não atravessar a perna é suave (30/s).
+2. **Drible só começa com a bola na mão** (`Freestyle.pendingMove`, até 0,45 s; o gesto é relido na hora). Em combo, o
+   próximo entra na **recepção** do anterior. Crossover e entre as pernas acabam ~0,06 s depois da recepção e o loop da
+   mão nova recomeça na recepção (`restartLoopAtCatch`): o resto do clipe da CMU segurava a bola parada 0,3 s.
+3. **Coreografia do crossover e do entre as pernas**: a recepção é a do caminho de drible da mão nova (`crossCatch`), a mão
+   que recebe vai por IK, quique em V à frente dos joelhos (crossover) ou entre os pés (entre as pernas).
+4. **Mesma postura em todos os dribles**: altura média da pelve (`pelvisAvg`) e inclinação média do tronco
+   (`measureClipPitch`) de cada clipe são descontadas (o entre as pernas da CMU é 17 cm mais baixo e dobra o tronco 62°
+   contra 13° do drible parado). Joelhos para fora e dobra do quadril também nos dribles parados; passos do size-up numa
+   meia base de 15–42 cm (a base chegava a 1,2 m). Spin 8 cm abaixo da base (não mais de cócoras), girando em arco em volta
+   do pé de pivô.
+5. **Trocas de IK sem salto**: quando uma mão sai de um IK (recepção, drible, braço livre do spin) ela segura a última
+   posição desenhada e solta em ~0,15 s (`handHold`); saindo de um drible, a mão da bola entra no loop partindo da palma
+   desenhada no quadro anterior (`lastPalmLocal`); o desvio da perna não briga mais com um IK desenhado.
+6. **IK do braço** (`reachPalm`): resolve, gira o cotovelo pelo pole e depois corrige a palma em 3 passadas fixas (antes
+   errava até 16 cm e, com parada antecipada, tremia).
+7. **Corpo vira no corte**: correndo, depois que a bola sai da mão no crossover/entre as pernas/por trás, o corpo vira para
+   a direção nova (antes ~0,4 s de passo lateral a 4,6 m/s de frente para a cesta).
+8. **Bugs que causavam flicks**:
+   - pé: `footQL.copy(reto).slerp(footQL, ...)` misturava o reto com ele mesmo (pé 100% reto e giro de 40–95° num quadro
+     ao sair andando);
+   - **mixer do three só escreve o osso quando o valor do clipe muda**: com o clipe parado ou a 144 Hz o pós-processo
+     entrava duas vezes (quadril 16 cm e 28° num quadro). Agora a pose crua do mixer volta aos ossos antes de cada
+     atualização (`restoreMixerPose`). **Isso é provavelmente o "personagem piscando" num monitor de 120/144 Hz**;
+   - troca de loop com a camada das pernas ativa sem inertialization (pé saltava 31–52 cm no crossover acelerando).
+9. Sprint: o loop de corrida da CMU fica em até 1,1x quando as pernas são do Mixamo; inclinação 2,5°/m/s até 30°.
+
+### Laboratório novo
+
+- Métricas: flicks (bola, mão, corpo, giro), **SALTOS** (segunda diferença da posição em cm por quadro, de pés, joelhos,
+  mãos, cabeça, pelve e bola: o que o olho vê como pulo) e NaN (osso quebrado = malha some).
+- `LAB_HZ=144` (monitor de 144 Hz) e `LAB_STANCE='{"dribbleForward":0.2}'`. **Rodar sempre a 60 e a 144 Hz.**
+- 12 cenários de combo com LS + RS (`combo_size_up`, `combo_rapido`, `corre_cross_corre`, `corre_cross_volta`,
+  `corre_spin`, `corre_hesi_arranca`, `corre_por_tras`, `corre_step_back`, `anda_entre_pernas`, `lado_cross_lado`,
+  `zigue_zague`, `para_e_cruza`).
+- `node tools/video-lab.mjs <cenários> <saída.mp4> [jogo|back|side|front|top] [lento]`: vídeo 60 fps quadro a quadro.
+- `python tools/folha-lab.py <pasta> <vista> <saída.jpg> [colunas] [q0] [q1] [zoom]`, `node tools/sonda-cenario.mjs`,
+  `python tools/sumico.py <pasta de png>` (procura quadros sem o jogador num vídeo).
+- Números finais em `Saved/fluidez/metricas_polimento.txt`; vídeos `Saved/fluidez/dribles_polimento_*.mp4`.
+
+### Como estava x como ficou (60 Hz)
+
+| | antes | depois |
+|---|---|---|
+| Drible parado: estalos / flicks da bola | 0 / 11 | 0 / 1 |
+| Drible parado: curso da mão | 4 cm | 20 cm |
+| Drible parado a 144 Hz: estalos | 92 (quadril 16 cm/28° num quadro) | 5 |
+| Bola presa longe da mão (métrica bola-mão, pior cenário) | 46 cm | 0 cm |
+| Saltos de pé no crossover de lado | 52 cm | 15 cm |
+| Saltos de mão no size-up encadeado | 31–42 cm | 13–16 cm |
+| Base no combo de size-up | 1,23 m | 0,88 m |
+
+### Pendente
+
+- **Spin e half spin**: o giro chega a ~1100°/s e a mão da bola anda 25–30 cm por quadro (lê como pulo); a bola entra no
+  corpo no spin (até 17 cm). Próximo passo: raio menor da bola durante o giro e curva de giro menos concentrada.
+- **Bola no corpo** no entre as pernas e no por trás correndo (9–15 cm, poucos quadros). No entre as pernas a bola sobe
+  do meio dos pés e contorna a canela da mão que recebe (salto de ~24 cm em 2–3 quadros na recepção): o caminho certo é
+  com os pés escalonados (o da mão que recebe à frente) e a recepção por fora do joelho.
+- **Latência do Pro Stick**: o flick só é reconhecido quando o stick volta ao centro (~80–120 ms), mais a espera da bola
+  (0–0,25 s). Proposta: reconhecer o flick na borda (2 quadros parados na direção) com o gesto podendo ser trocado
+  enquanto espera a bola.
+- Pé desliza ao parar de repente e cruzar (`para_e_cruza`: pico 9,7 m/s num quadro).
+- e2e do freestyle: 1 de 6 rodadas com a bola a >1,3 m do jogador (máquina carregada); não reproduzido no laboratório.
+
+### Teste no jogo de verdade (controle simulado)
+
+- `node tools/jogar.mjs <saída>`: abre o jogo (não o laboratório) num Chromium isolado, troca `navigator.getGamepads` por
+  um controle de Xbox simulado (LS/RS analógicos, RT, LT, X) e joga um roteiro de 17 s em tempo real: andar, disparo,
+  crossover correndo saindo na diagonal com o LS, combo de size-up, spin correndo, hesitação com RT, step-back e
+  arremesso. Grava `jogo.mp4` e `log.json` (FPS, cronologia dos dribles e cada quadro em que um ponto do corpo ou a bola
+  sai mais de 6 cm da trajetória, com o dt real). Não interfere no controle físico do diretor.
+- Resultado: 60 fps estáveis, todos os dribles saíram, 130–290 ms do flick ao drible (os mais longos esperando a bola
+  voltar para a mão). Saltos acima de 10 cm: 49 -> 38; pior 27 -> 21 cm (fim do spin correndo, não reproduzido no
+  laboratório).
+- Achados e correções dessa rodada: correndo contra a linha da quadra a posição parava mas a velocidade não (pernas
+  correndo no lugar); bola do drible correndo com 0,17 s no ar (`DribbleContactRun`); giro do spin começando a 1080°/s
+  (`SpinYawSmooth`); mão "segurada" no referencial da raiz durante o spin (agora no da malha); IK do drible apagando devagar
+  durante o drible (vira `handHold` no começo); inertialization extrapolando velocidade de um quadro com salto (a 144 Hz o
+  joelho ia 37 cm para trás; limite em `Inertializer.maxAngularSpeed/maxLinearSpeed`).
+
+### Revisão das regras e dos planos (proposta ao diretor)
+
+1. **D14 (só gratuito/open source) é o teto da qualidade dos dribles.** O mocap da CMU é amador (drible alto e solto,
+   crossover em pé, entre as pernas de cócoras); o polimento desta sessão desenha mão, bola e postura por cima dele, mas o
+   corpo dos movimentos continua sendo o da CMU. O 2K usa centenas de dribles capturados de jogadores da NBA. Para chegar
+   perto: (a) permitir comprar um pacote de mocap de basquete com licença para jogo, ou (b) a captura própria com
+   atletas (D9), com uma ferramenta de vídeo que dê saída comercial. O GVHMR/WHAM (vídeo → 3D bom) pede GPU NVIDIA e o
+   modelo SMPL, cuja licença padrão não é comercial. **Recomendação: liberar mocap pago/licenciado só para os dribles.**
+2. **"O núcleo decide QUAL e QUANDO; a animação só executa" precisa mudar para: o núcleo decide QUAL; o QUANDO respeita
+   a bola na mão.** Hoje isso está no `Freestyle` (pendingMove); o certo é o núcleo (`DribbleController`) ter a janela de
+   entrada presa ao ritmo do quique.
+3. **Nova regra: mão e bola nunca vêm cruas do mocap.** O mocap dá o corpo; o caminho da mão e da bola é desenhado (IK),
+   com a postura normalizada. É o que permite trocar de drible sem salto.
+4. **Critério de pronto** (antes de mandar ao diretor): a 60 **e** a 144 Hz, NaN 0, bola presa ≤ 5 cm da mão, nenhum
+   SALTO acima de ~15 cm fora do spin, e o vídeo de `video-lab` revisto quadro a quadro.
+5. **Uma sessão dona da animação** (`PlayerAnimator.ts`): várias sessões mexendo no mesmo arquivo de 2 mil linhas é o que
+   mais gera regressão. As outras pedem por mensagem.
+6. **Commit**: há trabalho de várias sessões sem commit desde o `229db14`. Pedir ao diretor um ponto de commit conjunto.
+7. Mocap por vídeo do Kyrie (Fase 1, MediaPipe monocular): bom como referência de pose, ruidoso demais para virar drible.
+   Pausar até haver captura própria ou GPU NVIDIA.
+
+## 11. Passagem para a sessão nba-55 (2026-10-15, 20h30)
+
+A sessão "Fluidez de dribbles e movimentos" [0d9bbf] passou o trabalho de fluidez para a sessão **nba-55** (VS Code), a
+pedido do diretor. Desde esta passagem a [0d9bbf] não edita mais os arquivos de movimentação, drible e animação.
+
+### 1. Pasta e como rodar
+
+- **O jogo é `C:\Users\Administrator\Documents\Codes\Games\NBA\NBA\web`** (three.js + TypeScript + Vite), na branch
+  `claude/hopeful-einstein-eargc1`. `NBA 5.8`, `NBA 5.8 - 2` e `NBA 5.8 - 3` são os projetos antigos da Unreal 5.8,
+  abandonados pela decisão D15 (migração para three.js): não mexer neles.
+- Rodar: `cd web; npm run dev` (porta 5173, `strictPort`), abrir `http://127.0.0.1:5173/`. Controle de Xbox pela Gamepad
+  API ou teclado (WASD = LS, setas = RS, E/R = spin/meio giro, Shift = RT, Q = LT, Espaço = X).
+- **Estado agora:** a [0d9bbf] deixou um servidor Vite rodando na 5173 pelo navegador do app
+  (`.claude/launch.json`, "jogo-web"). Com ele aberto, `npm run dev` falha (porta presa): feche a aba/pare o servidor
+  no app ou use esse mesmo servidor.
+- Testes: `npm test` (vitest, 135) e `npx playwright test` (e2e, 8). **O e2e apaga `web/test-results/`** a cada rodada:
+  salve vídeos e prints fora dela (ex.: `Saved/fluidez/`).
+- Laboratório: seção 3 e seção 10 ("Laboratório novo"). Precisa do Vite rodando. Sempre rodar a 60 **e** a 144 Hz
+  (`LAB_HZ=144`). `node tools/jogar.mjs <saída>` joga o jogo de verdade com controle simulado.
+
+### 2. Arquivos e funções principais
+
+| Arquivo | O que tem |
+|---|---|
+| `web/src/game/Freestyle.ts` | Entrada → movimento (`updateMovement`, `updateFacing`), Pro Stick (`updateProStick`), dribles de transição pelo LS (`updateTransitionDribbles`), fila do drible até a bola voltar à mão (`pendingMove`, `ballReadyForMove`, `flushPendingMove`), início do drible e impulso (`syncMoveStart`), arremesso, bandeja/enterrada. |
+| `web/src/sim/HoopsDribbleMoves.ts` | Núcleo: gesto → drible (`resolveDribbleMove`), `DribbleController` (commit, buffer, combo, misdirection, energia, arranque). Tabela `Specs` (durações e impulsos). |
+| `web/src/sim/HoopsProStick.ts` | Reconhecedor do RS (flick na volta ao centro, hold, giro, quarto de giro, double/switchback). |
+| `web/src/anim/PlayerAnimator.ts` | Tudo da animação: `chooseBase`/`switchBase` (loops), `playMove`/`startAction`/`updateAction` (dribles), `detectEvents` (soltura/recepção), `applyStance` (agachamento, dobra, inclinação, pés, IK das pernas, normalização por clipe `pelvisAvg`/`clipPitch`), `applyArms` (IK do drible: `lowDribblePalm`, `handShapeNow`, `dribbleTarget`), `applyBetweenLegsArm` (recepção desenhada `crossCatch`/`betweenLegsPath`), `applySpinFreeArm`, `applyGuardArm`, `applyHandHold`, `applyBallClearance`, `reachPalm` (IK do braço), `applySpinPivot`, `applyMixamoLegs`, `restoreMixerPose`/`saveMixerPose`. |
+| `web/src/game/BallDribbler.ts` | A bola: presa à palma, arco no ar (descida empurrada, subida, correção suave até a palma, absorção na recepção, desvio da perna). |
+| `web/src/anim/ClipLibrary.ts` | Tempos dos dribles (`MoveTimings`), `dribbleHandShape`, `contactFrames`, `spinTurnAlpha`. |
+| `web/src/anim/ProceduralMoves.ts` | Altura do jogador (`PlayerHeightMeters` = 1,86), behind the back e step-back procedurais. |
+| `web/src/anim/Inertialization.ts` | Transições (dead blending) com limite de velocidade extrapolada. |
+| `web/src/anim/TwoBoneIK.ts`, `ClipFilter.ts` | IK de duas articulações (soft IK, pole) e filtro dos clipes. |
+| `web/src/mocap/MixamoLocomotion.ts`, `Retarget.ts` | Pernas do Mixamo por direção e velocidade (seção 9). |
+| `web/src/lab/Lab.ts`, `web/tools/*` | Laboratório, métricas (inclusive SALTOS e NaN), cenários, vídeo, sondas. |
+
+### 3. O que mudou, o que funcionou e o que não funcionou
+
+Detalhado nas seções 8, 9 e 10 (com números). Resumo:
+
+- **Funcionou:** curva desenhada da mão e contato mão-bola (drible parado sem estalo e sem flick); drible só com a bola
+  na mão e emenda na recepção; postura igual em todos os dribles (altura e inclinação normalizadas por clipe, base
+  limitada no size-up); trocas de IK sem salto (`handHold`, saída do drible pela palma desenhada); corpo virando no corte;
+  correções de bugs que faziam o personagem "piscar" (mixer do three que não reescreve osso parado; orientação do pé;
+  inertialization nas trocas de loop e com velocidade limitada); IK do braço acertando o alvo; linha da quadra.
+- **Não funcionou / foi desfeito:** joelhos para fora durante os dribles sem a recepção desenhada (a bola batia no
+  joelho); parada antecipada do IK do braço (tremia); deixar a inertialization de fora das trocas de loop com a camada
+  das pernas (pé saltava 55 cm); filtro nas pernas (seção 8); tocar o loop de corrida da CMU mais devagar não mudou os
+  estalos do braço (o que resolveu foi a faixa da mão).
+
+### 4. Problemas conhecidos
+
+- **Spin e meio giro:** ainda o drible pior (mão e bola saltam 15–25 cm em alguns quadros; bola entra no corpo até 12 cm).
+- **Entre as pernas e combos:** a bola contorna a perna de quem recebe (salto de 20–30 cm em 2–3 quadros). O caminho
+  certo é o entre as pernas com os pés escalonados e recepção por fora do joelho.
+- **Latência do Pro Stick:** 130–290 ms do flick ao drible (o flick só é lido na volta ao centro, mais a espera da bola).
+- Pé desliza na parada brusca (`para_e_cruza`); estalos (aceleração angular) altos a 144 Hz nos braços correndo (os
+  SALTOS em cm estão baixos).
+- No jogo real, uma vez a cabeça saltou 14 cm no fim do spin correndo (não reproduzido no laboratório).
+- e2e do freestyle: 1 de 6 rodadas com a bola a >1,3 m do jogador (máquina carregada).
+- Teto de qualidade: o mocap da CMU (ver a revisão das regras no fim da seção 10).
+
+### 5. Próximos passos planejados
+
+1. Spin: raio menor da bola e do braço livre durante o giro; recepção desenhada como no crossover.
+2. Entre as pernas: pés escalonados, recepção por fora do joelho, caminho da bola sem o desvio de perna.
+3. Pro Stick: reconhecer o flick na borda (2 quadros parados na direção), podendo trocar o gesto enquanto espera a bola;
+   no núcleo, a janela de entrada presa ao ritmo do quique (regra nova proposta na seção 10).
+4. Parada brusca sem deslizar; revisar estalos do braço correndo a 144 Hz.
+5. Decisões do diretor pendentes: mocap pago/licenciado (D14) e commit conjunto.
+
+### 6. Mudanças não salvas ou pela metade
+
+- **Nada pela metade:** tudo está salvo no disco, compila (`tsc`) e passa nos testes. **Nada foi commitado** (o último
+  commit é `229db14`; o trabalho de várias sessões está misturado na pasta de trabalho).
+- Os campos `restoreMixerEnabled` e `blendLegSwitch` do `PlayerAnimator` são chaves de A/B do laboratório (padrão
+  `true`), de propósito.
+- `web/src/game/Input.ts`, `HoopMesh.ts`, `MatchDirector.ts`, `web/tools/hy3d-fila.js` e os arquivos de badges/HUD **não
+  são** da [0d9bbf]: são de outras sessões.
+- Coordenação: avisar as sessões do arremesso [b4c8f115] e das bandejas [260fb44e] antes de mexer em `startAction`,
+  `updateAction`, `reachPalm` ou `restoreMixerPose` (elas medem o arremesso e as bandejas em cima disso).
+
+## 12. Sessão nba-55: latência do Pro Stick e pernas no por trás (2026-10-15, noite)
+
+Pedido do diretor: fluidez de NBA 2K, dribles que respondem ao controle e casam com o corpo. Primeira etapa: a resposta.
+
+### Diagnóstico
+
+Do flick ao drible passavam 130–290 ms no jogo (até 383 ms no laboratório), em três esperas somadas: (1) o flick só era
+lido na volta do stick ao centro; (2) o comando esperava a bola inteira na mão (correndo, a mão segura a bola numa fração
+pequena do quique: `DribbleContactRun`); (3) a transição de entrada. Além disso, o stick empurrado e segurado não fazia
+drible nenhum (o Hold resolve para None).
+
+### O que mudou
+
+1. **Flick na borda** (`HoopsProStick`, `earlyFlick`): sai quando o stick fica 25 ms na zona ativa girando menos de
+   300°/s, sem esperar a volta. Para baixo continua na volta (`earlyFlickExcluded`): segurar para baixo é o arremesso
+   pelo Pro Stick (docs/02 §1), ainda não implementado. O spin e o meio giro varrem a borda a 700–1400°/s e não disparam.
+2. **Giro completo no meio do gesto** (`earlyRotation`): sai quando a varredura passa de 230°.
+3. **Um toque nunca vira dois dribles** (`DribbleController.resolveGesture`): um giro que começou como flick na borda
+   (`afterEarlyFlick`) troca o drible antes do 1º quique ou é descartado.
+4. **Drible começa com a bola subindo** (`Freestyle.ballReadyForMove`, `PlayerAnimator.moveBallLead`): se a bola chega
+   antes da soltura do drible. Os de mocap param logo antes da soltura até a bola chegar (`holdMoveForBall`, no máximo
+   0,15 s); o spin só começa se ela chegar antes da soltura (parar congelaria o giro); os procedurais quase não esperam.
+5. **A mão vai buscar a bola** (`applyReachForBall`): nesse caso a mão da bola sobe ao encontro dela por IK, em vez de
+   pular para a pose do clipe; na recepção passa para o clipe pelo `handHold`. Fora: procedurais e spin.
+6. **Pernas da locomoção no por trás em movimento** (`legLayerMoves`, agora campo do animador): corre_por_tras SALTOS
+   46 -> 35, bola no corpo 13 -> 5 quadros. A hesitação foi testada e **ficou de fora** (pernas cruzando 13 -> 40).
+
+A/B pela URL: `?flick=volta` (flick e giro só na volta ao centro) e `?bola=mao` (espera a bola inteira na mão). Os dois
+juntos são o comportamento antigo. `jogar.mjs` aceita `JOGO_URL`; o laboratório, `LAB_URL`. O laboratório agora mede a
+latência de cada comando do RS, e cenários aceitam `place: [x, y]` (novos: `linha_de_fundo`, `spin_na_linha`).
+
+### Números (laboratório, todos os cenários)
+
+| | antes, 60 Hz | agora, 60 Hz | antes, 144 Hz | agora, 144 Hz |
+|---|---|---|---|---|
+| Latência média (máx) | 215 ms (383) | **145 ms (267)** | 95 ms (160) | **57 ms (111)** |
+| SALTOS | 1170 | 1206 (+3%) | 591 | 614 (+4%) |
+| Bola no corpo (quadros) | 123 | **88** | 316 | **246** |
+| Estalos | 1743 | 1856 (+6%) | 6363 | 6710 (+5%) |
+| NaN | 0 | 0 | 0 | 0 |
+
+No jogo com controle simulado (`jogar.mjs`), os flicks saem em ~80 ms (antes 120–250). O `combo_rapido` antes perdia um
+dos quatro comandos; agora sai os quatro.
+
+### Pendências encontradas
+
+- **Hesitação correndo** (`corre_hesi_arranca`): SALTOS 39 -> 53, joelho 20 cm. As pernas do clipe da CMU (gravado
+  parado) entram agora em outra fase da corrida; com as pernas da locomoção cruzavam. Precisa de solução própria.
+- **Spin correndo** ainda demora ~180–230 ms: correndo a bola fica pouco na mão e o spin não pode esperá-la parado.
+- **Linha de fundo**: o jogador atravessa a base da tabela (sem colisão) e cruza as pernas empurrado contra a linha.
+  No jogo, depois do spin correndo até a linha, a mão e a bola saltaram 114 cm uma vez (não reproduzido no laboratório).
+- ~~e2e do freestyle falhando~~ **resolvido** pela sessão "Modelos 3D para jogo": o 1º quadro depois do `PlayerGear.load`
+  chegava com dt negativo (−792 ms) e o animador integrava para trás (palmas a ~17 m). `main.ts` agora limita o dt por
+  baixo também. Conferido: 159 testes unitários e 8 e2e passando, bola no máximo a 0,94 m do jogador no e2e.
+  `node tools/sonda-freestyle.mjs` registra cada quadro com a bola longe do jogador, para casos parecidos.
+- `updateFacing` interpola a frente como vetor: com a direção desejada oposta, o corpo não gira até surgir uma componente
+  lateral. Trocar por giro em ângulo com velocidade máxima.
+
+## 13. Quique com dwell, footwork do drible e entre as pernas com base escalonada (2026-10-16)
+
+Sessão "Sistema de dribles e animação procedural". Pedido: quique natural com tempo de mão na bola, pernas reagindo à
+direção do drible e ao peso, e entre as pernas com base escalonada que inverte em combo (tesoura), como no 2K.
+
+### Diagnóstico (o que deixava rígido)
+
+1. **Mão no quique:** a curva desenhada da mão era um meio-cosseno simétrico (sobe e desce igual). Sem tempo no alto
+   (a mão virava no topo e já descia) e com o empurrão saindo devagar: a bola parecia "cair" da mão, num ritmo de
+   metrônomo. A recepção não olhava a velocidade da mão: a bola chegava subindo a ~3 m/s numa mão que subia a ~1.
+2. **Pernas no size-up:** a base plantada pregava os pés onde o clipe pedia, só com passinhos de ajuste; o quadril só
+   descia (agachamento) e dobrava (hinge). Nada levava o peso para o pé de apoio, nada girava o quadril com a base.
+3. **Entre as pernas:** os pés eram os do clipe da CMU (de cócoras, lado a lado, base até 1,05–1,12 m no combo). O
+   quique caía no meio dos pés e a recepção era à frente da ponta do pé da mão nova: a bola subia cruzando a canela.
+
+### O que mudou
+
+- **`ClipLibrary.ts`** (`HandDwell`, `handRise`/`handPush`, `handDwellFor`): a curva da mão entorta o tempo de cada meio
+  do ciclo: subida rápida que chega devagar no alto, ~15% do ciclo a menos de 2% do topo (dwell), empurrão que acelera
+  até a soltura (sai ~27% mais rápido na metade da altura). Contato mais longo, como o jogador bom (Hirata, 2011).
+  Correndo continua simétrico (`HandDwellRun`). `contactFrames` inverte a curva nova.
+- **`BallDribbler.ts`**: a escolha da divisão descida/subida pesa também a diferença entre a velocidade de chegada da
+  bola e a da mão na recepção (`catchSpeedY`, que o animador manda na soltura do loop; `CatchMatchWeight` 0,35).
+- **`anim/DribbleFootwork.ts`** (novo, puro, testado em `footwork.test.ts`):
+  - `SplitStance`/`splitFoot`: base escalonada (pé da mão que recebe 18 cm à frente, o outro 17 cm atrás, meia base 20 cm);
+  - `scissorStep`/`scissorSeconds`: tesoura com os dois pés no ar ao mesmo tempo, o pé sobe antes de andar e pousa depois
+    (janela 25–80% do passo), duração 1,3x o tempo até o quique (os pés se cruzam lado a lado perto do quique, com 40 cm de
+    corredor, e o pé da frente novo pousa antes da recepção);
+  - `weightTarget` + `WeightShift`: transferência de peso por mola amortecida (ω 13, ζ 0,78; altura ω 18), sub-passos de
+    1/120 s. Base escalonada: quadril vai ao pé da frente e gira 9° com ela; crossover parado: carrega na mão que solta e
+    passa para o lado da mão nova; hesitação: sobe e recua e no fim vai à frente; impulso para baixo no pouso da tesoura.
+- **`PlayerAnimator.ts`**:
+  - `applyPlantedStance`: a tesoura dispara uma vez por entre as pernas parado (modo `hold`); a base escalonada vira o
+    alvo dos pés enquanto a base plantada vale (some andando ou no escape). Os passos têm duração e altura próprias.
+  - `applyWeightShift` (novo, dentro do `applyStance`, antes do IK das pernas): desloca e gira a pelve; spine_01 fica com
+    40% do giro (quadril e ombros dissociados).
+  - `betweenLegsPath`: com a base escalonada, quique no meio dos pés (6 cm atrás) usando onde o pé vai pousar, e
+    recepção por fora do joelho da frente (`SplitStance.catchOutside` 0,34). Com 0,24 a bola raspava a coxa (36 quadros).
+  - `lowDribblePalm` + `footAhead`: o ponto do drible acompanha o pé da mão quando ele está à frente.
+  - `applyBallClearance`: o desvio da perna vale já no começo de um drible (antes ficava ~70 ms desligado).
+  - Chaves de A/B: `footworkEnabled`, `handDwellEnabled`; ajustes ao vivo em `animator.footworkTuning.{split,weight}`.
+- Laboratório: cenário `entre_pernas_combo` (4 entre as pernas seguidos); `LAB_ORIGIN` em `tools/laboratorio.mjs`.
+
+### Como medir sem o HMR derrubar a rodada
+
+Com várias sessões salvando arquivos, o Vite recarrega a página no meio do cenário ("Execution context was destroyed").
+Rode o laboratório num build congelado:
+
+    cd web; npx vite build --outDir ../Saved/lab-dist --emptyOutDir
+    (servidor "lab-congelado" em .claude/launch.json: vite preview de Saved/lab-dist na 5174; se ela estiver ocupada o
+    app escolhe outra porta, veja qual)
+    LAB_ORIGIN=http://127.0.0.1:5174 node tools/laboratorio.mjs <saída> <cenários>
+
+Ajustes ao vivo na aba do laboratório (sem rebuild): `__debug.animator.footworkTuning.split/.weight`, `.stance.moveExit`,
+`.clearanceAtMoveStart`, `.footworkEnabled`, `.handDwellEnabled`.
+
+### Números (laboratório, antes = `footworkEnabled` e `handDwellEnabled` desligados, mesmo build)
+
+Tabelas completas em `Saved/drible-aaa/comparacao.md`; folha `Saved/drible-aaa/btl_combo_antes_depois.png`.
+
+| 60 Hz | antes | depois |
+|---|---|---|
+| entre_pernas: pé desliza máx / base máx / bola no corpo | 2,73 m/s / 1,05 m / 13 cm (5 q) | 0,11 / 0,50 / 2 cm (2 q) |
+| entre_pernas_combo: idem | 2,76 / 1,12 / 13 cm (21 q) | 0,80 / 0,50 / 2 cm (3 q) |
+| combo_size_up: idem | 4,46 / 0,96 / 13 cm (17 q) | 2,03 / 0,65 / 3 cm (4 q) |
+| soma dos 12 cenários: deslize máx / bola no corpo (q) / saltos de mão | 46,7 / 56 / 95 | 34,5 / 34 / 84 |
+
+A 144 Hz o padrão é o mesmo (bola no corpo 136 -> 110 quadros, profundidade somada 78 -> 53 cm).
+
+### Pendências
+
+- **Estalos dos braços no entre as pernas** (só em mão/antebraço/braço; os SALTOS de mão em cm caíram). Sonda quadro a
+  quadro (pesos de cada IK do braço por quadro): q3–11 a mão que solta passa pela coxa e o desvio da perna a empurra até
+  16 cm; q22–23 entra o braço de guarda; q27–30 a saída da recepção para o loop; q45–51 a mão do loop muito à frente
+  (perto do alcance) com a base escalonada. Corrigido o último: `SplitStance.handAhead` 0,5 (34 -> 20 a 60 Hz; 98 -> 65 a
+  144 Hz, igual aos 64 de antes do footwork). Combo: 115 -> 103 (antes do footwork 65). **Testado e descartado:**
+  empurrão desenhado da mão que solta até um ponto entre as pernas + joelho de trás abrindo pelo pole (a bola passou a
+  bater 20 cm na coxa no combo, e os estalos não caíram); saída da recepção mais lenta (`stance.moveExit` 0,4: igual);
+  desvio da perna só depois de ~70 ms (`clearanceAtMoveStart=false`: estalos iguais, bola mais no corpo). O que sobra
+  está espalhado no combo (troca de mão a cada ~0,3 s com IKs entrando e saindo); o próximo passo é um caminho único da
+  mão por drible (soltura -> recepção -> loop) em vez de três IKs que se passam o braço.
+- **Bola encosta 2–6 cm na coxa** em poucos quadros de size_up, hesitação e crossover (antes 0). Com o dwell mais
+  dribles começam com a bola na mão, e a mão do clipe passa pela coxa na entrada (0,12 s de inertialization).
+- **Entre as pernas andando** (`anda_entre_pernas`): continua com as pernas da locomoção (46 quadros cruzando, igual a
+  antes). A base escalonada só vale parado; em movimento o certo é cronometrar o drible com a passada aberta.
+- `escape_combo` a 144 Hz: pernas cruzando 29 -> 39 quadros.

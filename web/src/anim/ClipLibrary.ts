@@ -207,6 +207,102 @@ export function crossedFrames(events: number[], prevFrame: number, frame: number
   return out;
 }
 
+/** Segmentos do ciclo de drible de um loop: de um vale da palma ao próximo, com o pico no meio (quadros absolutos). */
+function dribbleSegments(info: ClipInfo, hand: Hand): { a: number; p: number; b: number }[] {
+  const valleys = [...(hand === 'r' ? info.valleys_r : info.valleys_l)].sort((x, y) => x - y);
+  const peaks = hand === 'r' ? info.peaks_r : info.peaks_l;
+  const n = info.frames - 1;
+  return valleys.map((a, i) => {
+    const b = i + 1 < valleys.length ? valleys[i + 1] : valleys[0] + n;
+    const inside = peaks.map((e) => (e > a ? e : e + n)).filter((e) => e > a && e < b);
+    return { a, p: inside.length ? Math.min(...inside) : (a + b) / 2, b };
+  });
+}
+
+/**
+ * "Dwell" da mão no alto do quique: expoentes que entortam o tempo de cada meio do ciclo.
+ *  - rise (vale -> pico): s' = 1 - (1 - s)^rise. A mão sobe rápido saindo do vale e chega devagar no alto, cedendo com a
+ *    bola que chega subindo (a bola é amortecida, não batida).
+ *  - push (pico -> vale): s' = s^push. A mão fica quase parada no alto (punho dobrado por cima da bola) e o empurrão
+ *    acelera até a soltura, que sai mais rápida que no meio-cosseno simétrico.
+ * Perto do pico a altura fica a 1 - c·(Δs)^(2·expoente) do topo: com 1,6–1,7 a mão passa ~15% do ciclo a menos de 2%
+ * do alto (o contato longo do jogador bom: 0,39 s contra 0,28 s do amador, Hirata et al., ISBS 2011).
+ * Expoente 1 = o meio-cosseno simétrico de antes. As duas pontas continuam com velocidade zero (sem quina).
+ */
+export interface HandDwell {
+  rise: number;
+  push: number;
+}
+export const HandDwellDefault: HandDwell = { rise: 1.6, push: 1.7 };
+/** Correndo a bola vai à frente, empurrada, e fica pouco na mão: sem dwell (o contato curto já é o DribbleContactRun). */
+export const HandDwellRun: HandDwell = { rise: 1, push: 1 };
+export const handDwellFor = (clip: string): HandDwell => (clip.startsWith('Dribble_Run') ? HandDwellRun : HandDwellDefault);
+
+const halfCos = (s: number): number => (1 - Math.cos(Math.PI * s)) / 2;
+/** Inverso de halfCos (0..1 -> 0..1). */
+const halfCosInv = (h: number): number => Math.acos(Math.min(1, Math.max(-1, 1 - 2 * h))) / Math.PI;
+/** Subida da mão (0..1 -> altura 0..1) com chegada lenta no alto. */
+export const handRise = (s: number, k: number): number => halfCos(1 - Math.pow(1 - s, k));
+/** Empurrão (0..1 -> altura 1..0): sai devagar do alto e acelera até embaixo. */
+export const handPush = (s: number, k: number): number => 1 - halfCos(Math.pow(s, k));
+
+/**
+ * Curva DESENHADA da palma da mão da bola num loop (0 = ponto mais baixo, 1 = mais alto), no ritmo do clipe: sobe do
+ * vale ao pico e desce até o próximo vale (handRise / handPush, com o dwell no alto; velocidade zero no alto e embaixo,
+ * sem quinas). A curva medida do mocap tem degraus (no Dribble_Run, tocado rápido, a mão caía 27 cm num quadro e a bola
+ * subia ao ombro). null se o clipe não tem quiques dessa mão.
+ */
+export function dribbleHandShape(info: ClipInfo, hand: Hand, frame: number, dwell: HandDwell = HandDwellRun): number | null {
+  const n = info.frames - 1;
+  const t = ((frame % n) + n) % n;
+  for (const { a, p, b } of dribbleSegments(info, hand)) {
+    const tt = t < a ? t + n : t;
+    if (tt < a || tt >= b) continue;
+    if (tt <= p) return handRise((tt - a) / (p - a), dwell.rise);
+    return handPush((tt - p) / (b - p), dwell.push);
+  }
+  return null;
+}
+
+/**
+ * Contato mão-bola de um loop de drible, em quadros (fracionários), na curva desenhada da mão (dribbleHandShape): a
+ * SOLTURA cai na descida, quando a mão passa por `release` da altura (ainda empurrando para baixo, rápida), e a RECEPÇÃO
+ * na subida, quando passa por `catchAt` (a mão indo ao encontro da bola, que chega subindo). No vale a mão está parada:
+ * soltar ali fazia a bola "cair" de uma mão imóvel, e receber no pico deixava a mão esperando a bola lá em cima.
+ */
+export function contactFrames(
+  info: ClipInfo,
+  hand: Hand,
+  release: number,
+  catchAt: number,
+  dwell: HandDwell = HandDwellRun,
+): { release: number[]; catch: number[] } {
+  const n = info.frames - 1;
+  const out = { release: [] as number[], catch: [] as number[] };
+  // Inversos de handRise / handPush: a fração do meio-ciclo em que a mão passa por aquela altura.
+  const catchS = 1 - Math.pow(1 - halfCosInv(catchAt), 1 / dwell.rise);
+  const releaseS = Math.pow(halfCosInv(1 - release), 1 / dwell.push);
+  for (const { a, p, b } of dribbleSegments(info, hand)) {
+    out.catch.push((a + (p - a) * catchS) % n);
+    out.release.push((p + (b - p) * releaseS) % n);
+  }
+  out.release.sort((x, y) => x - y);
+  out.catch.sort((x, y) => x - y);
+  return out;
+}
+
+/** Quadros até o próximo evento da lista depois de `frame` (com volta no loop de n quadros). */
+export function framesToNext(events: number[], frame: number, loopFrames: number): number | null {
+  if (events.length === 0) return null;
+  let best = Infinity;
+  for (const e of events) {
+    let d = e - frame;
+    if (d <= 1e-6) d += loopFrames;
+    best = Math.min(best, d);
+  }
+  return best;
+}
+
 /** Próximo pico (recepção) da mão depois do quadro dado, em quadros de distância (com volta no loop). */
 export function framesToNextPeak(info: ClipInfo, hand: Hand, frame: number): number | null {
   const peaks = hand === 'r' ? info.peaks_r : info.peaks_l;

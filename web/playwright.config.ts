@@ -46,7 +46,9 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    // E2E_ORIGIN: outro servidor, ex. um build congelado no `vite preview` (com várias sessões salvando arquivos, o HMR
+    // do 5173 recarrega a página no meio do teste).
+    baseURL: process.env.E2E_ORIGIN ?? 'http://127.0.0.1:5173',
     viewport: { width: 1280, height: 720 },
     // Vídeo gravado pelo e2e/recorder.ts (não depende do ffmpeg da versão exata do Playwright).
     video: 'off',
