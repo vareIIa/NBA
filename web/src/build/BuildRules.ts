@@ -51,8 +51,11 @@ export function weightRange(heightCm: number): readonly [number, number] {
   return [Math.round(t * 0.86), Math.round(t * 1.12)];
 }
 
-/** Envergadura: ±6" da altura (guia do 2K26; as builds Pro-Tuned ficam entre 0 e +6"). */
-export const WingspanDeltaIn = [-6, 6] as const;
+/**
+ * Envergadura: da altura até +6" (as 62 builds Pro-Tuned do 2K26 ficam entre 0 e +6", nenhuma abaixo da altura; pedido
+ * do diretor em 2026-10-16: a mínima é a própria altura).
+ */
+export const WingspanDeltaIn = [0, 6] as const;
 export const wingspanRange = (heightCm: number): readonly [number, number] => [
   heightCm + WingspanDeltaIn[0] * In,
   heightCm + WingspanDeltaIn[1] * In,
@@ -436,7 +439,7 @@ export const DefaultBuild: PlayerBuild = Object.freeze({
   hand: 'r',
   jersey: 7,
   country: 'BR',
-  body: { heightCm: 186, weightKg: 90, wingspanCm: 186 + 3 * In, shape: 'atletico' },
+  body: { heightCm: 186, weightKg: 90, wingspanCm: 186, shape: 'atletico' },
   // prettier-ignore
   attrs: {
     closeShot: 85, drivingLayup: 85, drivingDunk: 80, standingDunk: 45, postControl: 45,

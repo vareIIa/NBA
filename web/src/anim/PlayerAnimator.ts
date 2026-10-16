@@ -207,8 +207,18 @@ const LegCapsules = [
   { a: 'calf_r', b: 'foot_r', r: 0.056, from: 0 },
 ];
 const BallLegMargin = 0.01; // m de folga entre a bola e a perna
-/** Faixa do comprimento do braço pela envergadura da build (setBodyScale): só alonga (ver setBodyScale). */
-const ArmScaleRange = [1, 1.12] as const;
+/**
+ * Faixa do comprimento do braço pela envergadura da build (setBodyScale). Só alonga: a envergadura mínima é a altura,
+ * que é o braço do boneco. +6" num jogador de 5'9" dá ~1,16.
+ */
+const ArmScaleRange = [1, 1.18] as const;
+/** Ossos do braço esticados na malha (osso, filho): o eixo do comprimento é o do filho no bind. */
+const ArmStretchBones = [
+  ['upperarm_l', 'lowerarm_l'],
+  ['lowerarm_l', 'hand_l'],
+  ['upperarm_r', 'lowerarm_r'],
+  ['lowerarm_r', 'hand_r'],
+] as const;
 // Barreira macia: a bola começa a ser desviada ~5 cm antes de encostar (máximo suave entre a distância e o mínimo), em vez
 // de um empurrão que liga de repente no contato e dá tranco no braço.
 const BallLegSoft = 0.05;
@@ -432,6 +442,10 @@ export class PlayerAnimator {
   private armScale = 1;
   /** Ombro -> cotovelo -> punho no modelo (m, escala 1): a base do armScale. */
   private armSegments0 = 0.52;
+  /** Eixo do comprimento do braço e do antebraço (referencial do osso, bind). */
+  private readonly armAxes = new Map<string, THREE.Vector3>();
+  /** Esqueletos (corpo e roupa) que já esticam a malha do braço. */
+  private readonly armStretched = new WeakSet<THREE.Skeleton>();
   /** Pontos da sola do tênis (vértices mais baixos da malha no bind pose), no espaço do osso do pé ou da ponta. */
   private readonly solePoints: Record<Hand, { bone: THREE.Bone; local: THREE.Vector3 }[]> = { l: [], r: [] };
   /** Todos os pontos da sola (sem amostragem), para a altura do pé plano (lowestSole): a amostra esparsa perdia a ponta mais baixa (2,5 cm). */
@@ -577,6 +591,8 @@ export class PlayerAnimator {
       const P = (n: string) => this.bone(n).getWorldPosition(new THREE.Vector3());
       const seg = P('upperarm_r').distanceTo(P('lowerarm_r')) + P('lowerarm_r').distanceTo(P('hand_r'));
       if (seg > 0.2 && seg < 1.2) this.armSegments0 = seg;
+      // Eixo do comprimento de cada osso do braço (no referencial do osso, no bind): a direção até o filho.
+      for (const [bone, child] of ArmStretchBones) this.armAxes.set(bone, this.bone(child).position.clone().normalize());
     }
     const self = this;
     this.collectSolePoints();
@@ -1440,16 +1456,55 @@ export class PlayerAnimator {
     this.bodyScale = k;
     this.root.scale.setScalar(k);
     this.restAnkleY = this.restAnkleY0 * k;
-    // O braço só alonga: encurtar faz a mão do drible esticar o braço no limite e o cotovelo tremer (laboratório
-    // 2026-10-16, 16 cenários: 22% mais curto = estalos +52%, parado 0 -> 51; 6% mais curto = +16%, andando 29 -> 53).
-    // Mais longo não piora (+8 cm de envergadura: estalos −11%). Envergadura menor que a do boneco fica só nos atributos.
+    // O braço só alonga: a envergadura mínima é a altura (o braço do boneco). Encurtar fazia a mão do drible esticar o
+    // braço no limite e o cotovelo tremer (laboratório 2026-10-16: 22% mais curto = estalos +52%).
     this.armScale = THREE.MathUtils.clamp(1 + wingspanOverHeightM / 2 / (this.armSegments0 * k), ArmScaleRange[0], ArmScaleRange[1]);
+    this.installArmStretch();
     this.jumpShot.setBodyScale(k);
     this.layupMotion.setBodyScale(k, this.armScale);
     this.root.updateMatrixWorld(true);
   }
 
-  /** Braço mais longo ou mais curto (armScale): cotovelo e punho se afastam do osso de cima. */
+  /**
+   * Malha do braço esticada só no comprimento (armScale), sem engrossar: na matriz de skinning do braço e do antebraço
+   * entra uma escala ao longo do eixo do osso (S = I + (f−1)·u·uᵀ, no referencial do osso). Não passa para os filhos (a
+   * hierarquia não muda): o cotovelo e o punho se afastam pelo applyArmLength, na mesma proporção. Afastar só as juntas
+   * esticava a pele do cotovelo e o braço parecia mais grosso (diretor, 2026-10-16). Vale para o corpo e a roupa.
+   */
+  private installArmStretch(): void {
+    if (this.armAxes.size === 0) return;
+    this.root.traverse((o) => {
+      const mesh = o as THREE.SkinnedMesh;
+      if (!mesh.isSkinnedMesh || !mesh.skeleton || this.armStretched.has(mesh.skeleton)) return;
+      const skeleton = mesh.skeleton;
+      this.armStretched.add(skeleton);
+      const targets = ArmStretchBones.map(([bone]) => ({ i: skeleton.bones.findIndex((b) => b.name === bone), axis: this.armAxes.get(bone)! })).filter(
+        (t) => t.i >= 0 && t.axis,
+      );
+      if (targets.length === 0) return;
+      const original = skeleton.update.bind(skeleton);
+      const S = new THREE.Matrix4();
+      const M = new THREE.Matrix4();
+      skeleton.update = () => {
+        original();
+        const k = this.armScale - 1;
+        if (Math.abs(k) < 1e-4) return;
+        for (const { i, axis: u } of targets) {
+          S.set(
+            1 + k * u.x * u.x, k * u.x * u.y, k * u.x * u.z, 0,
+            k * u.y * u.x, 1 + k * u.y * u.y, k * u.y * u.z, 0,
+            k * u.z * u.x, k * u.z * u.y, 1 + k * u.z * u.z, 0,
+            0, 0, 0, 1,
+          );
+          M.multiplyMatrices(skeleton.bones[i]!.matrixWorld, S).multiply(skeleton.boneInverses[i]!);
+          if (skeleton.boneMatrices) M.toArray(skeleton.boneMatrices, i * 16);
+        }
+        if (skeleton.boneTexture) skeleton.boneTexture.needsUpdate = true;
+      };
+    });
+  }
+
+  /** Braço mais longo (armScale): cotovelo e punho se afastam do osso de cima. */
   private applyArmLength(): void {
     if (Math.abs(this.armScale - 1) < 1e-4) return;
     for (const side of ['l', 'r'] as const) {

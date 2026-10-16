@@ -169,12 +169,12 @@ async function boot(): Promise<void> {
   const ratings = playRatings(build);
   game.setRatings(ratings);
   // Altura e envergadura da build: o boneco escala e os braços alongam (drible, arremesso, bandeja e enterrada
-  // acompanham). ?altura=<cm> e ?envergadura=<cm além do braço do boneco> forçam (laboratório:
-  // ?lab=1&altura=224&envergadura=8). A build padrão dá escala 1 e braço 1: o jogo de antes.
+  // acompanham). ?altura=<cm> e ?envergadura=<cm além da altura, 0 a 15,24> forçam (laboratório:
+  // ?lab=1&altura=224&envergadura=15). A build padrão dá escala 1 e braço 1: o jogo de antes.
   const alturaParam = Number(params.get('altura'));
   const heightCm = alturaParam >= 150 && alturaParam <= 240 ? alturaParam : build.body.heightCm;
   const wingParam = params.get('envergadura');
-  const wingOverM = wingParam !== null && Math.abs(Number(wingParam)) <= 25 ? Number(wingParam) / 100 : wingspanOverModelM(build.body);
+  const wingOverM = wingParam !== null && Number(wingParam) >= 0 && Number(wingParam) <= 25 ? Number(wingParam) / 100 : wingspanOverModelM(build.body);
   animator.setBodyScale(bodyScaleOf(heightCm), wingOverM);
   const badgeBudget = badgePoints(build);
   const ring = new PlayerRing(scene);

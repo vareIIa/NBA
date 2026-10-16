@@ -107,11 +107,11 @@ export function applyDribbleRatings(mods: DribbleModifiers, r: PlayRatings): voi
 export const bodyScaleOf = (heightCm: number): number => heightCm / (PlayerHeightMeters * 100);
 
 /**
- * Quanto a envergadura passa da do boneco (m): o braço do boneco é o da build padrão (+3" da altura). Cada braço do
- * PlayerAnimator alonga metade disso (setBodyScale). 0 na build padrão.
+ * Quanto a envergadura passa da altura (m). O braço do boneco é o de envergadura igual à altura (a mínima, a da build
+ * padrão); cada braço do PlayerAnimator alonga metade disso (setBodyScale). 0 na build padrão.
  */
 export const wingspanOverModelM = (body: { heightCm: number; wingspanCm: number }): number =>
-  (body.wingspanCm - body.heightCm - (DefaultBuild.body.wingspanCm - DefaultBuild.body.heightCm)) / 100;
+  Math.max(0, body.wingspanCm - body.heightCm) / 100;
 
 /** Ratings da build padrão (os números de antes do builder). */
 export const DefaultPlayRatings: PlayRatings = playRatings(DefaultBuild);

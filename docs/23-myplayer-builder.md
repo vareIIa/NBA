@@ -49,7 +49,7 @@ As telas do menu são carregadas por `import()` dinâmico: o Freestyle dos teste
 | Atributos | 2K25/2K26: Close Shot, Driving Layup, Driving Dunk, Standing Dunk, Post Control · Mid-Range, Three-Point, Free Throw · Pass Accuracy, Ball Handle, Speed With Ball · Interior/Perimeter Defense, Steal, Block · Off/Def Rebound · Speed, Agility (era Acceleration até o 2K24), Strength, Vertical, Stamina | Os mesmos 22, em português. Mantemos **Aceleração** (é o que o nosso movimento usa e o que aparece nos prints do diretor) |
 | Começo dos atributos | 25; Stamina começa em 85 (2K25) | Igual (`AttrStart`) |
 | Altura máxima por posição | 2K25: PG 6'7", SG 6'8", SF 6'10", PF 7'0", C 7'3"; 2K26: até 7'4"; mínimo 5'9" | Igual; os mínimos por posição não foram publicados, são nossos (`HeightRangeIn`) |
-| Envergadura | ±6" da altura (guia 2K26); builds Pro-Tuned entre 0 e +6" | ±6" |
+| Envergadura | ±6" da altura (guia 2K26); as 62 builds Pro-Tuned ficam entre 0 e +6", nenhuma abaixo da altura | Da altura a +6" (a mínima é a altura: pedido do diretor, 2026-10-16) |
 | Peso | Builds 2K26: PG 175–225 lb … C 230–259 lb | Típico pela altura −14% … +12% |
 | Teto de bola de 3 por altura | 2K25 (guia pré-lançamento): 99 até 6'5", 94 em 6'6", 89 em 6'7", 88 em 6'8", 87 em 6'9", 86 de 6'10" a 7'2", 85 em 7'3" | Tabela exata (`ThreePointCapByHeightIn`); 7'4" = 84 (extrapolado) |
 | Teto dos outros atributos | **Não publicado** | `CapTable` nossa, por âncoras de altura (o que combina com o tamanho sobe, o resto desce) |
@@ -69,7 +69,6 @@ badge 2K26), si.com (entrevista Ronnie 2K sobre o OVR).
 - **Mais envergadura (por polegada acima da altura):** 3 −1,6 · meia −1,1 · lance livre −0,6 · drible −1,3 ·
   vel. c/ bola −0,5 · passe −0,4 · roubo +0,9 · toco +1,6 · def. interior +0,9 · def. perímetro +0,6 ·
   reb. of. +1,1 · reb. def. +1,2 · enterrada +0,7 · enterrada parado +1,1 · perto +0,3.
-- **Braço curto** devolve só metade do que o braço longo tira; não transforma um 6'8" em arremessador 99.
 - **Mais peso (por 10 kg acima do típico):** força +9 · poste, enterrada parado, def. interior +2 · rebotes +1 ·
   velocidade −4 · aceleração −5 · impulsão −5 · vel. c/ bola −3 · resistência −2 · enterrada −2 · def. perímetro −2.
 
@@ -97,9 +96,9 @@ Exemplos verificados nos testes:
 | Nome no HUD / tela de badges | cardoso2k / "Armador arremessador · 1,96 m" | Nome da build / arquétipo · altura |
 | Tamanho do boneco | 1,86 m sempre | Altura da build: escala = altura / 1,86 m (5'9" ≈ 0,94 · 7'4" ≈ 1,20); ver §3.2 |
 | Alcance no aro (bandeja, enterrada, pendurar) | 1,86 m | Altura da build (`animator.heightMeters` na situação da bandeja e no pendurar) |
-| Comprimento do braço | o do boneco | Envergadura acima da do boneco alonga o braço (até +12%); abaixo, fica igual (§3.2) |
+| Comprimento do braço | o do boneco | Envergadura acima da altura alonga o braço: a malha estica só no comprimento, sem engrossar (+6" ≈ +15%; §3.2) |
 
-**Build padrão** (`DefaultBuild`, armador de 6'1" / 1,86 m, a altura do boneco que o diretor escolheu, envergadura +3"):
+**Build padrão** (`DefaultBuild`, armador de 6'1" / 1,86 m, a altura do boneco que o diretor escolheu, envergadura = altura):
 é a que vale sem nenhuma build salva. Ela dá **exatamente** os números de antes (teste `build padrão = Freestyle de antes
 do builder`), com escala do corpo 1 e braço 1. Os testes e as ferramentas do Freestyle não mudam.
 
@@ -109,7 +108,6 @@ Ainda **não** entram no Freestyle:
 - Lance livre e Precisão de passe: o Freestyle não tem lance livre nem passe.
 - requisitos de atributo das badges. O 2K publica poucos números (2K26: Limitless Range pede 3PT 83/89/93/96/99;
   Posterizer, DD 73 + Vert 65); inventar os outros 58 seria chute. Hoje as badges seguem o orçamento por categoria.
-- envergadura menor que a do boneco no tamanho do braço (só nos atributos; §3.2).
 
 ### 3.2 Altura e envergadura no corpo do jogo
 
@@ -123,13 +121,21 @@ Ainda **não** entram no Freestyle:
   - mão livre do spin;
   - raio das pernas no desvio da bola;
   - chão do quique no `BallDribbler`: a bola toca o piso em qualquer tamanho.
-- **Envergadura:** cada braço alonga metade da diferença para a envergadura do boneco (a da build padrão, +3"), movendo
-  o cotovelo e o punho ao longo do osso depois do mixer. **Só alonga** (até +12%).
-- **Por que o braço não encurta:** encurtar faz a mão do drible esticar o braço no limite e o cotovelo tremer.
-  Laboratório, 16 cenários:
+- **Envergadura:** o braço do boneco é o de envergadura igual à altura (a mínima). Cada braço alonga metade do que a
+  envergadura passa da altura (+6" num 6'1" ≈ +15%):
+  - o cotovelo e o punho se afastam ao longo dos ossos depois do mixer;
+  - a malha do braço e do antebraço estica **só no comprimento**: na matriz de skinning desses ossos entra uma escala ao
+    longo do eixo do osso, que não passa para os filhos.
+
+  Na primeira versão só as juntas se afastavam: a pele do cotovelo esticava e o braço parecia mais grosso (o diretor
+  viu). Medido no showroom com +6": o punho desce 8 cm (1,035 → 0,951 m).
+- **Por que a envergadura mínima é a altura** (e o braço nunca encurta): encurtar faz a mão do drible esticar o braço
+  no limite e o cotovelo tremer. Laboratório, 16 cenários:
   - 22% mais curto: estalos +52%; parado, 0 → 51;
   - 6% mais curto: +16%; andando, 29 → 53;
-  - 8 cm mais longo: −11%.
+  - mais longo não piora: com +6" (braço +15%), em 5'9", 6'1" e 7'4", os estalos ficam abaixo dos do boneco (628, 587
+    e 557 contra 675), com 40 quiques, bola sempre na mão e nenhum NaN; o braço entra até 5 cm no tronco em poucos
+    quadros no 7'4" (o boneco: 1,5 cm).
 - **Medição** (`tools/laboratorio.mjs` com `LAB_URL=&altura=…&envergadura=…`, mesmo build congelado). Nas três alturas
   (5'9", 6'1" e 7'4"):
   - 40 quiques em todas;
@@ -138,7 +144,7 @@ Ainda **não** entram no Freestyle:
 
   Em 7'4" aparecem mais quadros de sola abaixo de −1 cm (30 → 72). É o afundamento que o clipe já tem, crescendo com o
   corpo (mínimo −3,0 → −3,2 cm).
-- **Testes:** `?altura=<cm>&envergadura=<cm além do braço do boneco>` força o corpo no jogo e no laboratório.
+- **Testes:** `?altura=<cm>&envergadura=<cm além da altura>` força o corpo no jogo e no laboratório.
   `e2e/menu.spec.ts` confere a escala da build criada no menu e um pivô de 7'4" com braço longo driblando (crossover,
   entre as pernas, spin) sem a bola entrar no chão nem fugir da mão.
 
