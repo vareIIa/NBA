@@ -21,8 +21,12 @@ import type { Freestyle } from './Freestyle';
 export const LowPickupZ = 0.95;
 /** As mãos (o meio das palmas) a até isto do centro da bola: a pegada vale e o pedido vai para o juiz (m). */
 export const CatchRadius = 0.42;
-/** Alcance do braço a partir do meio dos ombros, em fração da envergadura (o mesmo do toco físico, docs/25 §3). */
-export const ArmReachFrac = 0.42;
+/**
+ * Alcance da palma (m) a partir do meio dos ombros, sem medir o esqueleto: meia envergadura sem os ombros (0,42 m de um
+ * ombro ao outro), menos a mão até a palma. 42% da envergadura a partir de um ponto à frente do peito prometia bola
+ * que o braço não alcançava (a bola ficava longe das mãos na pegada).
+ */
+export const defaultReachM = (wingspanM: number): number => Math.max(0.5, (wingspanM - 0.42) / 2 - 0.09);
 /** X sem pulo: as mãos procuram a bola por até este tempo (s) depois do aperto. */
 export const StandingCatchS = 0.45;
 /** Abaixo disto (fração da altura) a pegada de mãos não vale: a bola está baixa demais (é a pegada de passar por cima). */
@@ -36,6 +40,9 @@ export interface CatchBody {
   facing: Vec3;
   heightM: number;
   wingspanM: number;
+  /** Altura (m) do meio dos ombros em pé e o alcance da palma a partir dele, medidos no esqueleto (ReboundCatch.start). */
+  shoulderZ?: number;
+  reachM?: number;
 }
 
 export interface CatchPlan {
@@ -47,10 +54,10 @@ export interface CatchPlan {
   reachable: boolean;
 }
 
-/** Meio dos ombros, um palmo à frente do peito, `t` s depois do aperto (com o pulo de `jumpM`). */
+/** Meio dos ombros `t` s depois do aperto (com o pulo de `jumpM`): de onde os braços alcançam a bola. */
 function handsCenter(body: CatchBody, t: number, jumpM: number): Vec3 {
   const lift = jumpM > 0 ? contestJumpAt(t, jumpM).lift : 0;
-  return body.pos.flat().add(body.facing.flat().normalized().scale(0.25)).withZ(body.heightM * 0.82 + lift);
+  return body.pos.flat().add(body.facing.flat().normalized().scale(0.05)).withZ((body.shoulderZ ?? body.heightM * 0.82) + lift);
 }
 
 /** Bola em queda livre `t` s adiante (sem quicar: o chão segura a altura). */
@@ -65,7 +72,7 @@ function ballAt(p: Vec3, v: Vec3, t: number): Vec3 {
  * alcance: as mãos vão até onde dá, na direção da bola no instante em que ela passa mais perto.
  */
 export function planCatch(ballP: Vec3, ballV: Vec3, body: CatchBody, jumpM: number): CatchPlan {
-  const reach = body.wingspanM * ArmReachFrac;
+  const reach = body.reachM ?? defaultReachM(body.wingspanM);
   const t0 = CatchTiming.minReach;
   const t1 = jumpM > 0 ? ContestTiming.load + airTime(jumpM) : StandingCatchS;
   let best = { d: Infinity, t: t0, ball: ballP };
@@ -86,6 +93,8 @@ export function planCatch(ballP: Vec3, ballV: Vec3, body: CatchBody, jumpM: numb
 
 export class ReboundCatch {
   private attempt: { granted: boolean; plan: CatchPlan } | null = null;
+  /** Meio das palmas no quadro anterior, com a bola dada (a bola anda junto com elas). */
+  private prevMid: THREE.Vector3 | null = null;
   private readonly mid = new THREE.Vector3();
   private readonly tmp = new THREE.Vector3();
   /** Para o debug e o e2e: tentativas, pegadas dadas pelo juiz e o último plano. */
@@ -112,6 +121,7 @@ export class ReboundCatch {
    * a pegada (o pulo vem junto). Sem bola à vista, as mãos vão à frente do peito.
    */
   start(ball: { p: Vec3; v: Vec3 } | null, body: CatchBody, jumpM: number): CatchPlan {
+    body = { ...this.measureArms(), ...body };
     const plan = ball
       ? planCatch(ball.p, ball.v, body, jumpM)
       : { target: handsCenter(body, 0.2, 0).add(body.facing.flat().normalized().scale(0.3)), at: 0.2, reachable: false };
@@ -144,6 +154,7 @@ export class ReboundCatch {
     g.ballMesh.visible = true;
     g.faceTarget = null;
     this.attempt.granted = true;
+    this.prevMid = null;
     this.counts.caught++;
     return true;
   }
@@ -161,8 +172,14 @@ export class ReboundCatch {
       return false;
     }
     const g = this.game;
-    const hold = this.animator.catchHold();
-    const at = hold ? this.tmp.copy(hold) : g.ballMesh.position.clone().lerp(this.palmsMid(), 0.35);
+    // A bola vai para o meio das palmas como elas estão (não para o ponto planejado: se o braço não chegou lá, a bola
+    // ficava longe das mãos) e fica ali: anda junto com as palmas (sem atraso quando elas levam a bola ao peito) e a folga
+    // da pegada (de onde a bola estava até as palmas) some em poucos quadros.
+    const mid = this.palmsMid();
+    const at = g.ballMesh.position.clone();
+    if (this.prevMid) at.add(mid.clone().sub(this.prevMid));
+    at.lerp(mid, 0.4);
+    this.prevMid = mid.clone();
     g.ballMesh.position.copy(at);
     g.ball = makeBallState(fromThree(at));
     if (phase && phase.phase !== 'out') return false;
@@ -179,6 +196,20 @@ export class ReboundCatch {
     if (!this.attempt) return;
     if (!this.attempt.granted) this.animator.cancelCatch();
     this.attempt = null;
+  }
+
+  /**
+   * Ombros e braço do esqueleto agora (o boneco escalado pela altura e com o braço da envergadura): a altura do meio dos
+   * ombros em pé e o alcance da palma a partir dele (95% do braço esticado: o IK alcança o alvo com folga).
+   */
+  private measureArms(): { shoulderZ: number; reachM: number } {
+    const a = this.animator;
+    const p = (name: string) => a.bone(name).getWorldPosition(new THREE.Vector3());
+    const sl = p('upperarm_l');
+    const sr = p('upperarm_r');
+    const arm = sl.distanceTo(p('lowerarm_l')) + p('lowerarm_l').distanceTo(p('hand_l')) + p('hand_l').distanceTo(a.palmWorld('l', new THREE.Vector3()));
+    const shoulderZ = (sl.y + sr.y) / 2 - a.root.position.y - a.defenseState().jump;
+    return { shoulderZ, reachM: 0.95 * arm };
   }
 
   /** Meio das duas palmas (mundo). */

@@ -170,10 +170,13 @@ export class OnlineMatch {
   /** Bola que eu vejo no quadro anterior (núcleo) e a velocidade estimada dela (a do outro chega pela rede). */
   private seenBall: Vec3 | null = null;
   private seenVel = new Vec3();
-  /** e2e: pegadas do oponente que o boneco dele mostrou, e a maior folga (m) entre a bola e as minhas mãos na pegada. */
+  /** e2e: pegadas do oponente que o boneco dele mostrou, e a maior folga (m) entre a bola e o meio das minhas palmas com a
+   *  bola assentada (pull e hold). */
   private remoteCatches = 0;
   private remoteCatching = false;
   private holdGap = 0;
+  /** e2e: a bola que eu via (posição, velocidade) e onde eu estava quando apertei X/Y para pegar. */
+  private catchSeen: { p: number[]; v: number[]; me: number[] } | null = null;
   /** Pegada da bola solta liberada pelo juiz: 'call' = a bola é minha (rebote ofensivo); 'grab' = vem da bola do oponente. */
   private pickup: { kind: 'call' | 'grab'; from: THREE.Vector3; frames: number } | null = null;
   private prevPause = false;
@@ -365,7 +368,9 @@ export class OnlineMatch {
     }
     this.trackBall(dt);
     this.catcher.update();
-    if (this.catcher.holding) {
+    // Folga bola-palmas com a bola já assentada nas mãos (indo para o peito e no peito).
+    const catchPh = this.deps.animator.catchPhase()?.phase;
+    if (this.catcher.holding && (catchPh === 'pull' || catchPh === 'hold')) {
       const a = this.deps.animator;
       const mid = a.palmWorld('l', new THREE.Vector3()).add(a.palmWorld('r', this.tmp)).multiplyScalar(0.5);
       this.holdGap = Math.max(this.holdGap, mid.distanceTo(game.ballMesh.position));
@@ -456,6 +461,7 @@ export class OnlineMatch {
         remoteCatches: this.remoteCatches,
         remotePhase: this.remote.animator.catchPhase()?.phase ?? null,
         plan: ((pl) => (pl ? { at: +pl.at.toFixed(2), z: +pl.target.z.toFixed(2), reachable: pl.reachable } : null))(this.catcher.lastPlan),
+        seen: this.catchSeen,
       },
     };
   }
@@ -659,8 +665,12 @@ export class OnlineMatch {
   private startCatch(jump: boolean): void {
     if (this.catcher.trying || this.catcher.holding) return;
     if (jump && this.deps.animator.defenseState().jump > 0) return;
-    this.catcher.start(this.ballMotion(), this.catchBody(), jump ? contestJumpM(this.myCard().vertical) : 0);
+    const motion = this.ballMotion();
+    const body = this.catchBody();
+    this.catcher.start(motion, body, jump ? contestJumpM(this.myCard().vertical) : 0);
     if (jump) this.counts.jumps++;
+    const r = (v: Vec3) => [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)];
+    this.catchSeen = motion ? { p: r(motion.p), v: r(motion.v), me: r(body.pos) } : null;
   }
 
   private catchBody(): CatchBody {

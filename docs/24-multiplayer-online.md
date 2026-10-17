@@ -315,9 +315,10 @@ O servidor nunca simula a bola nem o corpo: ele recebe relatos (`g.release`, `g.
    na hora (`missDecided` em `OnlineMatch.ts`). Cesta: pontos, comemoração (1,8 s) e novo check da outra
    pessoa (ou da mesma, com make it take it). Erro: bola solta.
 9. **Rebote com as duas mãos** (`web/src/game/ReboundCatch.ts`, diretor 2026-10-16): **X** pega parado, **Y** pula e
-   pega. O jogo prevê onde a bola passa ao alcance do braço (42% da envergadura a partir dos ombros; no pulo o alcance
-   sobe com o corpo) e as duas mãos vão até ela pela frente do corpo, chegam no instante do contato, seguram, trazem a
-   bola para o peito e só então ela desce para o drible (`DefenseMotion.catchBall`; o boneco do outro lado repete pelo
+   pega. O jogo prevê onde a bola passa ao alcance do braço (95% do braço esticado, medido no esqueleto, a partir do
+   meio dos ombros; no pulo o alcance sobe com o corpo) e as duas mãos vão até ela pela frente do corpo, chegam no
+   instante do contato, seguram (a bola fica no meio das palmas e anda com elas), trazem a bola para o peito e só então
+   ela desce para o drible (`DefenseMotion.catchBall`; o boneco do outro lado repete pelo
    op `catch`). O pedido ao juiz sai quando as mãos estão na bola; o servidor dá ao primeiro pedido válido. Bola baixa
    (centro abaixo de 0,95 m: rolando, quicando baixo) ainda é pega passando a até 85 cm. Com o erro antecipado dá para
    **pegar no ar**, antes do quique. A CPU usa a mesma pegada (Y na bola alta, X na bola na altura do peito).

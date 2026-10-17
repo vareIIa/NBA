@@ -55,6 +55,7 @@ type OnlineDebug = {
     remoteCatches: number;
     remotePhase: string | null;
     plan: { at: number; z: number; reachable: boolean } | null;
+    seen: { p: number[]; v: number[]; me: number[] } | null;
   };
 };
 
@@ -518,15 +519,22 @@ test('Online 1x1: rebote com as duas mãos — X pega parado, Y pula e pega, vis
         mode === 'x' ? 0.6 : 1.4,
       ],
     );
-    // O defensor vê a bola descendo e aperta X (parado) ou K (o Y: pula) na altura certa.
+    // O defensor vê a bola descendo em cima dele e aperta X (parado) ou K (o Y: pula) na altura certa. A bola que ele vê
+    // chega ~100 ms atrasada (o boneco do outro): logo depois da soltura ela ainda está na mão de quem arremessou, já
+    // abaixo da altura de apertar; por isso a bola vista tem de estar perto dele.
     const thr = mode === 'x' ? 2.55 : 3.0;
-    await waitOnline(def, (q) => q.ball === 'loose' && !!q.ballAt && q.ballAt[2] < thr, 5_000, 15);
+    await waitOnline(
+      def,
+      (q) => q.ball === 'loose' && !!q.ballAt && q.ballAt[2] < thr && Math.hypot(q.ballAt[0] - q.me.x, q.ballAt[1] - q.me.y) < 0.6,
+      5_000,
+      15,
+    );
     await tap(def, mode === 'x' ? 'Space' : 'KeyK', 80);
     // O juiz dá a bola: ela fica entre as mãos dele (a pegada), e depois desce para o drible.
     const held = await waitOnline(def, (q) => q.rebound.holding, 3_000, 20);
     await def.screenshot({ path: `${OUT}/3${mode === 'x' ? 0 : 2}-rebote-${mode}-quem-pegou.png` });
     expect(held.rebound.caught).toBe(before + 1);
-    expect(held.rebound.plan?.reachable).toBe(true);
+    expect(held.rebound.plan?.reachable, JSON.stringify(held.rebound)).toBe(true);
     expect(held.offense).toBe(defSide);
     expect(held.events).toContain(`rebound:${defSide}`);
     if (mode === 'y') expect(held.defense.jumps).toBeGreaterThan(0);
@@ -535,7 +543,7 @@ test('Online 1x1: rebote com as duas mãos — X pega parado, Y pula e pega, vis
     await off.screenshot({ path: `${OUT}/3${mode === 'x' ? 1 : 3}-rebote-${mode}-visto-pelo-outro.png` });
     expect(seen.events).toContain(`rebound:${defSide}`);
     const after = await waitOnline(def, (q) => q.me.phase === 'dribble' && q.me.ballVisible && !q.rebound.holding, 3_000, 30);
-    expect(after.rebound.holdGap).toBeLessThan(0.25); // a bola ficou entre as palmas
+    expect(after.rebound.holdGap, JSON.stringify(after.rebound)).toBeLessThan(0.12); // a bola ficou entre as palmas
   }
   expect(errors.filter((e) => !/favicon|ERR_CONNECTION_REFUSED|WebSocket/.test(e))).toEqual([]);
   await close();

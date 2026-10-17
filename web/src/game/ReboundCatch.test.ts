@@ -2,13 +2,13 @@
 import { describe, expect, it } from 'vitest';
 import { Vec3 } from '../sim';
 import { CatchTiming, ContestTiming, airTime } from '../anim/DefenseMotion';
-import { ArmReachFrac, type CatchBody, planCatch } from './ReboundCatch';
+import { type CatchBody, defaultReachM, planCatch } from './ReboundCatch';
 import { missDecided } from './OnlineMatch';
 import { makeBallState } from '../sim';
 
 const body: CatchBody = { pos: new Vec3(6, 0, 0), facing: new Vec3(-1, 0, 0), heightM: 1.96, wingspanM: 2.05 };
-const reach = body.wingspanM * ArmReachFrac;
-const shoulders = (lift = 0) => new Vec3(5.75, 0, 1.96 * 0.82 + lift);
+const reach = defaultReachM(body.wingspanM);
+const shoulders = (lift = 0) => new Vec3(5.95, 0, 1.96 * 0.82 + lift);
 
 describe('planCatch', () => {
   it('X: bola caindo à frente do peito é pega parado, ao alcance do braço', () => {
@@ -34,7 +34,15 @@ describe('planCatch', () => {
     const plan = planCatch(new Vec3(2, 0, 2), new Vec3(0, 0, 0), body, 0);
     expect(plan.reachable).toBe(false);
     expect(plan.target.sub(shoulders()).length()).toBeLessThanOrEqual(reach + 1e-6);
-    expect(plan.target.x).toBeLessThan(5.75); // foi para o lado da bola
+    expect(plan.target.x).toBeLessThan(5.95); // foi para o lado da bola
+  });
+
+  it('o alcance é o do braço a partir dos ombros: bola a 0,85 m à frente na altura do ombro não é pegada', () => {
+    expect(reach).toBeGreaterThan(0.6);
+    expect(reach).toBeLessThan(0.8);
+    expect(planCatch(new Vec3(5.1, 0, 1.75), new Vec3(0, 0, 0), body, 0).reachable).toBe(false);
+    // Com o braço medido no esqueleto (mais longo), passa a ser.
+    expect(planCatch(new Vec3(5.1, 0, 1.75), new Vec3(0, 0, 0), { ...body, reachM: 0.95 }, 0).reachable).toBe(true);
   });
 
   it('bola na altura do joelho não é pegada de mãos (é a de passar por cima)', () => {
