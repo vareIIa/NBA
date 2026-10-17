@@ -72,25 +72,36 @@ export const Shoes: Readonly<Record<ShoeId, { label: string; sub: string; colors
 };
 export const ShoeOrder: readonly ShoeId[] = ['tenis_retro_alto_1', 'tenis_verniz_11', 'tenis_cimento_4', 'tenis_elefante_3', 'tenis_baixo_moderno'];
 
-/** Zonas por peça: os 4 canais da máscara (assets/look/zonas, gravadas por web/tools/zonas-cor.py). */
+/**
+ * Zonas por peça: os 4 canais da máscara (assets/look/zonas; do tênis, gravadas por web/tools/zonas-cor.py; da regata e
+ * da bermuda, pelo próprio Tools/Animacao/costurar.py).
+ */
 export const MaxZones = 4;
 
 /**
  * Cor original de cada zona (0 = principal), por peça (nome do GLB em assets/gear). A ordem é a dos canais da máscara
  * (R, G, B, A); null = zona que a peça não tem. Os mesmos números estão em assets/look/zonas/<peça>_zonas.json (um teste
- * confere).
+ * confere). Regata e bermuda: tecido e debrum, as cores lisas que o costurar.py pintou (o kit branco é o vermelho com as
+ * cores trocadas).
  */
 export const GearZones: Readonly<Record<string, readonly (string | null)[]>> = {
-  bermuda_branca: ['#b9bdce', '#ab868e', '#c84958', null],
-  bermuda_vermelha: ['#882e34', '#fdfbfa', '#d6b4b7', null],
-  regata_branca: ['#d1d7e0', '#56649b', '#d85359', null],
-  regata_vermelha: ['#bd3440', '#fcf4f2', null, null],
+  bermuda_branca: ['#f2f2f2', '#c8202c', null, null],
+  bermuda_vermelha: ['#c8202c', '#f2f2f2', null, null],
+  regata_branca: ['#f2f2f2', '#c8202c', null, null],
+  regata_vermelha: ['#c8202c', '#f2f2f2', null, null],
   tenis_baixo_moderno: ['#61cb45', '#051d4a', '#132d3e', null],
   tenis_cimento_4: ['#b2b1b0', '#f5f5f4', '#5c5b5c', '#c35f5f'],
   tenis_elefante_3: ['#272525', '#ec4746', '#f8f8f8', null],
   tenis_retro_alto_1: ['#e42929', '#302a29', '#fdfdfc', null],
   tenis_verniz_11: ['#0f191e', '#40d2fb', '#eeefef', '#74797b'],
 };
+
+/**
+ * Peças de textura assada (Tools/Animacao/costurar.py): cada zona é a cor lisa vezes a sombra das dobras e do corpo,
+ * sem pincelada. Com a cor trocada, a zona leva a sombra toda (nas texturas pintadas do HY, como a do tênis, só 30%:
+ * o claro-escuro das pinceladas vira listras da cor nova).
+ */
+export const BakedGear: ReadonlySet<string> = new Set(['bermuda_branca', 'bermuda_vermelha', 'regata_branca', 'regata_vermelha']);
 
 /** Paleta rápida do menu (16 cores, do claro ao escuro e das cores do time). Também sorteia o Aleatório. */
 export const UniformPalette: readonly string[] = [

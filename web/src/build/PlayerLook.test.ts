@@ -113,10 +113,10 @@ describe('aparência (docs/26)', () => {
       expect(json.cores).toEqual(GearZones[piece]);
       expect(GearZones[piece]).toHaveLength(MaxZones);
     }
-    // A zona 0 é a maior de cada peça: a cor principal do uniforme.
-    expect(zoneHex(DefaultLook, 'casa', 'regata_vermelha', 0)).toBe('#bd3440');
+    // A zona 0 é a maior de cada peça: a cor principal do uniforme (regata e bermuda: as cores lisas do kit).
+    expect(zoneHex(DefaultLook, 'casa', 'regata_vermelha', 0)).toBe('#c8202c');
     expect(zoneHex({ ...DefaultLook, colors: { casa: ['#2f6fd6'] } }, 'casa', 'regata_vermelha', 0)).toBe('#2f6fd6');
-    expect(zoneHex({ ...DefaultLook, colors: { casa: ['#2f6fd6'] } }, 'casa', 'regata_vermelha', 1)).toBe('#fcf4f2');
+    expect(zoneHex({ ...DefaultLook, colors: { casa: ['#2f6fd6'] } }, 'casa', 'regata_vermelha', 1)).toBe('#f2f2f2');
   });
 
   it('paleta rápida: 16 cores distintas, todas hex', () => {
@@ -160,7 +160,7 @@ describe('aparência (docs/26)', () => {
     expect(colorDistance('#c8202c', '#c8202c')).toBeCloseTo(0, 6);
     expect(colorDistance('#c8202c', '#c9202d')).toBeLessThan(ClashDeltaE);
     expect(colorDistance('#c8202c', '#f5f5f4')).toBeGreaterThan(ClashDeltaE * 2);
-    expect(mainColor(DefaultLook, 'casa')).toBe('#bd3440');
+    expect(mainColor(DefaultLook, 'casa')).toBe('#c8202c');
   });
 
   it('peças da aparência (pelo lado), as cores escolhidas e os parâmetros de teste da URL', () => {

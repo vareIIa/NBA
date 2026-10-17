@@ -41,14 +41,39 @@ a build com as 4 zonas de todas as peças escolhidas cabe nos 4 KB (teste).
 `Showroom.ts`, `menu.css` e `menu.spec.ts` também têm edições de outras sessões sem commit. Publicar com o diff da
 aparência (procurar `wearFor`, `GearColors`, `paintZones`, `userData.piece`, `kitAway`).
 
+## Rodada 5 (2026-10-17): roupa costurada no Blender e tênis refeitos
+
+Pedido do diretor: fazer a 5ª rodada inteira no Blender e deixar todo o uniforme limpo (tênis dobrando com o pé sem a
+pele atravessar; regata e bermuda sem bordas rasgadas, furos, "tie-dye" ou corpo aparecendo). Detalhes em docs/20
+("Roupa costurada" e "Quinta rodada") e docs/26.
+
+| Arquivo | O quê |
+|---|---|
+| `Tools/Animacao/costurar.py` (novo) | regata e bermuda feitas no Blender: grades por raios até a pele, cortes exatos (barra, gola, cavas), debrum, pesos, ossos de pano, textura assada e máscaras de zona |
+| `Tools/Animacao/vestir.py` | tênis: meia (casca da pele soldada, ribana, lábio), cano refeito até o colarinho por tipo (`--cano=alto\|medio\|baixo`), UVs de paleta, conferência `CONFERE` nos 38 clipes |
+| `web/public/assets/gear/*.glb` (9) | as 4 peças costuradas e os 5 tênis regenerados |
+| `web/public/assets/look/zonas/{regata,bermuda}_{vermelha,branca}_zonas.webp` e `.json` | máscaras exatas (tecido e debrum); as dos tênis não mudaram |
+| `web/src/game/PlayerGear.ts` | sem CuffPull nem `shoeCuffs`; `coverBody` com a pele funda (`DeepUnderGear`, peça a até 12 cm em volta); LimbPush só na bermuda (joelho, antebraço, mão); regata até 35°; `keepOutOfCore` nas molas |
+| `web/src/game/BodyCover.ts` | conta na pose de ligação (`skinnedWorldPositions(m, true)`, `bindBonePosition`); teste "em volta" (`around`, 14 direções), sem erosão nessa pele; saiu `cutBelowCuff` |
+| `web/src/game/GearColors.ts` | peça de textura assada (`BakedGear`) leva a sombra toda na cor trocada |
+| `web/src/build/PlayerLook.ts` | `GearZones` da regata e da bermuda (cores lisas dos kits) e `BakedGear` |
+| `web/src/build/PlayerLook.test.ts` | cor principal do kit de casa: `#c8202c` |
+| `web/e2e/aparencia-cores.spec.ts` | procura a malha pintada do tênis (o GLB traz as meias antes dele, sem zonas) |
+| `web/tools/roupa-qa.mjs` | variável `JS` (código na página antes das poses) |
+| `web/tools/perto.mjs`, `web/tools/zonas-costura.py` (novos) | close-ups do jogador parado; máscaras de zona da roupa costurada |
+| `web/src/game/CuffPull.ts`, `web/tools/tenis-quadros.mjs` | apagados |
+| `docs/20-modelos-3d-roupas-tenis.md`, `docs/26-aparencia.md`, este arquivo | seções novas e atualizadas |
+
+**Verificado (2026-10-17):** tsc limpo; vitest 38 arquivos / 435 testes; e2e freestyle, movement, menu,
+aparencia-cores, cpu e online (`E2E_HUB_PORT=8797`) com 15 de 16 no run completo. A falha foi a intermitente conhecida
+`cpu.spec.ts:91` (a CPU roubou e marcou antes da jogada montar); repetida 2 vezes, passou nas 2. `roupa-qa.mjs` nas 8 poses
+com os dois kits e tênis diferentes; no Blender, os clipes de arremesso, giro, drible baixo e bandeja com as peças; tênis
+contra meia sem cruzamento nas 267 poses dos 5 tênis.
+
 ## Tênis e meia (rodadas 1–4, 2026-10-16/17): o que mudou
 
-Correção do tênis atravessando a perna, feita por um agente desta sessão. **Estado visual ainda com defeito:**
-- meia com a boca irregular e grossa;
-- colarinho do tênis encaroçado.
-
-A 5ª rodada (no Blender) vai trocar a meia e o encaixe e tirar o CuffPull. Ela fica fora do repositório até o release
-terminar.
+Correção do tênis atravessando a perna, feita por um agente desta sessão. O estado visual tinha defeito (meia com a
+boca irregular e grossa, colarinho do tênis encaroçado); a rodada 5 (acima) trocou a meia e o cano e tirou o CuffPull.
 
 | Arquivo | O quê |
 |---|---|

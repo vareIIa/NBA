@@ -1,7 +1,7 @@
 /**
  * Corpo nunca atravessa a roupa: os triângulos do corpo que ficam por baixo de uma peça deixam de ser desenhados.
  *
- * Cada vértice do corpo lança um raio para fora (normal da pele na pose atual). Se o raio bate numa peça a menos de
+ * Cada vértice do corpo lança um raio para fora (normal da pele na pose de ligação). Se o raio bate numa peça a menos de
  * `maxDist`, o vértice está coberto. Triângulo com 2 ou 3 vértices cobertos sai do índice. O que sobra do corpo (braços,
  * pescoço, canela) fica fora da roupa, e nenhuma animação consegue empurrar pele através do tecido onde não há pele.
  */
@@ -9,18 +9,31 @@ import * as THREE from 'three';
 
 const tmp = new THREE.Vector3();
 
-/** Posições dos vértices no mundo, com a pele aplicada na pose atual. */
-export function skinnedWorldPositions(mesh: THREE.SkinnedMesh | THREE.Mesh): Float32Array {
+/**
+ * Posições dos vértices no mundo, com a pele aplicada na pose atual. `bind`: na pose de ligação (a posição crua pela
+ * bindMatrix; as peças vestidas usam a do corpo, então corpo e roupa ficam no mesmo espaço).
+ */
+export function skinnedWorldPositions(mesh: THREE.SkinnedMesh | THREE.Mesh, bind = false): Float32Array {
   const pos = mesh.geometry.getAttribute('position');
   const out = new Float32Array(pos.count * 3);
   const skinned = (mesh as THREE.SkinnedMesh).isSkinnedMesh;
   for (let i = 0; i < pos.count; i++) {
     tmp.fromBufferAttribute(pos, i);
-    if (skinned) (mesh as THREE.SkinnedMesh).applyBoneTransform(i, tmp);
-    tmp.applyMatrix4(mesh.matrixWorld);
+    if (skinned && bind) tmp.applyMatrix4((mesh as THREE.SkinnedMesh).bindMatrix);
+    else {
+      if (skinned) (mesh as THREE.SkinnedMesh).applyBoneTransform(i, tmp);
+      tmp.applyMatrix4(mesh.matrixWorld);
+    }
     tmp.toArray(out, i * 3);
   }
   return out;
+}
+
+/** Posição de um osso da malha na pose de ligação (no espaço de `skinnedWorldPositions(malha, true)`). */
+export function bindBonePosition(mesh: THREE.SkinnedMesh, name: string, out = new THREE.Vector3()): THREE.Vector3 {
+  const i = mesh.skeleton.bones.findIndex((b) => b.name === name);
+  // Na ligação a pele é a identidade (bone.matrixWorld · boneInverse = I): o osso fica no inverso do boneInverse.
+  return out.setFromMatrixPosition(new THREE.Matrix4().copy(mesh.skeleton.boneInverses[i]!).invert());
 }
 
 function triIndex(geo: THREE.BufferGeometry): ArrayLike<number> {
@@ -29,11 +42,11 @@ function triIndex(geo: THREE.BufferGeometry): ArrayLike<number> {
   return Array.from({ length: geo.getAttribute('position').count }, (_, i) => i);
 }
 
-/** Triângulos (9 floats cada) de todas as peças, no mundo. */
-export function triangleSoup(meshes: (THREE.SkinnedMesh | THREE.Mesh)[]): Float32Array {
+/** Triângulos (9 floats cada) de todas as peças, no mundo (`bind`: na pose de ligação). */
+export function triangleSoup(meshes: (THREE.SkinnedMesh | THREE.Mesh)[], bind = false): Float32Array {
   const chunks: number[] = [];
   for (const m of meshes) {
-    const p = skinnedWorldPositions(m);
+    const p = skinnedWorldPositions(m, bind);
     const idx = triIndex(m.geometry);
     for (let t = 0; t + 2 < idx.length; t += 3) for (let k = 0; k < 3; k++) chunks.push(p[idx[t + k] * 3], p[idx[t + k] * 3 + 1], p[idx[t + k] * 3 + 2]);
   }
@@ -131,6 +144,12 @@ function vertexNormals(p: Float32Array, idx: ArrayLike<number>): Float32Array {
   return n;
 }
 
+/** As 14 direções do teste "em volta" (eixos e diagonais do cubo). */
+const AroundDirs: number[][] = [
+  [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
+  ...[-1, 1].flatMap((x) => [-1, 1].flatMap((y) => [-1, 1].map((z) => [x, y, z].map((c) => c / Math.sqrt(3))))),
+];
+
 /** Grade uniforme dos triângulos da sopa (cada um entra em todas as células que a caixa dele toca). */
 class TriangleGrid {
   private readonly cells = new Map<string, number[]>();
@@ -183,9 +202,12 @@ class TriangleGrid {
  * herdam a normal média, para o corte não abrir fresta entre ilhas.
  *
  * Coberto = o raio para fora bate na peça a menos de `maxDist` (pele por baixo do tecido) OU o raio para dentro bate na
- * peça a menos de `maxIn` (a pele furou o tecido: peito ou coxa mais largos que a peça; sem essa pele, aparece o
- * tecido que está logo abaixo). Depois a máscara é erodida `erode` anéis: perto da barra e do decote a pele continua um
- * pouco por baixo do tecido, e o recorte (serrilhado, por triângulo) não aparece pela fresta entre o pano e o corpo.
+ * peça a menos de `maxIn` (a pele furou o tecido: peito ou coxa mais largos que a peça; sem essa pele, aparece o tecido
+ * que está logo abaixo) OU, com `around[v]` > 0, há peça a menos de `around[v]` em alguma de 14 direções (pele funda sob
+ * a roupa, longe das aberturas: no vinco da virilha a normal passa ao lado do pano). Depois a máscara é erodida `erode`
+ * anéis: perto da barra e do decote a pele continua um pouco por baixo do tecido, e o recorte (serrilhado, por
+ * triângulo) não aparece pela fresta entre o pano e o corpo. A pele funda não é erodida (longe das aberturas não há
+ * fresta, e a borda devolvida furava a frente da bermuda com a coxa dobrada).
  *
  * `accept(vértice, triângulo)`: só conta o triângulo da peça que se move com aquele vértice do corpo. A pele do deltoide
  * que no bind (braços em T) fica sob a alça sai de baixo dela quando o braço desce; escondida, virava buraco no ombro.
@@ -198,9 +220,12 @@ export function coveredVertices(
   maxIn = 0.04,
   erode = 1,
   accept?: (vertex: number, tri: number) => boolean,
+  around?: ArrayLike<number>,
 ): Uint8Array {
   const n = vertexNormals(p, idx);
   const count = p.length / 3;
+  let farthest = maxDist;
+  if (around) for (let i = 0; i < count; i++) farthest = Math.max(farthest, around[i]!);
   // Costuras: cópias da mesma posição viram um vértice só (normal média e vizinhança comum).
   const { rep, groups } = weld(p);
   for (const group of groups) {
@@ -210,7 +235,7 @@ export function coveredVertices(
     const l = Math.hypot(x, y, z) || 1;
     for (const i of group) (n[i * 3] = x / l), (n[i * 3 + 1] = y / l), (n[i * 3 + 2] = z / l);
   }
-  const grid = new TriangleGrid(cover, Math.max(maxDist, maxIn, 0.05));
+  const grid = new TriangleGrid(cover, Math.max(farthest, maxIn, 0.05));
   let out = new Uint8Array(count);
   const o = [0, 0, 0], d = [0, 0, 0];
   for (let i = 0; i < count; i++) {
@@ -221,15 +246,23 @@ export function coveredVertices(
       out[i] = 1;
       continue;
     }
-    if (maxIn <= 0) continue;
-    for (let k = 0; k < 3; k++) (d[k] = -n[i * 3 + k]), (o[k] = p[i * 3 + k] - d[k] * 0.002);
-    if (grid.hits(o, d, maxIn, ok)) out[i] = 1;
+    if (maxIn > 0) {
+      for (let k = 0; k < 3; k++) (d[k] = -n[i * 3 + k]), (o[k] = p[i * 3 + k] - d[k] * 0.002);
+      if (grid.hits(o, d, maxIn, ok)) {
+        out[i] = 1;
+        continue;
+      }
+    }
+    const r = around?.[i] ?? 0;
+    if (r <= 0) continue;
+    for (let k = 0; k < 3; k++) o[k] = p[i * 3 + k];
+    if (AroundDirs.some((dir) => grid.hits(o, dir, r, ok))) out[i] = 1;
   }
   if (erode > 0) {
     const nbr = neighbors(idx, rep, count);
     for (let r = 0; r < erode; r++) {
       const next = out.slice();
-      for (let i = 0; i < count; i++) if (out[i] && nbr[i].some((j) => !out[j])) next[i] = 0;
+      for (let i = 0; i < count; i++) if (out[i] && !(around?.[i] ?? 0) && nbr[i].some((j) => !out[j])) next[i] = 0;
       out = next;
     }
   }
@@ -279,13 +312,24 @@ export function uncoverNear(covered: Uint8Array, p: Float32Array, idx: ArrayLike
   return out;
 }
 
-/** Tira do índice de cada malha do corpo os triângulos com 2+ vértices cobertos. Devolve quantos saíram. */
-export function hideCoveredTriangles(body: THREE.SkinnedMesh[], garments: (THREE.SkinnedMesh | THREE.Mesh)[], maxDist = 0.12): number {
-  const cover = triangleSoup(garments);
+/**
+ * Tira do índice de cada malha do corpo os triângulos com 2+ vértices cobertos. Devolve quantos saíram. A conta é na
+ * pose de ligação, a pose em que as peças foram ajustadas ao corpo (Tools/Animacao): a do primeiro quadro (os nós do GLB
+ * já vêm de braços baixos) ou a de quem troca de roupa no meio do jogo deixava a coxa dobrada à frente do pano, e a
+ * pele dali não saía. `around(malha, posições na pose de ligação, osso dominante)`: o alcance do teste "em volta" de cada
+ * vértice (coveredVertices; 0 = só o raio da normal); os ossos na pose de ligação, por `bindBonePosition`.
+ */
+export function hideCoveredTriangles(
+  body: THREE.SkinnedMesh[],
+  garments: (THREE.SkinnedMesh | THREE.Mesh)[],
+  maxDist = 0.12,
+  around?: (mesh: THREE.SkinnedMesh, p: Float32Array, dom: string[]) => ArrayLike<number>,
+): number {
+  const cover = triangleSoup(garments, true);
   const triBones = triangleBones(garments);
   let removed = 0;
   for (const mesh of body) {
-    const p = skinnedWorldPositions(mesh);
+    const p = skinnedWorldPositions(mesh, true);
     const idx = triIndex(mesh.geometry);
     const dom = dominantBones(mesh);
     const accept = (v: number, tri: number): boolean => {
@@ -293,48 +337,13 @@ export function hideCoveredTriangles(body: THREE.SkinnedMesh[], garments: (THREE
       return !set || !ArmBones.test(dom[v]) || set.has(dom[v]);
     };
     const shoulder = (v: number) => ArmBones.test(dom[v]) || dom[v].startsWith('clavicle_');
-    const covered = uncoverNear(coveredVertices(p, idx, cover, maxDist, 0.04, 1, accept), p, idx, shoulder, 2);
+    const covered = uncoverNear(coveredVertices(p, idx, cover, maxDist, 0.04, 1, accept, around?.(mesh, p, dom)), p, idx, shoulder, 2);
     const keep: number[] = [];
     for (let t = 0; t + 2 < idx.length; t += 3) {
       if (covered[idx[t]] + covered[idx[t + 1]] + covered[idx[t + 2]] >= 2) removed++;
       else keep.push(idx[t], idx[t + 1], idx[t + 2]);
     }
     // Geometria própria: outro jogador com o mesmo GLB (cache do loader) não perde triângulos.
-    mesh.geometry = mesh.geometry.clone();
-    mesh.geometry.setIndex(keep);
-  }
-  return removed;
-}
-
-/**
- * Corte pela altura do tênis (CuffPull): sai do índice o triângulo do corpo inteiro abaixo da boca do cano e perto do
- * pé, na posição de bind. O que sobra na boca fica por cima do cano, com a borda puxada para dentro pelo CuffPull, sem
- * o recorte em dentes do BodyCover por triângulo. `cuffs`: tornozelo e joelho (bind) e altura da boca, no espaço da malha.
- */
-export function cutBelowCuff(body: THREE.SkinnedMesh[], cuffs: { ankle: THREE.Vector3; knee: THREE.Vector3; mouth: number }[], reach = 0.15): number {
-  let removed = 0;
-  const seg = new THREE.Line3();
-  const near = new THREE.Vector3();
-  const c = new THREE.Vector3();
-  for (const mesh of body) {
-    const pos = mesh.geometry.getAttribute('position');
-    const idx = triIndex(mesh.geometry);
-    const keep: number[] = [];
-    for (let t = 0; t + 2 < idx.length; t += 3) {
-      const a = idx[t], b = idx[t + 1], d = idx[t + 2];
-      const low = Math.max(pos.getY(a), pos.getY(b), pos.getY(d));
-      let cut = false;
-      if (low < Math.min(...cuffs.map((x) => x.mouth)) - 0.003) {
-        c.set((pos.getX(a) + pos.getX(b) + pos.getX(d)) / 3, (pos.getY(a) + pos.getY(b) + pos.getY(d)) / 3, (pos.getZ(a) + pos.getZ(b) + pos.getZ(d)) / 3);
-        for (const k of cuffs) {
-          seg.set(k.ankle, k.knee);
-          seg.closestPointToPoint(c, true, near);
-          if (near.distanceTo(c) < reach && c.y < k.mouth) cut = true;
-        }
-      }
-      if (cut) removed++;
-      else keep.push(a, b, d);
-    }
     mesh.geometry = mesh.geometry.clone();
     mesh.geometry.setIndex(keep);
   }

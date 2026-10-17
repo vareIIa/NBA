@@ -16,15 +16,16 @@ branca). Para vender o jogo, todos os tênis e essas texturas precisam ser troca
 | `tenis_cimento_4.glb` | AJ4 "Cement" | 5k por pé |
 | `tenis_elefante_3.glb` | AJ3/AJ4 preto, vermelho e cimento | 5k por pé |
 | `tenis_baixo_moderno.glb` | low-top atual, marinho e verde-neon | 5k por pé |
-| `regata_vermelha.glb`, `bermuda_vermelha.glb` | kit da casa (`regata_nova`, `bermuda_nova`, 16/10) | 9k cada |
-| `regata_branca.glb`, `bermuda_branca.glb` | kit visitante (mesmas formas, outra textura) | 9k cada |
+| `regata_vermelha.glb`, `bermuda_vermelha.glb` | kit da casa, **costurado no Blender** (`Tools/Animacao/costurar.py`, 17/10; ver "Roupa costurada") | 23k / 28k |
+| `regata_branca.glb`, `bermuda_branca.glb` | kit visitante (mesmas peças, cores trocadas) | 23k / 28k |
 | `../hoops_player.glb` (malha `Jogador`) | corpo `jogador_branco` (rig do HY), no esqueleto e com os clipes do boneco | 15k |
 
 URL: padrão = kit vermelho + AJ1. `?uniforme=branco`, `?tenis=tenis_cimento_4` (nome do arquivo), `?roupa=0` (boneco liso).
 
 Gerados, ainda **não usados** (em `models_raw/`): `jogador_pivo` (o corpo negro de 15/10, com regata cinza pintada no
 tronco: sai pelo mesmo comando, sem `--sem-regata`), `jogador_armador` (mangas pretas que apareceriam sob a regata),
-`cabeca_jogador` (busto; o lado da cabeça veio pintado de azul), `mao_aberta` e a regata/bermuda de 15/10.
+`cabeca_jogador` (busto; o lado da cabeça veio pintado de azul), `mao_aberta`, a regata/bermuda de 15/10 e as de 16/10
+(`regata_nova`, `bermuda_nova` e as brancas), trocadas pelas costuradas em 17/10.
 
 ### Lote de 16/10 (11 créditos): jogador branco e uniforme novo
 O usuário reprovou a primeira regata ("nem parece regata", ombro quebrado, braço atravessando) e as cores do corpo negro
@@ -84,9 +85,13 @@ blender -b -P Tools/Animacao/trocar_corpo.py -- <hoops_player.glb com os clipes>
   não grava emissão tingida com textura: o script ajusta o JSON do GLB depois do export.
 - Material `Pele` (textura). Num corpo que veio de camisa (o `jogador_pivo`), sem `--sem-regata` a regata do HY vira o
   material `Uniforme` cor de pele lisa; o `PlayerGear` não repinta o `Uniforme` quando a pele é textura.
-- Depois de trocar o corpo, **vestir de novo as 9 peças** com o `vestir.py` (o encaixe usa a forma do corpo).
+- Depois de trocar o corpo, **vestir de novo os 5 tênis** com o `vestir.py` e **costurar de novo os 2 kits** com o
+  `costurar.py` (os dois usam a forma do corpo).
 
 ## Pipeline
+
+Desde 17/10 a regata e a bermuda do jogo não passam por aqui: saem do `costurar.py` (ver "Roupa costurada"). O pipeline
+abaixo vale para os tênis; a parte de regata e bermuda fica como registro.
 
 1. **HY 3D** (`web/tools/hy3d-fila.js`, colado numa aba `hy3d.tencent.ai/robots.txt` logada): `text2geometry` 50k faces →
    `text2texture_v31` (PBR) [→ `bone_skinning` nos corpos]. A retopologia do site foi pulada: vivia em "servidor lotado"
@@ -127,31 +132,101 @@ blender -b -P Tools/Animacao/trocar_corpo.py -- <hoops_player.glb com os clipes>
 - A malha da peça é religada aos ossos do `PlayerAnimator` pelo nome. As matrizes de bind vêm do próprio GLB da peça
   (o importador do Blender usa `bone_heuristic='BLENDER'`, que preserva os eixos dos ossos do glTF).
 - **Física do pano**: cada `pano_*` é um pêndulo verlet a 60 Hz (inércia, gravidade, mola de volta ao repouso, ângulo
-  máximo). Regata solta (mola 55, até 55°), bermuda presa à coxa (pano com até 40% do peso, mola 140, até 28°). As pontas
-  colidem com cápsulas das coxas, das canelas e do tronco, e a barra não entra na outra perna.
-- **O corpo nunca atravessa a roupa** (`BodyCover.ts`): ao vestir, cada vértice do corpo lança um raio para fora; se bater
-  numa peça a menos de 12 cm, o vértice está coberto. Também conta como coberto o vértice cujo raio para **dentro** bate na
-  peça a menos de 4 cm (a pele furou o tecido). A máscara é erodida um anel (a pele continua um pouco sob a barra e o
-  decote, e o recorte serrilhado não aparece pela fresta) e os triângulos com 2+ vértices cobertos saem do índice (~1.800
-  dos 15.000). Sem pele por baixo, nenhuma pose empurra o corpo através do tecido. A roupa é dupla face (pela cava aparece
-  o avesso). Os raios usam uma grade espacial dos triângulos das peças (a carga do laboratório caiu de ~2,0 s para ~1,5 s).
-  **Ombro**: pele de braço (osso dominante upperarm, lowerarm, hand…) só some sob um triângulo da peça que também segue
-  aquele osso; a alça segue o tronco, então o deltoide que no bind (braços em T) ficava sob ela continua desenhado. E a pele
-  coberta a até 2 anéis da pele de braço/clavícula que ficou também fica (`uncoverNear`): sem isso o recorte serrilhado do
-  trapézio deixava uma fresta, e pelo ombro apareciam triângulos pretos (o avesso escuro da regata).
-- **Membros nunca atravessam a roupa** (`LimbPush.ts`): o que o BodyCover não cobre (braço, antebraço, mão, joelho,
-  canela) é resolvido no vertex shader da peça, depois da pele, a cada quadro. Cápsulas nos membros, com o raio médio
-  medido no corpo + 1,2 cm, e uma esfera em cada joelho, com o raio da fatia do joelho incluindo a patela. Modo `in` (o
-  membro passa por dentro da peça: coxa, joelho e canela na bermuda, ombro na regata): o tecido sai pela superfície,
-  numa curva suave que começa 1,5 cm antes (sem lascas de triângulos esticados). Modo `out` (o membro cruza por fora: mão e
-  antebraço na frente do corpo): o tecido recua para trás dele. Elipses no tronco e no quadril foram testadas e descartadas
-  (abriam a gola e faziam pontas na barra). A coxa saiu da regata: a barra dela segue o quadril e a bermuda, e a cápsula
-  da coxa a empurrava em lasca na corrida de lado; quem cobre a coxa é a bermuda.
+  máximo). Regata: pano com até 10% do peso, ossos pendurados na pélvis (mola 55, até 35°); bermuda presa à coxa (pano
+  com até 40% do peso, mola 140, até 28°). A ponta do pano não chega mais perto do eixo do que veste (tronco, coxa) do que
+  fica em repouso (`keepOutOfCore`: balança para fora, não para dentro; no agachamento fundo as costas da regata ficam para
+  cima e a gravidade as puxava para dentro do corpo). As pontas colidem com cápsulas das coxas, das canelas e do tronco, e
+  a barra não entra na outra perna.
+- **O corpo nunca atravessa a roupa** (`BodyCover.ts`): ao vestir, **na pose de ligação** (a pose em que as peças foram
+  ajustadas: a do primeiro quadro, com os nós do GLB de braços baixos, deixava a coxa dobrada à frente do pano), cada
+  vértice do corpo lança um raio para fora; se bater numa peça a menos de 2,5 cm, o vértice está coberto. Também conta como
+  coberto o vértice cujo raio para **dentro** bate na peça a menos de 4 cm (a pele furou o tecido). A máscara é erodida um
+  anel (a pele continua um pouco sob a barra e o decote, e o recorte serrilhado não aparece pela fresta) e os triângulos
+  com 2+ vértices cobertos saem do índice. **Pele funda** (osso dominante `pelvis`, `spine_01`, `hip_*`, ou coxa nos 40% de
+  cima do fêmur: quadril, virilha, alto da coxa, barriga baixa, lombar): sai com peça a até 12 cm em qualquer de 14
+  direções e não é erodida (a bermuda costurada pende à frente da virilha e o gancho passa longe dela; só pelo raio da
+  normal, a pele do alto da coxa, o short branco esculpido no corpo do HY, furava a frente da bermuda com a coxa dobrada).
+  Sem pele por baixo, nenhuma pose empurra o corpo através do tecido. A roupa é dupla face (pela cava aparece o avesso).
+  Os raios usam uma grade espacial dos triângulos das peças. **Ombro**: pele de braço (osso dominante upperarm, lowerarm,
+  hand…) só some sob um triângulo da peça que também segue aquele osso; a alça segue o tronco, então o deltoide que no bind
+  (braços em T) ficava sob ela continua desenhado. E a pele coberta a até 2 anéis da pele de braço/clavícula que ficou
+  também fica (`uncoverNear`): sem isso o recorte serrilhado do trapézio deixava uma fresta, e pelo ombro apareciam
+  triângulos pretos (o avesso escuro da regata).
+- **Membros nunca atravessam a roupa** (`LimbPush.ts`): o que o BodyCover não cobre é resolvido no vertex shader da peça,
+  depois da pele, a cada quadro. Cápsulas nos membros, com o raio médio medido no corpo + 1,2 cm, e uma esfera em cada
+  joelho, com o raio da fatia do joelho incluindo a patela. Modo `in` (o membro passa por dentro da peça): o tecido sai
+  pela superfície, numa curva suave que começa 1,5 cm antes (sem lascas de triângulos esticados). Modo `out` (o membro
+  cruza por fora): o tecido recua para trás dele. Hoje: **bermuda** com joelho `in`, antebraço e mão `out`; **regata sem
+  nenhum** (a costurada é solta e de cava aberta, o braço e a mão passam por fora dela; a ponta da cápsula do braço, na
+  junta do ombro, alcançava a borda da cava e a serrilhava no giro, e a do antebraço e a da mão recuavam a barra solta em
+  degrau). Elipses no tronco e no quadril foram testadas e descartadas (abriam a gola e faziam pontas na barra).
 - Conferência em movimento: `node web/tools/roupa-quadros.mjs <pasta> "?uniforme=vermelho"` (headless, 21 quadros de
-  corrida de frente e de lado e dribles; `SEM_EMPURRAO=1` desliga o LimbPush para comparar).
+  corrida de frente e de lado e dribles; `SEM_EMPURRAO=1` desliga o LimbPush para comparar) e `node web/tools/roupa-qa.mjs
+  <pasta> [query]` (8 poses do jogo em câmera lenta × 11 vistas, uma folha por pose; `POSES=`, `LENTO=` e `JS=`, código
+  rodado na página antes das poses, com `d = window.__debug`, ex.: desligar as molas do pano para comparar). Parado e de
+  perto: `node web/tools/perto.mjs <saída> <base> <query> <vistas JSON>`.
 - O 1º quadro depois de vestir chegava com dt negativo (o Chrome data o quadro antes do fim da tarefa longa de ~1 s), e o
   animador integrava para trás (mãos a 17 m). O `main.ts` limita o dt em [0; 0,1] s.
 - O PBR do HY deixa o tecido com cara de plástico molhado: os mapas de rugosidade e de metal são descartados no pano.
+
+## Roupa costurada (17/10): regata e bermuda feitas no Blender
+
+**Por quê.** As peças do HY (`vestir.py`) tinham bordas rasgadas, furos e uma textura pintada a pincel (trocar a cor dava
+"tie-dye"). A primeira versão do `costurar.py` fazia a peça como casca da pele do corpo, mas o corpo do HY veste um short
+de compressão esculpido (cós franzido, dobras da braguilha, a barra no meio da coxa, faces viradas na frente), tem o rego
+do glúteo e um vinco no trapézio, e a casca copiava tudo isso. Agora cada peça é uma grade nova, feita por raios até a pele.
+
+```bash
+blender -b -P Tools/Animacao/costurar.py -- web/public/assets/hoops_player.glb bermuda web/public/assets/gear/bermuda_vermelha.glb --cores=#c8202c,#f2f2f2 --zonas=<pasta>
+blender -b -P Tools/Animacao/costurar.py -- web/public/assets/hoops_player.glb regata web/public/assets/gear/regata_vermelha.glb --cores=#c8202c,#f2f2f2 --por-cima-de=web/public/assets/gear/bermuda_vermelha.glb --zonas=<pasta>
+python -I web/tools/zonas-costura.py <pasta> web/public/assets/gear web/public/assets/look/zonas
+```
+
+O kit branco é o mesmo com `--cores=#f2f2f2,#c8202c`. Bermuda antes da regata (a regata segue a bermuda). Cerca de 1 min
+por peça (o AO do Cycles na CPU).
+
+- **Regata**: grade de 128 colunas em volta do tronco. Da barra até 2 cm abaixo da axila, anéis horizontais; daí até
+  dentro do pescoço, cones em volta de um ponto no meio do peito (cada linha sobe 1,5°). Cada vértice fica no raio que
+  acha a pele do tronco (sem braço nem cabeça); onde o tecido vai ser cortado (cavas, gola) ou não há pele, o valor vem dos
+  vizinhos. Depois:
+  - fechamento (máximo e mínimo em ±4 colunas e ±3 linhas: o pano passa por cima do sulco do esterno e da coluna) e
+    média leve;
+  - caimento: de cima para baixo o pano não entra mais que 5 mm a cada 10 cm abaixo do ponto mais saliente acima dele
+    (cai reto do peito e das escápulas); na cortina, média em volta do tronco (sem listras de cada coluna);
+  - folga de 1,2 cm no peito, 2,8 cm na barra e 7 mm nas alças;
+  - **tenda**: o que falta para 7 mm da pele (mamilo, osso do quadril) levanta o pano em volta com inclinação de 15%.
+- **Bermuda**: uma calça de verdade, em três grades costuradas.
+  - Pélvis: anéis de 192 colunas, do cós até 3 cm acima do gancho, pela mesma regra (raios, fechamento, caimento da
+    barriga e do glúteo, tenda).
+  - Gancho: um leque de 15 raios no plano do meio, da frente, por baixo do gancho, até as costas.
+  - Pernas: cada uma sai da sua metade do último anel mais a costura do gancho (112 colunas). Por fora cai da pélvis (não
+    entra); por dentro fecha até a coxa em ~7 cm; mais abaixo, o perfil da coxa sem afinar (a pele tem a barra de um
+    calção esculpida no meio da coxa), abrindo até +2,4 cm na barra.
+- **Aberturas**: cortes exatos por superfícies suaves (barra num plano; gola num elipsoide, mais funda na frente; cavas
+  num cilindro elíptico em volta de cada ombro). Vértice a menos de 1/4 da aresta vizinha da superfície vai para cima dela:
+  sem isso o corte deixava lascas, triângulos finíssimos que dobravam o debrum em dentes. Alças de 5,1 e 5,6 cm (o script
+  imprime). Em cada abertura, menos o cós, um debrum enrolado: 1,3 cm além do corte e de volta por dentro.
+- **Pesos**: copiados da pele (face mais próxima), filtrados pelos ossos que a peça segue (regata: pélvis, coluna,
+  clavículas; bermuda: pélvis, spine_01, coxas) e com média espacial (5 cm na regata, 2,6 cm na bermuda).
+  - Bermuda: a coxa entra pela posição ao longo do fêmur (nada até 2 cm abaixo do quadril, toda a 16 cm). Pelo vizinho mais
+    perto, o painel da frente (que pende à frente da virilha) girava com a coxa no arremesso e a bermuda dobrava sobre si.
+  - Regata: onde cobre a bermuda, copia os pesos dela, e volta aos seus em 6 cm acima do cós.
+  - Ossos de pano: regata 10%, pendurados na pélvis; bermuda 40%.
+- **Textura**: UV por ilhas (`smart_project`), AO do Cycles (alcance de 12 cm), cor lisa de cada zona vezes a sombra
+  (`0,42 + 0,58·AO^0,8`), 1024 px em WebP. Fora das ilhas, a sombra média: de longe a textura reduzida mistura o fundo com
+  a borda. `--zonas` grava a máscara exata (tecido e debrum) e o JSON das cores; o `zonas-costura.py` converte para o
+  WebP que o jogo lê e confere a orientação contra a textura do GLB. No jogo a cor trocada leva a sombra toda
+  (`PlayerLook.BakedGear`, docs/26).
+- **Diagnóstico**: `DIAG_ETAPA=1|2|3` exporta a peça antes do alisamento, depois da folga ou depois dos cortes;
+  `DIAG_BORDAS=1` lista as arestas de borda que não estão em nenhum corte (meta: zero).
+
+**Conferência (17/10)**:
+- `roupa-qa.mjs` nas 8 poses (parado, corrida, lateral, crossover, entre as pernas, proteção, giro, arremesso), com os
+  dois kits e tênis diferentes;
+- no Blender, com as peças: os clipes `JumpShot_R`, `Spin_R2L`, `Dribble_Low_R` e `Layup_R`.
+
+Limpo: bordas, alças, gola, cavas, barra sobre a bermuda e gancho, sem pele atravessando. Restam detalhes pequenos (ver
+Pendências).
 
 ## Lote "arena" (16/10/2026): 61 modelos para a quadra e a arena
 
@@ -230,7 +305,7 @@ blender -b -P Tools/Animacao/arena.py -- web/public/assets/models_raw/arena web/
 ![de cima](img/arena-cima.jpg)
 ![cesta](img/arena-cesta.jpg)
 
-## Pé e tênis (16/10): a pele furava o cano (estado: parcial)
+## Pé e tênis (16/10): a pele furava o cano (rodadas 1–4 parciais; a 5ª fechou)
 
 O usuário viu nos prints a canela e o tornozelo aparecendo através do tênis, e o tênis sem acompanhar o pé. Duas
 rodadas. A medição é `web/tools/tenis-quadros.mjs` (pés em movimento, câmera baixa; por quadro, a pele do corpo visível
@@ -296,14 +371,39 @@ parada brusca: direito 30,6; agachar: direito 19,2; crossover: direito 16,3; pul
 - Falta visível: dentes da pele dentro da abertura do topo (o corte da pele é por triângulo, e a pele que aparece por
   dentro do aro é a borda desse corte).
 
+### Quinta rodada (17/10): meia e cano refeitos no Blender (estado: feito)
+
+```bash
+blender -b -P Tools/Animacao/vestir.py -- web/public/assets/hoops_player.glb web/public/assets/models_raw/<tenis>.glb tenis web/public/assets/gear/<tenis>.glb --cano=alto|medio|baixo
+```
+
+No `vestir.py` (tênis), sem nada no jogo puxando ou cortando a perna:
+- **Meia**: casca da pele soldada (malha fechada), da perna até 5 cm acima do colarinho, afastada 2,5 mm e alisada. Tem a
+  ribana (+0,8 mm nos 2 cm de cima) e o lábio dobrado para dentro da pele (a borda não aparece). Pesos copiados da pele.
+- **Cano refeito**: o do HY entrava na perna (parede de trás a 1–3 cm do eixo, falhas sem tecido de fora) e sai. O novo é
+  um loft de anéis da parte baixa do tênis até o colarinho, em volta da meia, com o colarinho acolchoado e o forro. As UVs
+  são de paleta (texels sólidos das cores dominantes do tênis), então as máscaras de zona continuam valendo.
+- **Altura do colarinho** por tipo (`--cano=alto|medio|baixo`: 9,5, 7 e 4,5 cm). Alto: retrô alto 1. Médio: verniz 11,
+  cimento 4 e elefante 3. Baixo: baixo moderno.
+- **Acabamento**: o tênis é empurrado para fora da meia (folga de 1,5 mm) e ganha normais novas (as do HY ficavam erradas
+  onde a parede andou). Os pesos do tênis são copiados da meia.
+- **Conferência no Blender** (o próprio `vestir.py`, linhas `CONFERE`): 38 clipes × 7 quadros mais o bind. Os pontos são
+  ancorados por baricentro (meia → pele, tênis → meia) e a distância tem sinal, pela normal do triângulo posado.
+  - Tênis contra meia: 0 cruzamentos nas 267 poses, nos 5 tênis (folga mínima de 0,4 a 1 mm).
+  - Meia visível contra pele: até 1,8 mm, só no lábio (de propósito).
+- **Saíram**: `CuffPull.ts`, `BodyCover.cutBelowCuff`, `web/tools/tenis-quadros.mjs` e as chamadas no `PlayerGear`.
+
 ## Pendências
 - Arena: torcida sem animação (próximo passo: VAT); cantos da arquibancada com blocos girados sobrepostos (um bloco de
   canto próprio fecharia); dígitos do shot clock e o placar do telão são estáticos; GPUs fracas podem precisar de menos
   anéis ou menos torcida.
 - Pele: com a emissão o tom ficou claro e quente, mas um pouco brilhante na testa e no nariz de perto; ajustar com a
   iluminação final da arena (a sessão da arena mexe nas luzes).
-- Regata: riscos finos na metade de baixo (sombra das pregas da textura). A alça amassada em cima do ombro (16/10) foi
-  corrigida: era a prega do ombro direito no corpo e o topo da regata abaixo do trapézio.
-- Bermuda: ao correr, um recorte pequeno no alto da perna levantada (as pregas da perna). Peças desenhadas para o jogo
-  (sem pregas fundas na geometria, dobras só na textura) resolveriam de vez.
-- Texturas próprias, sem marca, antes de qualquer distribuição.
+- Roupa costurada, detalhes pequenos:
+  - de muito perto, a borda entre tecido e debrum na textura tem degraus de 1 texel (1024 px);
+  - a mão no quadril entra na barra solta da regata (a regata não tem LimbPush);
+  - no alto da cava, com o braço descendo, o deltoide encosta na borda da alça;
+  - no kit branco, a frente fica cinza sob a luz de cima (é sombra, não textura).
+- Número e nome nas costas: a regata costurada tem UV por ilhas. Uma ilha plana nas costas sai no próprio `costurar.py`
+  (caminho em docs/26).
+- Texturas próprias, sem marca, antes de qualquer distribuição (os tênis do HY trazem swoosh e Jumpman pintados).

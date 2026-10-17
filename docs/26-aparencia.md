@@ -66,18 +66,18 @@ python -I web/tools/pele-mascara.py web/public/assets/hoops_player.glb web/publi
 #### Cores (fase 2)
 
 Cada peça (regata, bermuda, tênis) tem até **4 zonas**: a principal (zona 0, a maior área), a detalhe, o debrum e uma
-extra. As zonas saem da própria textura do HY (cada GLB), agrupando as cores pelo `web/tools/zonas-cor.py`
-(k-means em Lab; grupos do mesmo matiz e cinzas/brancos parecidos viram uma zona; até 4 zonas, uma por canal R, G, B, A).
-Gravadas em `web/public/assets/look/zonas/<peça>_zonas.webp` (peso de cada zona) e `<peça>_zonas.json` (cor média de
-cada uma, `null` = zona que a peça não tem). As cores originais estão em `GearZones` (`build/PlayerLook.ts`); um teste
-confere com os JSON.
+extra. Gravadas em `web/public/assets/look/zonas/<peça>_zonas.webp` (peso de cada zona, um canal R, G, B, A por zona) e
+`<peça>_zonas.json` (cor de cada uma, `null` = zona que a peça não tem). As cores originais estão em `GearZones`
+(`build/PlayerLook.ts`); um teste confere com os JSON.
+- **Tênis**: as zonas saem da própria textura do HY, agrupando as cores pelo `web/tools/zonas-cor.py` (k-means em Lab;
+  grupos do mesmo matiz e cinzas/brancos parecidos viram uma zona; até 4).
+- **Regata e bermuda** (costuradas no Blender, docs/20 "Roupa costurada"): zonas exatas, tecido e debrum, gravadas pelo
+  `costurar.py` (`--zonas`) e convertidas pelo `web/tools/zonas-costura.py`. A cor de cada zona é a cor lisa do kit.
 
 | Peça | Zonas (cor original) |
 |---|---|
-| Regata vermelha | principal vermelha, detalhe branca |
-| Regata branca | principal cinza-claro, detalhe azul, debrum vermelho |
-| Bermuda vermelha | principal vinho, detalhe branca, debrum rosa |
-| Bermuda branca | principal cinza, detalhe rosa, debrum vermelho |
+| Regata e bermuda vermelhas | tecido `#c8202c`, debrum `#f2f2f2` |
+| Regata e bermuda brancas | tecido `#f2f2f2`, debrum `#c8202c` |
 | Tênis cimento 4 | cimento (cinza-claro), branca, cinza-escuro, vermelho (4) |
 | Tênis verniz 11 | preto, azul-gelo, branco, cinza (4) |
 | Tênis retrô alto 1, elefante 3, baixo moderno | 3 zonas cada |
@@ -97,6 +97,8 @@ cor     = zNew × sombra
 - Cor trocada: o croma cai até 0 (só o brilho vai) e a força até 0,3, porque o contraste claro-escuro das pinceladas
   da textura do HY, com a cor toda, vira listras da cor nova. O detalhe da razão por canal é limitado a 1,6× nas zonas
   trocadas, para a listra branca de um vermelho não virar mancha.
+- Peças de textura assada (`BakedGear`: regata e bermuda, cor lisa vezes a sombra das dobras): a força fica 1, e a cor
+  nova sai com a mesma sombra da original, como se a peça fosse costurada naquela cor.
 - O shader entra em `color_fragment`, depois da cor base e do avesso (`PlayerGear.insideColor`); o avesso também recebe
   a cor nova. Encadeia no `onBeforeCompile` que já existe; `customProgramCacheKey = gearColors:<tipo>`.
 - Uniforms no material (`userData.zones`): trocar de cor só muda uniforms (`PlayerGear.paint`), sem revestir a peça;
@@ -123,10 +125,9 @@ Builds salvas antes da tela abrem com a aparência padrão (`sanitizeBuild`); bu
 abrem com o visitante no outro modelo e sem cores.
 
 **Limites conhecidos da fase 2:**
-- As texturas do HY são pinturas com pinceladas. Com cores muito diferentes da original, a zona recebe a cor nova,
-  mas as pinceladas de zonas vizinhas continuam misturadas (aparece como "tie-dye" nas cores fortes). Para um
-  uniforme liso de verdade, o caminho é gerar a textura de base lisa no HY (regata e bermuda brancas de base, com
-  créditos; **não gerado nesta fase**, para não gastar créditos).
+- As texturas do HY dos tênis são pinturas com pinceladas. Com cores muito diferentes da original, a zona recebe a cor
+  nova, mas as pinceladas de zonas vizinhas continuam misturadas (aparece como "tie-dye" nas cores fortes). O uniforme
+  não tem mais isso: desde 17/10 a regata e a bermuda são costuradas no Blender, lisas, com zonas exatas (docs/20).
 - Os tênis trazem swoosh e Jumpman pintados na própria textura (docs/20): a cor de zona pega esses desenhos também.
 
 ## 3. Fases
@@ -134,18 +135,18 @@ abrem com o visitante no outro modelo e sem cores.
 | Fase | Entrega | HY | Estado |
 |---|---|---|---|
 | 1. Base | Tela Aparência no fluxo; `look` na build, no catálogo e no online; tom de pele com máscara; os 2 kits e os 5 tênis; câmera por aba; CPU com aparência | — | **feito** |
-| 2. Cores | **feito**, exceto o número e o nome nas costas (adiados, ver abaixo). Troca de cor por máscara de 4 zonas (principal, detalhe, debrum e extra) da regata, da bermuda e do tênis, tiradas da textura do HY por agrupamento de cores; uniforme de casa e de visitante (modelo e cores); paleta de 16 cores e ajuste de matiz, saturação e brilho pelo D-pad; choque de cor no 1x1 | não usado (regata e bermuda brancas de base ficaram para depois, com créditos) | **feito** |
+| 2. Cores | **feito**, exceto o número e o nome nas costas (adiados, ver abaixo). Troca de cor por máscara de 4 zonas (principal, detalhe, debrum e extra) da regata, da bermuda e do tênis, tiradas da textura do HY por agrupamento de cores (no tênis; regata e bermuda, costuradas no Blender desde 17/10, têm zonas exatas); uniforme de casa e de visitante (modelo e cores); paleta de 16 cores e ajuste de matiz, saturação e brilho pelo D-pad; choque de cor no 1x1 | não usado (o uniforme liso veio da costura no Blender, sem créditos) | **feito** |
 | 3. Cabelo | Modo `cabelo` no `vestir.py` (rígido no osso `head`), encaixe pela caixa da cabeça; 10 a 12 cortes com cor (os 3 já gerados: afro, dreads, tranças); careca e raspado pela máscara G (o cabelo pintado vira pele) | ~20 créditos | a fazer |
 | 4. Rosto | `trocar_cabeca.py`: 12 a 16 cabeças carecas do HY cortadas no pescoço e soldadas no anel do corpo atual (mesmos pesos; esqueleto e clipes iguais); UV comum projetada de frente (sobrancelha, barba rala e tatuagem servem em qualquer cabeça); cor dos olhos; sobrancelhas; barba (textura e malha) | ~35 créditos | a fazer |
 | 5. Ajuste fino | Formas por região geradas no Blender com os mesmos nomes em toda cabeça (mandíbula, queixo, nariz, maçãs, olhos, orelhas); o tipo de corpo (magro…pesado) passa a mudar o boneco (escala de ossos ou formas, com a roupa acompanhando) | — | a fazer |
 | 6. Acessórios | Munhequeira, faixa, joelheira, manga, meia de cano alto e óculos (lote da arena), com cor; tatuagens; e2e no online | gerar de novo a manga | a fazer |
 
-**Número e nome nas costas (adiado da fase 2).** Não entrou porque pede o mapa de UV: a regata do HY não tem uma ilha
-plana para o número, e o UV atual é o da pintura. O caminho para depois: (a) uma UV plana extra só para as costas, feita
-no Blender no `vestir.py` (uma ilha retangular onde cabe o número e o nome), com a textura de dígitos e letras num
-atlas; ou (b) uma projeção no shader, sem UV: a posição local do vértice nas costas (x e y da regata, em repouso)
-mapeia um atlas de dígitos, e o shader de zonas (`GearColors.ts`) soma o decal por cima da cor. (a) é mais limpo e
-serve para qualquer peça; (b) sai sem mexer em modelo e cabe no mesmo lugar do shader.
+**Número e nome nas costas (adiado da fase 2).** Não entrou porque pede o mapa de UV: a regata costurada (docs/20) tem
+UV por ilhas (`smart_project`), sem uma ilha plana para o número. O caminho para depois: (a) uma UV plana extra só para
+as costas, feita no próprio `costurar.py` (uma ilha retangular onde cabe o número e o nome), com a textura de dígitos e
+letras num atlas; ou (b) uma projeção no shader, sem UV: a posição local do vértice nas costas (x e y da regata, em
+repouso) mapeia um atlas de dígitos, e o shader de zonas (`GearColors.ts`) soma o decal por cima da cor. (a) é mais
+limpo e serve para qualquer peça; (b) sai sem mexer em modelo e cabe no mesmo lugar do shader.
 
 Riscos:
 - A emenda do pescoço na troca de cabeça é a parte mais difícil; o tom de pele único (mesmo shader no corpo e na
@@ -177,8 +178,11 @@ Riscos:
   `{"skin":"#c08862","kit":"vermelha","kitAway":"branca","shoes":"tenis_cimento_4","colors":{"casa":["#1d2a4a","#f4c430"],"tenis":["#2f6fd6"]}}`).
 - Identidade (cor igual à original = textura exata) é garantida pela conta do shader, não pelo pixel: as capturas de
   duas execuções têm a pose do drible em fases diferentes, então a comparação de pixels não serve.
-- Zonas: `python -I web/tools/zonas-cor.py web/public/assets/gear web/public/assets/look/zonas [conferência]` (a partir
-  de `NBA/`). A conferência mostra cada zona na própria cor média.
+- Zonas dos tênis: `python -I web/tools/zonas-cor.py web/public/assets/gear web/public/assets/look/zonas [conferência]`
+  (a partir de `NBA/`; só os tênis: as peças costuradas trazem as suas). A conferência mostra cada zona na própria cor
+  média. Da regata e da bermuda: `costurar.py --zonas=<pasta>` e `python -I web/tools/zonas-costura.py <pasta>
+  web/public/assets/gear web/public/assets/look/zonas` (confere a orientação contra a textura do GLB).
+- Roupa no jogo: `node web/tools/roupa-qa.mjs <pasta> [query]` (8 poses × 11 vistas, docs/20).
 
 ## 5. Arquivos
 
@@ -194,5 +198,7 @@ Riscos:
 | `menu/Showroom.ts`, `menu/MenuScreen.ts`, `menu/MenuFlow.ts` | `setLook(look, side)`, `setFocus`; o `wear()` da tela diz qual uniforme vestir |
 | `game/OnlineMatch.ts`, `game/cpu/CpuOpponent.ts`, `online/RemotePlayer.ts`, `online/EchoTest.ts`, `main.ts` | Uniforme de cada lado na partida (`wearFor`) |
 | `public/assets/look/` | Máscaras da pele; `zonas/` tem as máscaras de zona (`<peça>_zonas.webp` e `.json`) |
-| `tools/pele-mascara.py`, `tools/zonas-cor.py`, `tools/aparencia-prints.mjs` | Máscara da pele, zonas de cor e conferência |
+| `tools/pele-mascara.py`, `tools/zonas-cor.py`, `tools/aparencia-prints.mjs` | Máscara da pele, zonas de cor dos tênis e conferência |
+| `Tools/Animacao/costurar.py`, `tools/zonas-costura.py` | Regata e bermuda costuradas no Blender (docs/20) e as máscaras de zona delas |
+| `tools/roupa-qa.mjs`, `tools/perto.mjs` | Conferência da roupa no jogo: 8 poses × 11 vistas; close-ups do jogador parado |
 | `e2e/menu.spec.ts`, `e2e/aparencia-cores.spec.ts` | Fluxo da aparência e cores pelo teclado |

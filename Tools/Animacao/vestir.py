@@ -2,24 +2,29 @@
 #
 #   blender -b -P Tools/Animacao/vestir.py -- <corpo.glb> <peca.glb> <tipo> <saida.glb> [triangulos] [--por-cima-de=<peca.glb>]
 #
+# --cano=alto|medio|baixo (tênis): altura do colarinho acima do tornozelo, 9,5 / 7 / 4,5 cm (padrão: medio).
+#
 # --por-cima-de: GLB de uma peça já vestida (a bermuda) que esta (a regata) cobre: a barra da regata vai para fora do
 # cós da bermuda, senão as duas se cruzam na cintura.
 #
-# tipo: regata | bermuda | tenis (o tenis sai com a meia: meia_r e meia_l, a pele do pé e da canela inflada 3,5 mm)
+# tipo: regata | bermuda | tenis (o tênis sai em par, cada pé no seu, com a meia: meia_r e meia_l, a casca da pele;
+# ver vestir_tenis)
 #  - encaixa a caixa da peça na região do corpo (tronco, quadril+coxas ou pé);
 #  - transfere os pesos de pele do corpo para a peça (vértice mais próximo, interpolado);
 #  - regata/bermuda: cria "ossos de pano" (pêndulos) na barra; o jogo (ClothSprings) os anima com molas;
-#  - tenis: pesos copiados da pele do pé (vizinhos no corpo, bind); o esquerdo sai espelhado com os ossos _l;
+#  - tenis: encaixado em cada pé, empurrado para fora da meia e com os pesos dela (vestir_tenis);
 #  - reduz para [triangulos] (padrão: 9000 regata/bermuda, 5000 por pé) e exporta só a peça + esqueleto.
 #
 # Bermuda: o bind pose do corpo tem as pernas abertas (~25°); as peças geradas vêm com as pernas retas. A bermuda é
 # vestida com as coxas giradas para baixo e essa pose vira o rest do esqueleto exportado. No jogo só importam as
 # matrizes de bind de cada malha, então isso não afeta o corpo.
-import bpy, bmesh, sys, math
+import bpy, bmesh, sys, math, os
 from mathutils import Vector, Matrix
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 OVER = next((a.split('=', 1)[1] for a in argv if a.startswith('--por-cima-de=')), None)
+# Tênis: altura do cano (alto, medio, baixo): onde fica o colarinho (vestir_tenis).
+CANO = next((a.split('=', 1)[1] for a in argv if a.startswith('--cano=')), 'medio')
 argv = [a for a in argv if not a.startswith('--')]
 BODY, PIECE, KIND, OUT = argv[:4]
 TRIS = int(argv[4]) if len(argv) > 4 else (5000 if KIND == 'tenis' else 9000)
@@ -126,6 +131,765 @@ ALLOWED = {
 bmin, bmax = box(bv)
 H = bmax.z - bmin.z
 
+# ---------------------------------------------------------------- tênis e meia (docs/20, "Pé e tênis")
+# Os dois pés saem daqui, cada um encaixado no próprio pé do corpo (o esquerdo é a peça espelhada; o esqueleto não é
+# simétrico, então copiar o direito espelhado deixava o pé esquerdo fora do lugar).
+#
+# Meia = casca da própria pele do pé e da canela: a pele soldada nas costuras de UV (fechada), cortada por um plano
+# perpendicular à canela 4,5 cm acima da boca do tênis, afastada 2,5 mm pela normal e alisada. Os pesos são os da pele
+# vértice a vértice (a casca tem a topologia dela), então a meia dobra exatamente como a pele em qualquer pose e a pele
+# nunca a atravessa. Na boca, uma ribana (a faixa de cima um pouco mais grossa) e um lábio que dobra para dentro até
+# encostar na pele: não fica fresta para ver o corte da pele por baixo.
+#
+# Tênis = a peça do HY encaixada no pé e empurrada para fora da meia (campo suave, o forro e o tecido de fora andam
+# juntos), com os pesos copiados da meia (interpolados na face mais próxima): o tênis segue a meia, que segue a pele.
+# No HY a parede de trás do cano ficava 1–3 cm dentro da canela: é esse empurrão que a leva para fora.
+#
+# No fim, o script posa o esqueleto com os 38 clipes do jogo e mede a meia contra a pele e o tênis contra a meia.
+def vestir_tenis():
+    from mathutils.bvhtree import BVHTree
+    from mathutils.kdtree import KDTree
+
+    def step(x):
+        x = max(0.0, min(1.0, x))
+        return x * x * (3 - 2 * x)
+
+    SOCK_OFF = 0.0025  # meia: distância da pele (m)
+    SOCK_RIB = 0.0008  # ribana: a faixa de cima, um pouco mais grossa
+    SOCK_ABOVE = 0.05  # topo da meia acima do colarinho
+    # Colarinho acima da junta do tornozelo, por altura de cano. O HY fazia canos de 10 a 15 cm (cara de bota).
+    CANO_CAP = {'alto': 0.095, 'medio': 0.07, 'baixo': 0.045}[CANO]
+    SHOE_GAP = 0.0015  # tênis: folga mínima por fora da meia
+
+    # Pé esquerdo: a peça espelhada (mesma UV e mesma textura: as máscaras de cor valem para os dois).
+    raw = {'r': piece}
+    left = piece.copy()
+    left.data = piece.data.copy()
+    bpy.context.collection.objects.link(left)
+    left.data.transform(Matrix.Scale(-1, 4, Vector((1, 0, 0))))
+    bm = bmesh.new()
+    bm.from_mesh(left.data)
+    bmesh.ops.reverse_faces(bm, faces=bm.faces)
+    bm.to_mesh(left.data)
+    bm.free()
+    raw['l'] = left
+
+    def fit_shoe(obj, s):
+        """Bico para a frente do pé e encaixe pelo pé descalço (comprimento +6%, largura +15%, calcanhar 1 cm atrás,
+        sola na altura da sola: o jogo prega a sola do corpo no chão)."""
+        fb, bb = 'foot_' + s, 'ball_' + s
+        side_x = bone_head(fb).x
+        foot = [v for v in bv if v.z <= bone_head(fb).z + 0.04 * H and (v.x > 0) == (side_x > 0)]
+        fmin, fmax = box(foot)
+        forward = bone_head(bb) - bone_head(fb)
+        forward.z = 0
+        forward.normalize()
+        pts = world_verts(obj)
+        pmin, pmax = box(pts)
+        size = pmax - pmin
+        long_axis = 0 if size.x >= size.y else 1
+        mid = (pmin[long_axis] + pmax[long_axis]) / 2
+        zcut = pmin.z + 0.6 * size.z
+        tall = [p for p in pts if p.z > zcut]
+        heel_sign = 1 if sum(p[long_axis] for p in tall) / max(1, len(tall)) > mid else -1
+        toe_dir = Vector((0, 0, 0))
+        toe_dir[long_axis] = -heel_sign
+        rot = toe_dir.to_track_quat('Y', 'Z').to_matrix().to_4x4()
+        want = forward.to_track_quat('Y', 'Z').to_matrix().to_4x4()
+        obj.data.transform(want @ rot.inverted())
+        obj.data.update()
+        side = forward.cross(Vector((0, 0, 1))).normalized()
+
+        def ext(points, axis):
+            vals = [p.dot(axis) for p in points]
+            return min(vals), max(vals)
+        sole = [v for v in foot if v.z <= fmin.z + 0.03 * H]
+        f_lo, f_hi = ext(sole, forward)
+        w_lo, w_hi = ext(sole, side)
+        pts = world_verts(obj)
+        p_lo, p_hi = ext(pts, forward)
+        q_lo, q_hi = ext(pts, side)
+        s_len = ((f_hi - f_lo) * 1.06 + 0.012 * H) / (p_hi - p_lo)
+        s_wid = ((w_hi - w_lo) * 1.15 + 0.008 * H) / (q_hi - q_lo)
+        s_up = (s_len + s_wid) / 2
+        sc = Matrix.Identity(4)
+        for i in range(3):
+            for j in range(3):
+                sc[i][j] = forward[i] * forward[j] * s_len + side[i] * side[j] * s_wid + (1 if i == j == 2 else 0) * s_up
+        obj.data.transform(sc)
+        obj.data.update()
+        pts = world_verts(obj)
+        p_lo, p_hi = ext(pts, forward)
+        q_lo, q_hi = ext(pts, side)
+        pmin, pmax = box(pts)
+        shift = forward * ((f_lo - 0.006 * H) - p_lo) + side * ((w_lo + w_hi) / 2 - (q_lo + q_hi) / 2)
+        shift.z = fmin.z - pmin.z
+        obj.data.transform(Matrix.Translation(shift))
+        obj.data.update()
+        print('tênis %s: escala comprimento %.3f largura %.3f' % (s, s_len, s_wid))
+
+    def cleanup(obj):
+        """Solda as costuras de UV e tira pedaços soltos pequenos (cordão, etiqueta): < 2% dos vértices."""
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+        seen, parts = set(), []
+        for v in bm.verts:
+            if v in seen:
+                continue
+            stack, part = [v], []
+            seen.add(v)
+            while stack:
+                x = stack.pop()
+                part.append(x)
+                for e in x.link_edges:
+                    o = e.other_vert(x)
+                    if o not in seen:
+                        seen.add(o)
+                        stack.append(o)
+            parts.append(part)
+        small = [x for part in parts if len(part) < 0.02 * len(bm.verts) for x in part]
+        bmesh.ops.delete(bm, geom=small, context='VERTS')
+        bm.to_mesh(obj.data)
+        bm.free()
+
+    def decimate(obj, tris_max):
+        set_active(obj)
+        tris = sum(len(p.vertices) - 2 for p in obj.data.polygons)
+        if tris > tris_max:
+            dec = obj.modifiers.new('dec', 'DECIMATE')
+            dec.ratio = tris_max / tris
+            bpy.ops.object.modifier_apply(modifier='dec')
+        bpy.ops.object.shade_smooth()
+
+    # Pele soldada (as costuras de UV do GLB viram uma superfície fechada) e a árvore dela, no bind.
+    skin = bmesh.new()
+    skin.from_mesh(body.data)
+    skin.transform(body.matrix_world)
+    bmesh.ops.remove_doubles(skin, verts=skin.verts, dist=1e-5)
+    skin.normal_update()
+    skin_tree = BVHTree.FromBMesh(skin)
+    # As faces do corpo apontam para fora? (confere na canela direita: a normal contra a direção radial)
+    A, K = bone_head('foot_r'), bone_head('calf_r')
+    ax = (K - A).normalized()
+    votes = 0
+    for f in skin.faces:
+        c = f.calc_center_median()
+        h = (c - A).dot(ax)
+        if 0.12 < h < 0.3 and (c.x > 0) == (A.x > 0):
+            r = (c - A) - ax * h
+            votes += 1 if r.dot(f.normal) > 0 else -1
+    outward = 1 if votes >= 0 else -1
+    print('pele: normais %s (votos %d)' % ('para fora' if outward > 0 else 'para dentro', votes))
+
+    def signed(tree, p, flip=1):
+        loc, nrm, _, _ = tree.find_nearest(p)
+        if loc is None:
+            return None, None, None
+        n = nrm * flip
+        return (p - loc).dot(n), loc, n
+
+    def build_sock(s, top_h, mat):
+        A, K = bone_head('foot_' + s), bone_head('calf_' + s)
+        ax = (K - A).normalized()
+        sx = A.x > 0
+        bm = skin.copy()
+        # Pé e canela deste lado: toda face com algum vértice abaixo do topo fica (o plano corta o resto). As faces da
+        # canela do corpo do HY são compridas (a malha foi esticada até o esqueleto, trocar_corpo.py): tirar a face que
+        # passa do topo abria buracos de vários centímetros na boca da meia.
+        def leg_face(f):
+            hs = [(v.co - A).dot(ax) for v in f.verts]
+            radial = max(((v.co - A) - ax * h).length for v, h in zip(f.verts, hs))
+            return all((v.co.x > 0) == sx for v in f.verts) and min(hs) < top_h and radial < 0.2
+        bmesh.ops.delete(bm, geom=[f for f in bm.faces if not leg_face(f)], context='FACES')
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+        bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-7, plane_co=A + ax * top_h, plane_no=ax, clear_outer=True)
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+        # Só o pedaço grande (o plano não deixa ilhas, mas a garantia é barata).
+        seen, parts = set(), []
+        for v in bm.verts:
+            if v in seen:
+                continue
+            stack, part = [v], []
+            seen.add(v)
+            while stack:
+                x = stack.pop()
+                part.append(x)
+                for e in x.link_edges:
+                    o = e.other_vert(x)
+                    if o not in seen:
+                        seen.add(o)
+                        stack.append(o)
+            parts.append(part)
+        parts.sort(key=len)
+        bmesh.ops.delete(bm, geom=[x for part in parts[:-1] for x in part], context='VERTS')
+        if outward < 0:
+            bmesh.ops.reverse_faces(bm, faces=bm.faces)
+        bm.normal_update()
+        border = {v for e in bm.edges if len(e.link_faces) < 2 for v in e.verts}
+        # Afasta da pele e alisa o relevo fino (veias, tendões, dedos): meia é tecido esticado.
+        for v in bm.verts:
+            v.co = v.co + v.normal * SOCK_OFF
+        inner = [v for v in bm.verts if v not in border]
+        for _ in range(8):
+            bmesh.ops.smooth_vert(bm, verts=inner, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        # O alisamento encolhe o convexo (tornozelo, calcanhar): volta para fora da pele onde precisar.
+        for v in bm.verts:
+            h = (v.co - A).dot(ax)
+            want = SOCK_OFF + SOCK_RIB * step((h - (top_h - 0.022)) / 0.01)
+            d, loc, n = signed(skin_tree, v.co, outward)
+            if d is not None and d < want:
+                v.co = v.co + n * (want - d)
+        bm.normal_update()
+        # Lábio da boca: a borda dobra para dentro até 0,6 mm da pele e desce 1,5 mm.
+        edges = [e for e in bm.edges if len(e.link_faces) < 2]
+        ret = bmesh.ops.extrude_edge_only(bm, edges=edges)
+        lip = [x for x in ret['geom'] if isinstance(x, bmesh.types.BMVert)]
+        for v in lip:
+            d, loc, n = signed(skin_tree, v.co, outward)
+            if loc is not None:
+                v.co = loc + n * 0.0006 - ax * 0.0015
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        # recalc_face_normals pode virar tudo numa malha aberta: a canela tem de apontar para fora.
+        votes = 0
+        for f in bm.faces:
+            c = f.calc_center_median()
+            h = (c - A).dot(ax)
+            if 0.03 < h < top_h - 0.02:
+                votes += 1 if ((c - A) - ax * h).dot(f.normal) > 0 else -1
+        if votes < 0:
+            bmesh.ops.reverse_faces(bm, faces=bm.faces)
+        bmesh.ops.triangulate(bm, faces=bm.faces)  # o corte do plano deixa quadriláteros e n-ágonos na boca
+        for f in bm.faces:
+            f.smooth = True
+        me = bpy.data.meshes.new('meia_' + s)
+        bm.to_mesh(me)
+        bm.free()
+        me.materials.append(mat)
+        ob = bpy.data.objects.new('meia_' + s, me)
+        bpy.context.collection.objects.link(ob)
+        print('meia %s: %d vértices, %d faces, topo a %.3f m da junta do tornozelo' % (s, len(me.vertices), len(me.polygons), top_h))
+        return ob
+
+    def push_out_of(obj, tree, margin, R=0.012, passes=12):
+        """Campo suave: cada vértice pede para sair até `margin` por fora da superfície; o pedido se espalha num raio R
+        (núcleo plano até R/2), então o forro e o tecido de fora andam juntos e não se cruzam."""
+        mw = obj.matrix_world
+        inv = mw.inverted()
+        for it in range(passes):
+            pts = [mw @ v.co for v in obj.data.vertices]
+            asks = []
+            kd = KDTree(len(pts))
+            for i, p in enumerate(pts):
+                d, loc, n = signed(tree, p)
+                need = max(0.0, margin - d) if d is not None else 0.0
+                asks.append((need, n))
+                if need > 0:
+                    kd.insert(p, i)
+            kd.balance()
+            worst = max(a for a, _ in asks)
+            if worst < 0.0002:
+                break
+            moved = 0
+            for j, p in enumerate(pts):
+                size, dirv = 0.0, Vector()
+                for _, i, d in kd.find_range(p, R):
+                    w = 1 - step((d - 0.5 * R) / (0.5 * R))
+                    size = max(size, asks[i][0] * w)
+                    dirv += asks[i][1] * asks[i][0] * w
+                if size > 0 and dirv.length > 1e-9:
+                    obj.data.vertices[j].co = inv @ (p + dirv.normalized() * size)
+                    moved += 1
+            obj.data.update()
+            print('  %s: passe %d, %d vértices empurrados (maior pedido %.1f mm)' % (obj.name, it + 1, moved, worst * 1000))
+        # O que o campo não resolveu (vizinhos pedindo em direções opostas: forro dentro do bico) sai vértice a vértice.
+        fixed = 0
+        for v in obj.data.vertices:
+            p = mw @ v.co
+            d, loc, n = signed(tree, p)
+            if d is not None and d < margin - 0.0002:
+                v.co = inv @ (loc + n * margin)
+                fixed += 1
+        obj.data.update()
+        if fixed:
+            print('  %s: %d vértices postos direto para fora' % (obj.name, fixed))
+
+    def finish_weights(obj, src=None):
+        """Pesos: copiados de `src` (face mais próxima, interpolados) ou os que o objeto já tem; no máximo 4 por
+        vértice, normalizados; e o objeto preso ao esqueleto."""
+        set_active(obj)
+        obj.parent = arm
+        mod = obj.modifiers.new('Armature', 'ARMATURE')
+        mod.object = arm
+        if src is not None:
+            dt = obj.modifiers.new('dt', 'DATA_TRANSFER')
+            dt.object = src
+            dt.use_vert_data = True
+            dt.data_types_verts = {'VGROUP_WEIGHTS'}
+            dt.vert_mapping = 'POLYINTERP_NEAREST'
+            dt.layers_vgroup_select_src = 'ALL'
+            dt.layers_vgroup_select_dst = 'NAME'
+            bpy.ops.object.datalayout_transfer(modifier='dt')
+            bpy.ops.object.modifier_move_to_index(modifier='dt', index=0)
+            bpy.ops.object.modifier_apply(modifier='dt')
+        bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+        bpy.ops.object.vertex_group_limit_total(limit=4)
+        bpy.ops.object.vertex_group_clean(group_select_mode='ALL', limit=0.01)
+        bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+        for g in [g for g in obj.vertex_groups if not any(g.index in [x.group for x in v.groups] for v in obj.data.vertices)]:
+            obj.vertex_groups.remove(g)
+
+
+    def orient_new(bm, new_faces):
+        """Faces criadas por extrusão: mesma volta (sentido) das vizinhas já orientadas, propagando pela malha."""
+        new = set(new_faces)
+        fixed = {f for f in bm.faces if f not in new}
+
+        def edge_dir(face, edge):
+            for l in face.loops:
+                if l.edge == edge:
+                    return (l.vert, l.link_loop_next.vert)
+        todo = list(new)
+        while todo:
+            rest = []
+            for f in todo:
+                ref = next(((e, g) for e in f.edges for g in e.link_faces if g is not f and g in fixed), None)
+                if ref is None:
+                    rest.append(f)
+                    continue
+                if edge_dir(f, ref[0]) == edge_dir(ref[1], ref[0]):
+                    f.normal_flip()
+                fixed.add(f)
+            if len(rest) == len(todo):
+                break
+            todo = rest
+
+    # ---------------------------------------------------------------- cano e colarinho (boca do tênis)
+    # O tênis do HY é um sólido fechado: a boca do cano é uma tampa amassada que a perna atravessa, e o cano fica para a
+    # frente da perna. O cano é refeito acima da altura em que começa a entrar na perna (rebuild_shaft).
+    def leg_frame(s):
+        A, K = bone_head('foot_' + s), bone_head('calf_' + s)
+        ax = (K - A).normalized()
+        fwd = bone_head('ball_' + s) - A
+        fwd = (fwd - ax * fwd.dot(ax)).normalized()
+        return A, ax, fwd, ax.cross(fwd)
+
+    def polar(s, p):
+        A, ax, fwd, side = leg_frame(s)
+        d = p - A
+        h = d.dot(ax)
+        r = d - ax * h
+        return h, r.length, math.atan2(r.dot(side), r.dot(fwd))
+
+    def sock_radius(s, tree, h, ang):
+        A, ax, fwd, side = leg_frame(s)
+        o = A + ax * h
+        d = fwd * math.cos(ang) + side * math.sin(ang)
+        hit = tree.ray_cast(o, d, 0.3)
+        return (hit[0] - o).length if hit[0] is not None else None
+
+    def islands(bm):
+        seen, parts = set(), []
+        for v in bm.verts:
+            if v in seen:
+                continue
+            stack, part = [v], []
+            seen.add(v)
+            while stack:
+                x = stack.pop()
+                part.append(x)
+                for e in x.link_edges:
+                    o = e.other_vert(x)
+                    if o not in seen:
+                        seen.add(o)
+                        stack.append(o)
+            parts.append(part)
+        return parts
+
+    def ordered_loop(edges):
+        """Vértices de uma volta fechada de arestas, em ordem."""
+        adj = {}
+        for e in edges:
+            a, b = e.verts
+            adj.setdefault(a, []).append(b)
+            adj.setdefault(b, []).append(a)
+        start = next(iter(adj))
+        order, prev, cur = [start], None, start
+        while len(order) <= len(adj):
+            nxt = [x for x in adj[cur] if x is not prev]
+            if not nxt or nxt[0] is start:
+                break
+            prev, cur = cur, nxt[0]
+            order.append(cur)
+        return order
+
+    def palette_uvs(shoe, s, h_ref, n=3):
+        """As `n` cores mais frequentes do tênis perto de `h_ref`, cada uma com a UV do meio de uma área lisa dela na
+        textura (vizinhança de 11×11 texels: a mipmap de longe não mistura a cor do lado). O cano novo é pintado com
+        elas; a máscara de zonas (fase 2) vale nesses pontos, então o cano muda de cor junto com as zonas."""
+        import numpy as np
+        img = None
+        for m in shoe.data.materials:
+            for nd in (m.node_tree.nodes if m and m.node_tree else []):
+                if nd.type == 'TEX_IMAGE' and nd.image and not any(k in nd.image.name.lower() for k in ('normal', 'metal', 'rough')):
+                    img = img or nd.image
+        uv = shoe.data.uv_layers.active
+        if img is None or uv is None:
+            return [((0.5, 0.5), (0.5, 0.5, 0.5))]
+        w, hh = img.size
+        px = np.empty(w * hh * 4, dtype=np.float32)
+        img.pixels.foreach_get(px)
+        px = px.reshape(hh, w, 4)[..., :3]
+        R = max(5, w // 200)
+        cand = []
+        for poly in shoe.data.polygons:
+            for li in poly.loop_indices:
+                p = shoe.data.vertices[shoe.data.loops[li].vertex_index].co
+                if abs(polar(s, p)[0] - h_ref) < 0.03:
+                    u, v = uv.data[li].uv
+                    cand.append((min(w - R - 1, max(R, int(u * w))), min(hh - R - 1, max(R, int(v * hh)))))
+        if not cand:
+            return [((0.5, 0.5), (0.5, 0.5, 0.5))]
+        cols = np.array([px[y, x] for x, y in cand])
+        q = np.floor(np.clip(cols, 0, 0.999) * 4).astype(int)
+        keys, counts = np.unique(q, axis=0, return_counts=True)
+        out = []
+        for key in keys[np.argsort(-counts)][:n]:
+            sel = (q == key).all(1)
+            target = cols[sel].mean(0)
+            best, best_score = None, 1e9
+            for (x, y), ok in zip(cand, sel):
+                if not ok:
+                    continue
+                patch = px[y - R:y + R + 1, x - R:x + R + 1].reshape(-1, 3)
+                score = float(np.abs(patch.mean(0) - target).sum() + 6 * patch.std(0).sum())
+                if score < best_score:
+                    best, best_score = (x, y), score
+            out.append((((best[0] + 0.5) / w, (best[1] + 0.5) / hh), tuple(float(c) for c in target)))
+        return out
+
+    def rebuild_shaft(shoe, s, sock_tree, h_col):
+        """Cano novo. O cano do HY fica deslocado para a frente da perna (a parede de trás atravessa a canela), amassado
+        e fechado por uma tampa no topo. Ele sai a partir da altura em que começa a entrar na perna (atrás e nos lados;
+        a frente pode encostar: é a língua), e no lugar entra uma superfície em anéis que parte da seção do HY nessa
+        altura e sobe numa curva suave até o colarinho, que abraça a meia a 1 cm. Em cima, o rolo do acolchoado e o
+        forro que desce por dentro. O pé, o bico e o desenho de baixo continuam os do HY."""
+        A, ax, fwd, side = leg_frame(s)
+        dirv = lambda a: fwd * math.cos(a) + side * math.sin(a)
+        bm = bmesh.new()
+        bm.from_mesh(shoe.data)
+        bm.normal_update()
+        # Folga entre a parede do HY (faces em pé) e a meia, por faixa de 5 mm, atrás e nos lados.
+        nb = int(h_col / 0.005) + 1
+        clear = [1.0] * nb
+        for f in bm.faces:
+            if abs(f.normal.dot(ax)) > 0.5:
+                continue
+            h, r, a = polar(s, f.calc_center_median())
+            b = int(h / 0.005)
+            if h <= 0 or b >= nb or abs(a) < math.radians(60):
+                continue
+            rs = sock_radius(s, sock_tree, h, a)
+            if rs is not None:
+                clear[b] = min(clear[b], r - rs)
+        first_bad = next((b for b in range(nb) if clear[b] < 0.004), nb)
+        h_low = min(h_col - 0.03, max(0.015, first_bad * 0.005 - 0.01))
+        pal = palette_uvs(shoe, s, h_low)
+        uv_main = pal[0][0]
+        uv_trim = pal[1][0] if len(pal) > 1 else uv_main
+        # Corte do HY em h_low; o que fica acima sai.
+        bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-6, plane_co=A + ax * h_low, plane_no=ax, clear_outer=True)
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+        parts = islands(bm)
+        big = max(len(p) for p in parts)
+        bmesh.ops.delete(bm, geom=[x for p in parts if len(p) < 0.05 * big for x in p], context='VERTS')
+        loops = boundary_loops(bm)
+        on_plane = lambda comp: sum(1 for e in comp if all(abs(polar(s, v.co)[0] - h_low) < 0.0015 for v in e.verts))
+        loops.sort(key=on_plane)
+        mouth = loops[-1]
+        for comp in loops[:-1]:
+            bmesh.ops.holes_fill(bm, edges=list(comp), sides=0)
+        ring_hy = ordered_loop(mouth)
+        # Seção do HY no corte, reamostrada em 72 ângulos (raio da volta em cada direção; buraco = vizinho).
+        N = 72
+        pts2 = [(polar(s, v.co)[1] * math.cos(polar(s, v.co)[2]), polar(s, v.co)[1] * math.sin(polar(s, v.co)[2])) for v in ring_hy]
+        r0 = []
+        for j in range(N):
+            t = 2 * math.pi * j / N - math.pi
+            dx, dy = math.cos(t), math.sin(t)
+            best = None
+            for i in range(len(pts2)):
+                (x1, y1), (x2, y2) = pts2[i], pts2[(i + 1) % len(pts2)]
+                den = dx * (y2 - y1) - dy * (x2 - x1)
+                if abs(den) < 1e-12:
+                    continue
+                k = (x1 * (y2 - y1) - y1 * (x2 - x1)) / den  # distância ao longo do raio
+                m = (x1 * dy - y1 * dx) / den  # posição no segmento (0..1)
+                if k > 0 and 0 <= m <= 1:
+                    best = k if best is None else max(best, k)
+            r0.append(best)
+        for j in range(N):
+            if r0[j] is None:
+                r0[j] = next((r0[(j + d) % N] for d in range(1, N) if r0[(j + d) % N] is not None), 0.05)
+        thetas = [2 * math.pi * j / N - math.pi for j in range(N)]
+        rc = [(sock_radius(s, sock_tree, h_col, t) or r0[j]) + 0.010 for j, t in enumerate(thetas)]
+        K = max(4, int((h_col - h_low) / 0.006))
+        uvl = bm.loops.layers.uv.active
+        new_faces, rings = [], []
+        trim_faces = set()  # faixa de trás (reforço do calcanhar) e colarinho: a 2ª cor
+        for k in range(K + 1):
+            u = k / K
+            h = h_low + 0.001 + (h_col - h_low - 0.001) * u
+            row = []
+            for j, t in enumerate(thetas):
+                rs = sock_radius(s, sock_tree, h, t)
+                r = r0[j] + (rc[j] - r0[j]) * step(u)
+                if rs is not None:
+                    r = max(r, rs + 0.005)
+                row.append(bm.verts.new(A + ax * h + dirv(t) * r))
+            rings.append(row)
+        # Rolo do acolchoado e forro, por cima do último anel.
+        r_in = [(sock_radius(s, sock_tree, h_col, t) or rc[j] - 0.01) + 0.0015 for j, t in enumerate(thetas)]
+        for dh, frac in ((0.003, 0.65), (0.004, 0.25), (0.0015, 0.0)):
+            rings.append([bm.verts.new(A + ax * (h_col + dh) + dirv(t) * (r_in[j] + (rc[j] - r_in[j]) * frac)) for j, t in enumerate(thetas)])
+        rings.append([bm.verts.new(A + ax * (h_col - 0.02) + dirv(t) * ((sock_radius(s, sock_tree, h_col - 0.02, t) or r_in[j]) + 0.0015)) for t in thetas])
+        for k, (a_, b_) in enumerate(zip(rings, rings[1:])):
+            for j in range(N):
+                j2 = (j + 1) % N
+                f = bm.faces.new((a_[j], a_[j2], b_[j2], b_[j]))
+                new_faces.append(f)
+                ang = 2 * math.pi * (j + 0.5) / N - math.pi
+                if k >= K or (k >= 1 and abs(ang) > math.radians(155)):
+                    trim_faces.add(f)
+        ring0_edges = [bm.edges.get((rings[0][j], rings[0][(j + 1) % N])) for j in range(N)]
+        ret = bmesh.ops.bridge_loops(bm, edges=list(mouth) + ring0_edges)
+        new_faces += list(ret['faces'])
+        for f in new_faces:
+            f.smooth = True
+            f.material_index = 0
+            if uvl is not None:
+                for l in f.loops:
+                    l[uvl].uv = uv_trim if f in trim_faces else uv_main
+        orient_new(bm, new_faces)
+        # Emenda: o HY logo abaixo do corte e os dois primeiros anéis se alisam juntos (sem degrau de sombreado na frente).
+        seam = [v for v in bm.verts if h_low - 0.012 < polar(s, v.co)[0] < h_low + 0.008 and v not in set(rings[-1] + rings[-2] + rings[-3] + rings[-4])]
+        for _ in range(4):
+            bmesh.ops.smooth_vert(bm, verts=seam, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        bm.to_mesh(shoe.data)
+        bm.free()
+        shoe.data.update()
+        print('  %s: cano novo de %.0f a %.0f mm (HY entrava na perna a partir de %.0f mm), %d anéis, cores %s' % (shoe.name, h_low * 1000, h_col * 1000, first_bad * 5, K + 1, ['#%02x%02x%02x' % tuple(int(255 * min(1, max(0, c)) ** (1 / 2.2)) for c in col) for _, col in pal]))
+        return h_col
+
+    def boundary_loops(bm):
+        """Bordas abertas agrupadas em voltas (componentes ligadas)."""
+        edges = {e for e in bm.edges if len(e.link_faces) == 1}
+        loops = []
+        while edges:
+            e = edges.pop()
+            comp, stack = {e}, [e]
+            while stack:
+                x = stack.pop()
+                for v in x.verts:
+                    for y in v.link_edges:
+                        if y in edges:
+                            edges.discard(y)
+                            comp.add(y)
+                            stack.append(y)
+            loops.append(comp)
+        return loops
+
+    def copy_normals(dst, src):
+        """Normais da pele na meia: a meia é a casca da pele, e com as normais dela o sombreado fica liso (as do próprio
+        alisamento, nos triângulos compridos da canela, faziam listras em ponta abaixo da boca)."""
+        set_active(dst)
+        nt = dst.modifiers.new('nt', 'DATA_TRANSFER')
+        nt.object = src
+        nt.use_loop_data = True
+        nt.data_types_loops = {'CUSTOM_NORMAL'}
+        nt.loop_mapping = 'POLYINTERP_NEAREST'
+        bpy.ops.object.modifier_move_to_index(modifier='nt', index=0)
+        bpy.ops.object.modifier_apply(modifier='nt')
+
+    sock_mat = bpy.data.materials.new('Meia')
+    bsdf = sock_mat.node_tree.nodes['Principled BSDF']
+    bsdf.inputs['Base Color'].default_value = (0.93, 0.93, 0.93, 1)
+    bsdf.inputs['Roughness'].default_value = 0.92
+
+    out = {}
+    for s in ('r', 'l'):
+        shoe = raw[s]
+        shoe.name = 'tenis_' + s
+        fit_shoe(shoe, s)
+        cleanup(shoe)
+        decimate(shoe, TRIS)
+        A, K = bone_head('foot_' + s), bone_head('calf_' + s)
+        ax = (K - A).normalized()
+        cuff = max((shoe.matrix_world @ v.co - A).dot(ax) for v in shoe.data.vertices)
+        if os.environ.get('FATIAS'):
+            A_, ax_ = bone_head('foot_' + s), (bone_head('calf_' + s) - bone_head('foot_' + s)).normalized()
+            for hh in [x / 100 for x in range(2, int(cuff * 100) + 1)]:
+                bm = bmesh.new()
+                bm.from_mesh(shoe.data)
+                res = bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-6, plane_co=A_ + ax_ * hh, plane_no=ax_)
+                cut = {e for e in res['geom_cut'] if isinstance(e, bmesh.types.BMEdge)}
+                comps = []
+                while cut:
+                    e = cut.pop(); comp = {e}; st = [e]
+                    while st:
+                        x = st.pop()
+                        for v in x.verts:
+                            for y in v.link_edges:
+                                if y in cut:
+                                    cut.discard(y); comp.add(y); st.append(y)
+                    comps.append(comp)
+                desc = []
+                for comp in sorted(comps, key=len, reverse=True)[:4]:
+                    rs = []
+                    for e in comp:
+                        for v in e.verts:
+                            d = v.co - A_
+                            rs.append((d - ax_ * d.dot(ax_)).length)
+                    desc.append('%d arestas r=%.0f..%.0f mm' % (len(comp), min(rs) * 1000, max(rs) * 1000))
+                print('FATIA %s h=%3.0f mm: %d voltas: %s' % (s, hh * 1000, len(comps), '; '.join(desc)))
+                bm.free()
+            continue
+        h_col = min(cuff - 0.02, CANO_CAP)
+        sock = build_sock(s, h_col + SOCK_ABOVE, sock_mat)
+        sock_tree = BVHTree.FromObject(sock, bpy.context.evaluated_depsgraph_get())
+        rebuild_shaft(shoe, s, sock_tree, h_col)
+        push_out_of(shoe, sock_tree, SHOE_GAP)
+        # Normais da forma nova (as do GLB do HY ficavam erradas onde a parede andou e no cano refeito).
+        set_active(shoe)
+        bpy.ops.mesh.customdata_custom_splitnormals_clear()
+        bpy.ops.object.shade_smooth()
+        # Pesos da meia: os da pele logo abaixo de cada vértice já alisado (o alisamento escorrega o vértice alguns mm
+        # pela pele; com os pesos do vértice de origem a meia entrava na pele no tornozelo dobrado).
+        for g in list(sock.vertex_groups):
+            sock.vertex_groups.remove(g)
+        finish_weights(sock, body)
+        copy_normals(sock, body)
+        finish_weights(shoe, sock)
+        out[s] = (shoe, sock, h_col)
+
+    # Exporta: os dois tênis e as duas meias, no esqueleto.
+    for img in bpy.data.images:
+        if img.size[0] > 1024:
+            img.scale(1024, 1024 * img.size[1] // img.size[0])
+    # Só os tênis, as meias e o esqueleto (o corpo fica na cena para a conferência abaixo).
+    keep = {o.name for pair in out.values() for o in pair[:2]}
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in bpy.data.objects:
+        o.select_set(o.name in keep or o.type == 'ARMATURE')
+    bpy.ops.export_scene.gltf(filepath=OUT, export_format='GLB', use_selection=True, export_animations=False,
+                              export_skins=True, export_yup=True, export_image_format='WEBP', export_jpeg_quality=85)
+    print('VESTIR OK tenis', OUT, {s: sum(len(p.vertices) - 2 for p in v[0].data.polygons) for s, v in out.items()})
+
+    # ---------------------------------------------------------------- conferência nas poses dos clipes
+    # Cada vértice da meia fica preso ao ponto da pele logo abaixo dele (no bind, coordenadas baricêntricas no triângulo
+    # da pele) e cada vértice do tênis perto da meia, ao ponto da meia abaixo dele. Em cada pose dos 38 clipes do jogo
+    # (o Blender faz a mesma conta de pele do three.js: soma linear das 4 influências), a distância com sinal até esse
+    # ponto, pela normal do triângulo posado: negativa = atravessou. Mede a peça contra a superfície que ela veste, sem
+    # confundir com outra parte do corpo que passe perto (perna cruzando).
+    def tri_mesh(obj):
+        me = obj.data
+        return [v.co.copy() for v in me.vertices], [tuple(pl.vertices) for pl in me.polygons]
+
+    def anchors(src, pts):
+        verts, tris = tri_mesh(src)
+        tree = BVHTree.FromPolygons(verts, tris)
+        res = []
+        for p in pts:
+            loc, _, fi, dist = tree.find_nearest(p)
+            a, b, c = (verts[k] for k in tris[fi])
+            v0, v1, v2 = b - a, c - a, loc - a
+            d00, d01, d11, d20, d21 = v0.dot(v0), v0.dot(v1), v1.dot(v1), v2.dot(v0), v2.dot(v1)
+            den = d00 * d11 - d01 * d01 or 1e-12
+            wb = (d11 * d20 - d01 * d21) / den
+            wc = (d00 * d21 - d01 * d20) / den
+            res.append((tris[fi], (1 - wb - wc, wb, wc)))
+        return res
+
+    def gap(anc, posed_src, flip, p):
+        (i0, i1, i2), (w0, w1, w2) = anc
+        a, b, c = posed_src[i0], posed_src[i1], posed_src[i2]
+        n = (b - a).cross(c - a)
+        if n.length < 1e-12:
+            return 1.0
+        n = n.normalized() * flip
+        return (p - (a * w0 + b * w1 + c * w2)).dot(n)
+
+    bind = {s: (bone_head('foot_' + s), bone_head('calf_' + s), bone_head('ball_' + s)) for s in out}
+
+    def where(s, p_bind):
+        A, K, Bl = bind[s]
+        ax = (K - A).normalized()
+        h = (p_bind - A).dot(ax)
+        r = (p_bind - A) - ax * h
+        fwd = Bl - A
+        fwd = (fwd - ax * fwd.dot(ax)).normalized()
+        side = ax.cross(fwd)
+        ang = math.degrees(math.atan2(r.dot(side), r.dot(fwd)))
+        part = 'frente' if abs(ang) < 45 else 'trás' if abs(ang) > 135 else ('lado ' + ('+' if ang > 0 else '-'))
+        return 'h=%.0f mm %s' % (h * 1000, part)
+
+    # A pele do corpo tem a mesma orientação da pele soldada (outward); a meia aponta para fora (conferido ao criar).
+    probe = {}
+    for s, (shoe, sock, _) in out.items():
+        sock_pts = [v.co.copy() for v in sock.data.vertices]
+        st = BVHTree.FromPolygons(*tri_mesh(sock))
+        near = [i for i, v in enumerate(shoe.data.vertices) if (lambda r: r[0] is not None and (v.co - r[0]).dot(r[1]) < 0.012)(st.find_nearest(v.co))]
+        probe[s] = (anchors(body, sock_pts), near, anchors(sock, [shoe.data.vertices[i].co.copy() for i in near]))
+    rows = {s: {'meia_pele': [], 'meia_pele_vista': [], 'tenis_meia': []} for s in out}
+    # A parte da meia que aparece: acima de 1 cm abaixo da boca do tênis (o resto fica dentro do calçado).
+    shown = {}
+    for s, (shoe, sock, cuff) in out.items():
+        A, K, _ = bind[s]
+        ax = (K - A).normalized()
+        shown[s] = [i for i, v in enumerate(sock.data.vertices) if (v.co - A).dot(ax) > cuff - 0.01]
+    if not arm.animation_data:
+        arm.animation_data_create()
+    scene = bpy.context.scene
+    poses = [(None, None)] + [(a, k) for a in bpy.data.actions for k in range(7)]
+    for act, k in poses:
+        if act is None:
+            arm.animation_data.action = None
+            tag = 'bind'
+        else:
+            arm.animation_data.action = act
+            if getattr(act, 'slots', None) and hasattr(arm.animation_data, 'action_slot'):
+                arm.animation_data.action_slot = act.slots[0]
+            f0, f1 = act.frame_range
+            scene.frame_set(int(round(f0 + (f1 - f0) * k / 6)))
+            tag = '%s@%d' % (act.name, scene.frame_current)
+        dg = bpy.context.evaluated_depsgraph_get()
+        be = body.evaluated_get(dg)
+        bverts = [be.matrix_world @ v.co for v in be.data.vertices]
+        for s, (shoe, sock, _) in out.items():
+            a_sock, near, a_shoe = probe[s]
+            se = sock.evaluated_get(dg)
+            sverts = [se.matrix_world @ v.co for v in se.data.vertices]
+            d, i = min((gap(a_sock[i], bverts, outward, sverts[i]), i) for i in range(len(sverts)))
+            rows[s]['meia_pele'].append((d, tag, where(s, sock.data.vertices[i].co)))
+            d, i = min((gap(a_sock[i], bverts, outward, sverts[i]), i) for i in shown[s])
+            rows[s]['meia_pele_vista'].append((d, tag, where(s, sock.data.vertices[i].co)))
+            he = shoe.evaluated_get(dg)
+            if near:
+                d, i = min((gap(a_shoe[j], sverts, 1, he.matrix_world @ he.data.vertices[near[j]].co), j) for j in range(len(near)))
+                rows[s]['tenis_meia'].append((d, tag, where(s, shoe.data.vertices[near[i]].co)))
+    for s, r in rows.items():
+        for key in ('meia_pele', 'meia_pele_vista', 'tenis_meia'):
+            r[key].sort()
+            bad = sum(1 for d, _, _ in r[key] if d < 0)
+            print('CONFERE %s %s: %d de %d poses com atravessamento; piores: %s' % (s, key, bad, len(r[key]), '; '.join('%.1f mm %s (%s)' % (d * 1000, t, w) for d, t, w in r[key][:5])))
+    sys.exit(0)
+
+
+if KIND == 'tenis':
+    vestir_tenis()
+
+
 
 def fit(lo, hi):
     """Escala (não uniforme) e move a peça para ocupar a caixa lo..hi."""
@@ -164,61 +928,6 @@ elif KIND == 'bermuda':
     lo, hi = region(knee, waist)
     pad = Vector((0.035 * H, 0.03 * H, 0))
     fit(Vector((lo.x - pad.x, lo.y - pad.y, knee)), Vector((hi.x + pad.x, hi.y + pad.y, waist)))
-else:  # tenis: orienta (bico para a frente do corpo) e encaixa no pé direito
-    side_x = bone_head('foot_r').x
-    foot = [v for v in bv if v.z <= bone_head('foot_r').z + 0.04 * H and (v.x > 0) == (side_x > 0)]
-    fmin, fmax = box(foot)
-    forward = (bone_head('ball_r') - bone_head('foot_r'))
-    forward.z = 0
-    forward.normalize()
-    # Eixo comprido da peça vira o eixo para a frente; o calcanhar é o lado com o cano mais alto.
-    pts = world_verts(piece)
-    pmin, pmax = box(pts)
-    size = pmax - pmin
-    long_axis = 0 if size.x >= size.y else 1
-    mid = (pmin[long_axis] + pmax[long_axis]) / 2
-    zcut = pmin.z + 0.6 * size.z
-    tall = [p for p in pts if p.z > zcut]
-    heel_sign = 1 if sum(p[long_axis] for p in tall) / max(1, len(tall)) > mid else -1
-    toe_dir = Vector((0, 0, 0))
-    toe_dir[long_axis] = -heel_sign
-    rot = toe_dir.to_track_quat('Y', 'Z').to_matrix().to_4x4()
-    want = forward.to_track_quat('Y', 'Z').to_matrix().to_4x4()
-    piece.data.transform(want @ rot.inverted())
-    piece.data.update()
-    # Encaixe pelo pé de verdade (corpo descalço): comprimento = pé + folga, largura = pé + folga, o calcanhar do tênis
-    # um pouco atrás do calcanhar do pé e a sola na altura da sola (o jogo prega a sola do corpo no chão). A altura segue
-    # a média das duas escalas.
-    side = forward.cross(Vector((0, 0, 1))).normalized()
-    def ext(points, axis):
-        vals = [p.dot(axis) for p in points]
-        return min(vals), max(vals)
-    sole = [v for v in foot if v.z <= fmin.z + 0.03 * H]
-    f_lo, f_hi = ext(sole, forward)
-    w_lo, w_hi = ext(sole, side)
-    pts = world_verts(piece)
-    p_lo, p_hi = ext(pts, forward)
-    q_lo, q_hi = ext(pts, side)
-    s_len = ((f_hi - f_lo) * 1.06 + 0.012 * H) / (p_hi - p_lo)
-    s_wid = ((w_hi - w_lo) * 1.15 + 0.008 * H) / (q_hi - q_lo)
-    s_up = (s_len + s_wid) / 2
-    sc = Matrix.Identity(4)
-    for i in range(3):
-        for j in range(3):
-            sc[i][j] = forward[i] * forward[j] * s_len + side[i] * side[j] * s_wid + (1 if i == j == 2 else 0) * s_up
-    piece.data.transform(sc)
-    piece.data.update()
-    pts = world_verts(piece)
-    p_lo, p_hi = ext(pts, forward)
-    q_lo, q_hi = ext(pts, side)
-    pmin, pmax = box(pts)
-    heel_gap = 0.006 * H
-    shift = forward * ((f_lo - heel_gap) - p_lo) + side * ((w_lo + w_hi) / 2 - (q_lo + q_hi) / 2)
-    shift.z = fmin.z - pmin.z
-    piece.data.transform(Matrix.Translation(shift))
-    piece.data.update()
-    print('tênis: escala comprimento %.3f largura %.3f' % (s_len, s_wid))
-
 # ---------------------------------------------------------------- limpeza
 # Some com pedaços soltos pequenos (cordão do calção, etiqueta da gola): < 2% dos vértices da peça.
 set_active(piece)
@@ -609,34 +1318,7 @@ if OVER_BLEND:
                 groups[b].remove([idx])
         OVER_K[idx] = k
     print('barra com os pesos da peça de baixo:', len(OVER_BLEND))
-if KIND == 'tenis':
-    # Pesos copiados da pele do pé do corpo: cada vértice do tênis pega a média de 4 vértices mais próximos da pele
-    # (no bind, com peso pela distância), do mesmo pé. Assim o tênis segue o que a pele segue: o cano gira com a canela
-    # (calf_r, a pele acima do tornozelo), o calcanhar e a sola com foot_r, a biqueira com ball_r. Antes era rígido em
-    # foot_r/ball_r: ao flexionar o tornozelo a canela saía do cano e a pele aparecia por cima da borda (docs/20).
-    from mathutils.kdtree import KDTree
-    bnames = {g.index: g.name for g in body.vertex_groups}
-    ztop = max((piece.matrix_world @ v.co).z for v in piece.data.vertices) + 0.03
-    skin = [i for i, p in enumerate(bv) if (p.x > 0) == (side_x > 0) and p.z <= ztop]
-    kd = KDTree(len(skin))
-    for i in skin:
-        kd.insert(bv[i], i)
-    kd.balance()
-    bw = {i: {bnames[g.group]: g.weight for g in body.data.vertices[i].groups if g.weight > 0} for i in skin}
-    for g in list(groups):
-        groups.remove(g)
-    for v in piece.data.vertices:
-        acc, tot = {}, 0.0
-        for _, i, d in kd.find_n(piece.matrix_world @ v.co, 4):
-            wgt = 1 / (d + 1e-4)
-            tot += wgt
-            for b, x in bw[i].items():
-                acc[b] = acc.get(b, 0) + x * wgt
-        for b, x in acc.items():
-            if b not in groups:
-                groups.new(name=b)
-            groups[b].add([v.index], x / tot, 'REPLACE')
-elif cloth_bones:
+if cloth_bones:
     vs = [piece.matrix_world @ v.co for v in piece.data.vertices]
     for nm, parent, h, t in cloth_bones:
         groups.new(name=nm)
@@ -699,179 +1381,12 @@ bpy.ops.object.vertex_group_normalize_all(lock_active=False)
 bpy.ops.object.vertex_group_limit_total(limit=4)
 bpy.ops.object.vertex_group_clean(group_select_mode='ALL', limit=0.01)
 
-# Pé esquerdo espelhado.
-if KIND == 'tenis':
-    left = piece.copy()
-    left.data = piece.data.copy()
-    left.name = 'tenis_l'
-    bpy.context.collection.objects.link(left)
-    left.data.transform(Matrix.Scale(-1, 4, Vector((1, 0, 0))))
-    bm = bmesh.new()
-    bm.from_mesh(left.data)
-    bmesh.ops.reverse_faces(bm, faces=bm.faces)
-    bm.to_mesh(left.data)
-    bm.free()
-    for g in left.vertex_groups:
-        g.name = g.name.replace('_r', '_l')
-    piece.name = 'tenis_r'
-
-# ---------------------------------------------------------------- meia
-# Meia: envelope fechado e procedural (não copia faces do corpo, que têm furos). Tubo em anéis de 1 cm ao longo do
-# eixo da perna (do topo da meia até o tornozelo), curvando no tornozelo e seguindo o pé até a ponta (ankle → ball →
-# ponta). Cada setor de cada anel (24 setores) tem o maior raio da pele do corpo ali + 3,5 mm, suavizado entre setores
-# e anéis: a pele fica dentro por construção. Ponta fechada, a sola é o fundo do tubo, topo aberto com faixa mais
-# grossa (ribana). Pesos por trecho: calf na perna, foot no pé, ball na frente do pé; sem copiar da pele.
-def sock_envelope(side, top, mat):
-    N = 24
-    A = bone_head('foot_' + side)
-    K = bone_head('calf_' + side)
-    Bh = bone_head('ball_' + side)
-    B = Vector((Bh.x, Bh.y, 0.035))
-    u = (top - A.z) / (K.z - A.z)
-    P = A + (K - A) * u
-    up_dir = (P - A).normalized()
-    fwd = Vector((B.x - A.x, B.y - A.y, 0)).normalized()
-    Q1 = A + up_dir * 0.05
-    Q2 = A + fwd * 0.05
-    T = B + fwd * 0.035
-    dense = []
-
-    def seg(p0, p1):
-        n = max(2, int((p1 - p0).length / 0.002))
-        for k in range(n):
-            dense.append(p0 + (p1 - p0) * (k / n))
-    seg(P, Q1)
-    m0 = len(dense)
-    for k in range(20):
-        t = k / 20
-        dense.append((1 - t) ** 2 * Q1 + 2 * (1 - t) * t * A + t * t * Q2)
-    m1 = len(dense)
-    seg(Q2, B)
-    iB = len(dense)
-    seg(B, T)
-    dense.append(T)
-    S = [0.0]
-    for k in range(1, len(dense)):
-        S.append(S[-1] + (dense[k] - dense[k - 1]).length)
-    sA = S[(m0 + m1) // 2]
-    sB = S[iB]
-    # Pele do lado (bind): é ela que a meia tem de cercar.
-    bpts = [q for q in bv if (q.x > 0) == (A.x > 0) and q.z <= top + 0.03]
-    ring_s = [k * 0.01 for k in range(int(S[-1] / 0.01) + 1)]
-    rings = []
-    for s_ in ring_s:
-        j = min(range(len(S)), key=lambda q: abs(S[q] - s_))
-        c = dense[j]
-        t = (dense[min(j + 1, len(dense) - 1)] - dense[max(j - 1, 0)]).normalized()
-        e1 = t.cross(Vector((0, 0, 1)))
-        if e1.length < 1e-3:
-            e1 = t.cross(Vector((1, 0, 0)))
-        e1.normalize()
-        e2 = t.cross(e1)
-        rmax = [0.0] * N
-        for q in bpts:
-            d = q - c
-            if abs(d.dot(t)) > 0.006:
-                continue
-            x_, y_ = d.dot(e1), d.dot(e2)
-            kk = int(((math.atan2(y_, x_) + math.pi) / (2 * math.pi)) * N) % N
-            rmax[kk] = max(rmax[kk], math.hypot(x_, y_))
-        if max(rmax) == 0:
-            rmax = [0.03] * N
-        for k in range(N):
-            if rmax[k] == 0:
-                rmax[k] = max(rmax[(k - 1) % N], rmax[(k + 1) % N])
-        rs = [max(rmax[k], 0.5 * rmax[k] + 0.25 * (rmax[(k - 1) % N] + rmax[(k + 1) % N])) for k in range(N)]
-        rings.append([c, t, e1, e2, rs, s_])
-    # Suaviza entre anéis (máximo com a média dos vizinhos): sem degraus, e a pele continua dentro.
-    raw = [r[4] for r in rings]
-    for i, r in enumerate(rings):
-        nb = [raw[max(0, i - 1)], raw[i], raw[min(len(rings) - 1, i + 1)]]
-        r[4] = [max(raw[i][k], sum(x[k] for x in nb) / 3) + 0.0035 for k in range(N)]
-    # Ribana: 1,5 cm do topo um pouco mais grossa; ponta que fecha em três anéis.
-    for i, r in enumerate(rings):
-        if r[5] < 0.015:
-            r[4] = [x + 0.002 for x in r[4]]
-    last = len(rings) - 1
-    for i, f in zip(range(last - 2, last + 1), (0.5, 0.2, 0.02)):
-        rings[i][4] = [x * f for x in rings[i][4]]
-    total = S[-1]
-
-    def weights(s_):
-        # calf até 4 cm antes do tornozelo, depois foot; ball nos 2 cm em volta da junta da bola; ponta em ball.
-        if s_ < sA - 0.04:
-            return {'calf': 1.0}
-        if s_ < sA + 0.04:
-            fw = smooth((s_ - (sA - 0.04)) / 0.08)
-            return {'calf': 1 - fw, 'foot': fw}
-        if s_ < sB - 0.02:
-            return {'foot': 1.0}
-        if s_ < sB + 0.02:
-            bw = smooth((s_ - (sB - 0.02)) / 0.04)
-            return {'foot': 1 - bw, 'ball': bw}
-        return {'ball': 1.0}
-    bm = bmesh.new()
-    rows, wts = [], []
-    for c, t, e1, e2, rs, s_ in rings:
-        row = []
-        for k in range(N):
-            ang = (k + 0.5) / N * 2 * math.pi - math.pi
-            q = c + (e1 * math.cos(ang) + e2 * math.sin(ang)) * rs[k]
-            q.z = max(q.z, 0.002)
-            row.append(bm.verts.new(q))
-        rows.append(row)
-        wts.append(weights(s_))
-    for i in range(len(rows) - 1):
-        for k in range(N):
-            k2 = (k + 1) % N
-            bm.faces.new((rows[i][k], rows[i][k2], rows[i + 1][k2], rows[i + 1][k]))
-    tip = bm.verts.new(rings[-1][0] + rings[-1][1] * 0.001)
-    for k in range(N):
-        k2 = (k + 1) % N
-        bm.faces.new((rows[-1][k], rows[-1][k2], tip))
-    bm.normal_update()
-    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
-    for f in bm.faces:
-        f.smooth = True  # normais suaves: sem isso o exportador separa os vértices por face (a casca abria)
-    me = bpy.data.meshes.new('meia_' + side)
-    bm.to_mesh(me)
-    bm.free()
-    me.materials.append(mat)
-    ob = bpy.data.objects.new('meia_' + side, me)
-    bpy.context.collection.objects.link(ob)
-    groups = {n: ob.vertex_groups.new(name=n + '_' + side) for n in ('calf', 'foot', 'ball')}
-    for i, w in enumerate(wts):
-        for k in range(N):
-            for n, x in w.items():
-                if x > 1e-4:
-                    groups[n].add([i * N + k], x, 'REPLACE')
-    for n, x in wts[-1].items():
-        groups[n].add([len(rings) * N], x, 'REPLACE')
-    mod = ob.modifiers.new('Armature', 'ARMATURE')
-    mod.object = arm
-    print('meia', side, 'anéis', len(rings), 'vértices', len(me.vertices), 'comprimento %.3f' % total)
-    return ob
-
-
-if KIND == 'tenis':
-    top = max((piece.matrix_world @ v.co).z for v in piece.data.vertices) + 0.05
-    mat = bpy.data.materials.new('Meia')
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes['Principled BSDF']
-    bsdf.inputs['Base Color'].default_value = (0.94, 0.94, 0.94, 1)
-    bsdf.inputs['Roughness'].default_value = 0.9
-    for side in ('r', 'l'):
-        sock_envelope(side, top, mat)
-    keep_socks = {'meia_r', 'meia_l'}
-else:
-    keep_socks = set()
-
 # ---------------------------------------------------------------- exporta só a peça
 # Texturas do HY vêm em 4K (GLB de 25–45 MB): 1024 px em WebP basta para uma peça vista de longe.
 for img in bpy.data.images:
     if img.size[0] > 1024:
         img.scale(1024, 1024 * img.size[1] // img.size[0])
-keep = {piece.name} | ({'tenis_l'} | keep_socks if KIND == 'tenis' else set())
+keep = {piece.name}
 print('objetos antes do export:', [(o.name, o.type) for o in bpy.data.objects])
 for o in [o for o in bpy.data.objects if o.type == 'MESH' and o.name not in keep]:
     bpy.data.objects.remove(o, do_unlink=True)

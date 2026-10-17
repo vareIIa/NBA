@@ -9,8 +9,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { PlayerAnimator } from '../anim/PlayerAnimator';
-import { cutBelowCuff, hideCoveredTriangles } from './BodyCover';
-import { CuffBins, CuffPull, type Cuff } from './CuffPull';
+import { bindBonePosition, hideCoveredTriangles } from './BodyCover';
 import { LimbPush, type PushMode } from './LimbPush';
 import { loadZoneMask, paintZones } from './GearColors';
 
@@ -28,6 +27,8 @@ export type GearColors = Partial<Record<keyof GearSet, readonly string[]>>;
 
 /** Materiais do boneco: o tênis some sob o calçado novo; camiseta e calção justos viram pele sob a roupa solta. */
 const BodyShoeMaterials = ['Tenis', 'Sola'];
+/** Pele que fica funda sob a roupa (osso dominante), longe das aberturas: sai até mais longe do tecido (coverBody). */
+const DeepUnderGear = /^(pelvis|spine_01|hip_[lr])$/;
 const BodyUnderMaterials: Partial<Record<keyof GearSet, string>> = { jersey: 'Uniforme', shorts: 'Calcao' };
 
 export interface ClothParams {
@@ -38,9 +39,12 @@ export interface ClothParams {
   maxStep: number; // m: teleporte (reset, replay) não vira chicotada
 }
 
-/** Regata: barra solta, balança bastante. Bermuda: a perna segue a coxa; o pano só tremula por cima. */
+/**
+ * Regata: barra solta, balança (até 35°: no agachamento fundo o pano das costas pende para o chão, e com 55° as costas
+ * abriam como tampa). Bermuda: a perna segue a coxa; o pano só tremula por cima.
+ */
 export const ClothTuning: Record<'jersey' | 'shorts', ClothParams> = {
-  jersey: { stiffness: 55, damping: 0.9, gravity: 9.8, maxAngle: THREE.MathUtils.degToRad(55), maxStep: 0.25 },
+  jersey: { stiffness: 55, damping: 0.9, gravity: 9.8, maxAngle: THREE.MathUtils.degToRad(35), maxStep: 0.25 },
   shorts: { stiffness: 140, damping: 0.85, gravity: 6, maxAngle: THREE.MathUtils.degToRad(28), maxStep: 0.25 },
 };
 
@@ -49,6 +53,7 @@ interface ClothBone {
   tune: ClothParams;
   restLocal: THREE.Quaternion;
   tailLocal: THREE.Vector3; // ponta do pano no espaço do osso, em repouso
+  core: [THREE.Bone, THREE.Bone]; // eixo do que o pano veste (tronco ou coxa): a ponta não chega mais perto dele que em repouso
   p: THREE.Vector3; // ponta simulada (mundo)
   prev: THREE.Vector3;
   primed: boolean;
@@ -107,9 +112,6 @@ export class PlayerGear {
   /** O que vestir mudou no corpo, para o dispose desfazer (trocar de roupa no menu, docs/26). */
   private readonly undo: (() => void)[] = [];
   private readonly worn: THREE.SkinnedMesh[] = [];
-  /** Tênis: boca e raio do cano por pé, e a pele puxada para dentro (CuffPull). */
-  private cuffs: Cuff[] = [];
-  private cuff: CuffPull | null = null;
 
   private constructor(private readonly animator: PlayerAnimator) {}
 
@@ -138,9 +140,6 @@ export class PlayerGear {
     for (const [kind, scene] of scenes) gear.wear(kind, scene, colors?.[kind]);
     gear.coverBody();
     gear.buildCapsules();
-    // Pele dentro do cano (CuffPull): a boca e o raio de cada tênis vêm do GLB vestido.
-    if (gear.cuffs.length > 0)
-      gear.cuff = new CuffPull(gear.bodyMeshes(), { foot: ['foot_r', 'foot_l'].map((n) => animator.bone(n)), calf: ['calf_r', 'calf_l'].map((n) => animator.bone(n)) }, gear.cuffs);
     // Colisão dos braços com a roupa vestida (regata e bermuda são mais largas que o corpo).
     animator.fitArmClearance([...gear.bodyMeshes(), ...gear.gearMeshes()]);
     return gear;
@@ -160,9 +159,6 @@ export class PlayerGear {
     this.cloth.length = 0;
     this.pushers.length = 0;
     this.capsules.length = 0;
-    this.cuff?.off();
-    this.cuff = null;
-    this.cuffs = [];
     while (this.undo.length > 0) this.undo.pop()!();
     this.animator.fitArmClearance(this.bodyMeshes());
   }
@@ -245,10 +241,31 @@ export class PlayerGear {
     this.animator.root.updateMatrixWorld(true);
     const body = this.bodyMeshes();
     const before = body.map((m) => m.geometry);
-    this.coveredTriangles = hideCoveredTriangles(body, this.gearMeshes());
-    // Tênis: some a pele abaixo da boca do cano (corte pela altura, sem dentes); o CuffPull puxa o que sobra para dentro.
-    this.cuffs = this.shoeCuffs();
-    if (this.cuffs.length > 0) cutBelowCuff(body, this.cuffs);
+    // A meia (meia_r, meia_l, no GLB do tênis) é a casca da pele do pé e da canela, com os mesmos pesos: a pele sob ela
+    // sai por aqui como sob a roupa, e a borda que sobra fica sob o lábio da boca da meia (vestir.py, vestir_tenis).
+    // Sai a pele a até 2,5 cm do tecido pela normal: onde a peça é solta perto de uma abertura (a barra da bermuda, a
+    // cava) a pele fica, e quem olha pela abertura vê a coxa, não o recorte serrilhado da pele escondida. A pele funda sob
+    // a roupa (quadril, virilha, os 40% de cima da coxa, barriga baixa e lombar) sai com peça a até 12 cm em qualquer
+    // direção: a bermuda costurada (Tools/Animacao/costurar.py) pende à frente da virilha e o gancho passa longe dela, a
+    // regata fica até 7 cm da lombar, e só pelo raio da normal a pele (o short esculpido no corpo do HY, branco) furava a
+    // frente da bermuda quando a coxa dobrava.
+    const deep = (mesh: THREE.SkinnedMesh, p: Float32Array, dom: string[]): Float32Array => {
+      const femur = (['l', 'r'] as const).map((s) => [bindBonePosition(mesh, `thigh_${s}`), bindBonePosition(mesh, `calf_${s}`)] as const);
+      const out = new Float32Array(dom.length);
+      for (let i = 0; i < dom.length; i++) {
+        let under = DeepUnderGear.test(dom[i]!);
+        const thigh = /^thigh_([lr])$/.exec(dom[i]!);
+        if (thigh) {
+          const [a, b] = femur[thigh[1] === 'l' ? 0 : 1]!;
+          v1.set(p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!).sub(a);
+          v2.subVectors(b, a);
+          under = v1.dot(v2) / v2.lengthSq() < 0.4;
+        }
+        out[i] = under ? 0.12 : 0;
+      }
+      return out;
+    };
+    this.coveredTriangles = hideCoveredTriangles(body, this.gearMeshes(), 0.025, deep);
     // O BodyCover troca a geometria do corpo por uma cópia sem os triângulos cobertos: o dispose devolve a original.
     this.undo.push(() =>
       body.forEach((m, i) => {
@@ -257,68 +274,6 @@ export class PlayerGear {
         m.geometry = before[i]!;
       }),
     );
-  }
-
-  /**
-   * Tornozelo, joelho, raio interno do cano e altura da boca de cada pé, no bind do GLB do tênis (o pé direito primeiro).
-   * Boca = ponto mais alto do tênis; raio = 10º percentil da distância ao eixo da canela, nos 3 cm abaixo da boca, menos
-   * 4 mm de tecido (o cano fica por fora da pele; a pele pulada até esse raio não chega à parede).
-   */
-  private shoeCuffs(): Cuff[] {
-    // Meia (meia_r, meia_l, no GLB do tênis): a boca é o topo da meia, e a pele abaixo dela sai e fica dentro da meia.
-    const shoes = this.gearMeshes().filter((m) => m.userData.gear === 'shoes' && m.name.startsWith('meia'));
-    if (shoes.length === 0) return [];
-    const boneBind = (mesh: THREE.SkinnedMesh, name: string): THREE.Vector3 | null => {
-      const i = mesh.skeleton.bones.findIndex((b) => b.name === name);
-      if (i < 0) return null;
-      return new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().copy(mesh.skeleton.boneInverses[i]).invert());
-    };
-    let mouth = -Infinity;
-    for (const mesh of shoes) {
-      const pos = mesh.geometry.getAttribute('position');
-      for (let i = 0; i < pos.count; i++) mouth = Math.max(mouth, pos.getY(i));
-    }
-    const out: Cuff[] = [];
-    for (const side of ['r', 'l'] as const) {
-      const ankle = boneBind(shoes[0], `foot_${side}`);
-      const knee = boneBind(shoes[0], `calf_${side}`);
-      if (!ankle || !knee) return [];
-      const axis = knee.clone().sub(ankle);
-      const len = axis.length();
-      axis.divideScalar(len);
-      // Perfil do cano por altura: em cada faixa de 1 cm, o raio externo do tênis em 12 setores ao redor da canela (o
-      // maior raio de cada setor, do tecido de fora) e o menor desses raios, menos 3 mm. A pele puxada até esse raio fica
-      // dentro do tênis em todo o anel. (O forro de dentro, a 1,5 cm do eixo, não entra: fica dentro do tecido de fora.)
-      const e1 = Math.abs(axis.x) < 0.9 ? new THREE.Vector3(1, 0, 0).cross(axis).normalize() : new THREE.Vector3(0, 0, 1).cross(axis).normalize();
-      const e2 = axis.clone().cross(e1);
-      const SECT = 12;
-      const sect: number[][] = Array.from({ length: CuffBins }, () => new Array<number>(SECT).fill(0));
-      const sideX = Math.sign(ankle.x);
-      for (const m of shoes) {
-        const pos = m.geometry.getAttribute('position');
-        for (let i = 0; i < pos.count; i++) {
-          if (Math.sign(pos.getX(i)) !== sideX) continue;
-          const rel = new THREE.Vector3(pos.getX(i) - ankle.x, pos.getY(i) - ankle.y, pos.getZ(i) - ankle.z);
-          const h = rel.dot(axis);
-          const b = Math.floor(h * 100);
-          if (b < 0 || b >= CuffBins) continue;
-          const pa = rel.clone().addScaledVector(axis, -h);
-          const perp = pa.length();
-          const k = Math.floor(((Math.atan2(pa.dot(e2), pa.dot(e1)) + Math.PI) / (2 * Math.PI)) * SECT) % SECT;
-          sect[b][k] = Math.max(sect[b][k], perp);
-        }
-      }
-      const prof = sect.map((row) => {
-        const vals = row.filter((x) => x > 0);
-        if (vals.length === 0) return NaN;
-        // 25º percentil dos setores (não o mínimo: um setor só com miolo do tecido puxava o perfil para 1 cm).
-        vals.sort((a, b) => a - b);
-        return Math.min(0.06, Math.max(0.012, vals[Math.floor(0.25 * (vals.length - 1))] - 0.003));
-      });
-      for (let b = 0; b < CuffBins; b++) if (Number.isNaN(prof[b])) prof[b] = b > 0 ? prof[b - 1] : 0.03;
-      out.push({ ankle, knee, prof, mouth });
-    }
-    return out;
   }
 
   /** Distância média dos vértices do corpo (com `from` como osso dominante) ao eixo from→to, na pose atual. */
@@ -383,10 +338,14 @@ export class PlayerGear {
     // Modo por peça: 'in' = o membro passa por dentro da peça (o tecido sai por cima); 'out' = cruza por fora (o tecido
     // recua para trás dele). Ausente = não empurra (canela não encosta na regata; braço não entra na bermuda).
     const modes: Record<'jersey' | 'shorts', Partial<Record<string, PushMode>>> = {
-      // Sem a coxa: a barra da regata segue o quadril e a bermuda (vestir.py), e a cápsula da coxa a empurrava em lasca
-      // quando a perna subia; quem cobre a coxa é a bermuda.
-      jersey: { upperarm: 'in', lowerarm: 'out', hand: 'out' },
-      shorts: { thigh: 'in', calf: 'in', knee: 'in', lowerarm: 'out', hand: 'out' },
+      // Regata costurada (Tools/Animacao/costurar.py): solta (1,2 cm no peito, 7 mm nas alças) e com a cava aberta, o
+      // braço e a mão passam por fora dela. A ponta da cápsula do braço, na junta do ombro, alcançava a borda da cava e
+      // a serrilhava no giro; a do antebraço e a da mão recuavam a barra solta em degrau.
+      jersey: {},
+      // Bermuda costurada (Tools/Animacao/costurar.py): a perna segue a coxa pelos pesos (a coxa entra ao longo do
+      // fêmur) e a pele do alto da coxa sai sob ela (coverBody); só o joelho (a barra não dobra com ele) precisa
+      // empurrar. A cápsula da coxa, com o raio médio dela, estufava a perna em vinco.
+      shorts: { knee: 'in', lowerarm: 'out', hand: 'out' },
     };
     const limbs: [string, string, string][] = [];
     for (const side of ['l', 'r'])
@@ -443,7 +402,10 @@ export class PlayerGear {
     }
     if (total > 0) tail.divideScalar(total);
     else tail.set(0, -0.2, 0);
-    return { bone, tune, restLocal: bone.quaternion.clone(), tailLocal: tail, p: new THREE.Vector3(), prev: new THREE.Vector3(), primed: false };
+    // Pano da perna da bermuda (pendurado na coxa): o eixo é a coxa; da regata, o tronco.
+    const side = /^thigh_([lr])$/.exec(bone.parent!.name)?.[1];
+    const core: [THREE.Bone, THREE.Bone] = side ? [this.animator.bone(`thigh_${side}`), this.animator.bone(`calf_${side}`)] : [this.animator.bone('pelvis'), this.animator.bone('neck_01')];
+    return { bone, tune, restLocal: bone.quaternion.clone(), tailLocal: tail, core, p: new THREE.Vector3(), prev: new THREE.Vector3(), primed: false };
   }
 
   /** Pinta a peça justa do boneco com a cor da pele (aparece pela cava da regata e pela boca da bermuda). */
@@ -487,7 +449,6 @@ export class PlayerGear {
       for (const c of this.cloth) this.stepBone(c, step);
     }
     for (const p of this.pushers) p.update();
-    this.cuff?.update();
   }
 
   /**
@@ -507,6 +468,22 @@ export class PlayerGear {
       const d = p.distanceTo(cN);
       if (d < r && d > 1e-6) p.sub(cN).multiplyScalar(r / d).add(cN);
     }
+  }
+
+  /**
+   * A ponta do pano não chega mais perto do eixo do que veste (tronco, coxa) do que fica em repouso: balança para fora,
+   * não para dentro. No agachamento fundo as costas da regata ficam para cima e a gravidade as puxava para dentro do
+   * corpo (o glúteo e a bermuda atravessavam o pano).
+   */
+  private keepOutOfCore(c: ClothBone, rest: THREE.Vector3): void {
+    c.core[0].getWorldPosition(cA);
+    c.core[1].getWorldPosition(cB);
+    capSeg.set(cA, cB);
+    capSeg.closestPointToPoint(rest, true, cN);
+    const r = cN.distanceTo(rest);
+    capSeg.closestPointToPoint(c.p, true, cN);
+    const d = c.p.distanceTo(cN);
+    if (d < r && d > 1e-6) c.p.sub(cN).multiplyScalar(r / d).add(cN);
   }
 
   private stepBone(c: ClothBone, h: number): void {
@@ -539,6 +516,7 @@ export class PlayerGear {
       dir.copy(rest).applyQuaternion(q2);
     }
     c.p.copy(origin).addScaledVector(dir, len);
+    this.keepOutOfCore(c, target);
     this.collide(c.p, target);
     dir.subVectors(c.p, origin).normalize();
     c.p.copy(origin).addScaledVector(dir, len);

@@ -2,7 +2,8 @@
 // entre as pernas, arremesso, proteção, spin) em câmera lenta, cada uma fotografada de vários lados e de perto (pés,
 // joelho e barra da bermuda, cava, gola, cintura). Um PNG por vista e uma folha por pose (<pasta>/folha_<pose>.png).
 //   node tools/roupa-qa.mjs <pasta> [query]      ex.: node tools/roupa-qa.mjs ../Saved/qa "?tenis=tenis_cimento_4"
-// Variáveis: LAB_BASE (servidor, padrão http://127.0.0.1:5173/), POSES=parado,corrida (só essas), LENTO (padrão 0.12).
+// Variáveis: LAB_BASE (servidor, padrão http://127.0.0.1:5173/), POSES=parado,corrida (só essas), LENTO (padrão 0.12),
+// JS (código rodado na página antes das poses, com `d = window.__debug`; ex.: desligar as molas do pano para comparar).
 import { chromium } from '@playwright/test';
 import { mkdirSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -23,6 +24,7 @@ page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && co
 const query = `?arena=0&menu=0&lento=${slow}${extra ? `&${extra}` : ''}`;
 await page.goto(`${process.env.LAB_BASE ?? 'http://127.0.0.1:5173/'}${query}`);
 await page.waitForFunction(() => window.__garrafao?.ready === true, undefined, { timeout: 90000 });
+if (process.env.JS) await page.evaluate(`{ const d = window.__debug; ${process.env.JS} }`);
 
 // Câmera de inspeção num canvas por cima do jogo: alvo num osso, ângulo em volta do jogador, altura relativa ao alvo.
 await page.evaluate(() => {

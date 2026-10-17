@@ -1,7 +1,8 @@
 /**
  * Cor das zonas da roupa e do tênis (docs/26-aparencia.md, fase 2). Cada peça tem até 4 zonas (principal, detalhe,
- * debrum...), gravadas em assets/look/zonas/<peça>_zonas.webp (canais R, G, B, A = peso de cada zona; web/tools/
- * zonas-cor.py). O shader troca a cor média de cada zona pela escolhida e guarda o relevo da textura (dobras, costuras):
+ * debrum...), gravadas em assets/look/zonas/<peça>_zonas.webp (canais R, G, B, A = peso de cada zona; do tênis, web/
+ * tools/zonas-cor.py; da regata e da bermuda, Tools/Animacao/costurar.py). O shader troca a cor média de cada zona pela
+ * escolhida e guarda o relevo da textura (dobras, costuras):
  *
  *   zOrig  = Σ peso_j × cor original da zona j      (a média que a textura tem ali)
  *   zNew   = Σ peso_j × cor escolhida da zona j
@@ -12,14 +13,16 @@
  * Com a cor escolhida igual à original, zNew = zOrig, croma 1 e força 1: sai a textura exata (a build padrão não muda).
  * Quando a cor muda, o croma cai até 0 (só o brilho do tecido é levado, para o detalhe colorido da textura não virar
  * manchas da cor antiga) e a força cai até 0,3 (o contraste claro-escuro das pinceladas da textura do HY vira listras
- * da cor nova se ficar todo). A pele (SkinTone.ts) usa o mesmo princípio, com croma mínimo maior.
+ * da cor nova se ficar todo). Nas peças de textura assada (PlayerLook.BakedGear: regata e bermuda, cor lisa vezes a
+ * sombra) a força fica 1: a cor nova sai com a mesma sombra das dobras que a original. A pele (SkinTone.ts) usa o mesmo
+ * princípio, com croma mínimo maior.
  *
  * Os uniforms ficam no material (`userData.zones`): trocar de cor no menu só muda uniforms, sem recompilar o shader e
  * sem revestir a peça. O shader entra depois da cor base e do avesso (PlayerGear.insideColor), então o avesso também
  * recebe a cor nova.
  */
 import * as THREE from 'three';
-import { GearZones, MaxZones } from '../build/PlayerLook';
+import { BakedGear, GearZones, MaxZones } from '../build/PlayerLook';
 
 const HexColor = /^#[0-9a-f]{6}$/;
 
@@ -125,6 +128,7 @@ export function paintZones(root: THREE.Object3D, piece: string, colors: readonly
   const mask = masks.get(piece);
   const orig = GearZones[piece];
   if (!mask || !orig) return;
+  const keepShade = BakedGear.has(piece) ? 1 : 0.3;
   root.traverse((o) => {
     const mesh = o as THREE.SkinnedMesh;
     if (!mesh.isSkinnedMesh || mesh.userData.piece !== piece) return;
@@ -142,7 +146,7 @@ export function paintZones(root: THREE.Object3D, piece: string, colors: readonly
         const t = Math.min(1, d / 0.25);
         const k = t * t * (3 - 2 * t);
         u.uZoneC[i]!.value = 1 - k;
-        u.uZoneS[i]!.value = 1 - 0.7 * k;
+        u.uZoneS[i]!.value = 1 - (1 - keepShade) * k;
       }
     }
   });

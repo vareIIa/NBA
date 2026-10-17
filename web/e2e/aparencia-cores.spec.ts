@@ -36,7 +36,8 @@ const paintedZone = (page: Page, kind: 'jersey' | 'shoes', zone: number): Promis
   page.evaluate(
     ([k, z]) => {
       const gear = (window as unknown as { __showroom: { outfit: { gear: { worn: { userData: { gear: string }; material: unknown }[] } | null } } }).__showroom.outfit.gear;
-      const mesh = gear?.worn.find((m) => m.userData.gear === k) as unknown as { material: { userData: { zones?: { uZoneNew: { value: { getHexString: () => string } }[] } } } } | undefined;
+      // A malha pintada da peça (o GLB do tênis traz também as meias, sem zonas, antes dele).
+      const mesh = gear?.worn.find((m) => m.userData.gear === k && (m.material as { userData: { zones?: unknown } }).userData.zones) as unknown as { material: { userData: { zones?: { uZoneNew: { value: { getHexString: () => string } }[] } } } } | undefined;
       const u = mesh?.material.userData.zones?.uZoneNew[z];
       return u ? `#${u.value.getHexString()}` : null;
     },
