@@ -1,0 +1,331 @@
+{
+  "versao": 1,
+  "fonte_doc": "docs/27-dribles-2k.md §2 (régua) e docs/dev/drible-2k/evidencia-A..F.md (E-A..E-F)",
+  "unidades": {
+    "S": "tamanho do corpo: 1 S = 1,45 m num jogador de 1,86 m (ombro médio -> tornozelo médio)",
+    "q": "quadro de 30 fps = 33 ms",
+    "graus": "inclinação + = para a direita do jogador (câmera atrás = direita da tela)",
+    "razao": "adimensional",
+    "m": "metros"
+  },
+  "regra": "Aprovado se alvo_min - tolerancia <= nós <= alvo_max + tolerancia (alvo null = sem limite daquele lado). Golpe com várias fases do quique: vale a pior fase. A margem do pipeline (calibracao) mostra quanto o número do 2K pode estar errado; quando o veredito muda ao descontar o viés medido do pipeline, o comparar marca a linha.",
+  "confianca": { "A": "alta: CSV e leitura visual concordam", "M": "média: só visual ou só CSV, com coerência", "B": "baixa: leitura incerta ou proxy" },
+  "golpes": {
+    "cross_parado": "Crossover parado",
+    "entre_pernas": "Entre as pernas",
+    "behind_back": "Behind-the-back",
+    "hesitacao": "Hesitação",
+    "double_cross": "Double cross",
+    "hesi_cross": "Hesi-cross",
+    "step_back": "Step-back",
+    "btb_correndo": "BTB correndo (RT)",
+    "cross_correndo": "Cross correndo (RT: crossover de ataque)",
+    "drible_parado": "Drible parado (linha de base)",
+    "correndo": "Drible correndo (RT)",
+    "cross_seguidos": "Crossovers em sequência",
+    "btb_btb": "BTB -> BTB (double BTB)",
+    "arranque_parada": "Arranque e parada com a bola (RT)"
+  },
+  "metricas": [
+    {
+      "id": "latencia_corpo", "secao": "2.1", "nome": "Comando -> primeira reação visível do corpo (tronco ou mão > 1 cm ou > 2°)",
+      "unidade": "q", "alvo": [0, 3], "tolerancia": 0.5, "fonte": ["E-A", "E-B"], "confianca": "M", "peso": 5,
+      "medida": { "de": "golpes", "campo": "latencia_corpo_q", "golpes": ["cross_parado", "entre_pernas", "behind_back", "hesitacao", "double_cross", "hesi_cross", "step_back", "btb_correndo", "cross_correndo"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitação 1 e 8 do doc 27 §3: o corpo espera a bola (Freestyle.flushPendingMove/ballReadyForMove guarda o comando até 0,45 s como pendente) e o toque para baixo só sai na volta do stick ao centro (HoopsProStick.earlyFlickExcluded = [Down])."
+    },
+    {
+      "id": "latencia_bola", "secao": "2.1", "nome": "Comando -> bola começar a cruzar (3 cm para o lado novo)",
+      "unidade": "q", "alvo": [1, 3], "tolerancia": 0.5, "fonte": ["E-D"], "confianca": "M", "peso": 4,
+      "medida": { "de": "golpes", "campo": "latencia_bola_q", "golpes": ["cross_parado", "entre_pernas", "behind_back", "btb_correndo", "cross_correndo"] },
+      "nota": "Hesi-cross e double cross ficam de fora: no 2K o 1º tempo deles não cruza (duas batidas / passe lento para o lado da bola).",
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitação 1 (pendente esperando a bola) e PlayerAnimator.holdMoveForBall: o clipe de mocap para antes da soltura até a bola chegar à mão."
+    },
+    {
+      "id": "corpo_antes_da_bola", "secao": "2.1", "nome": "Corpo × bola desacoplados: da reação do corpo à bola chegar ao lado novo",
+      "unidade": "q", "alvo": [14, 24], "tolerancia": 3, "fonte": ["E-A"], "confianca": "B", "peso": 3,
+      "medida": { "de": "golpes", "campo": "corpo_antes_da_bola_q", "golpes": ["cross_parado", "entre_pernas", "behind_back"] },
+      "calibracao": { "tipo": "tempo" },
+      "nota": "Proxy: no 2K o número é do rocker (C2), que não existe aqui; medimos nos golpes que cruzam.",
+      "hipotese": "Limitação 1: o golpe só começa com a bola pronta, então corpo e bola andam juntos (ballReadyForMove) em vez de o corpo vender o golpe antes."
+    },
+    {
+      "id": "pose_neutra", "secao": "2.1", "nome": "Pose neutra entre golpes encadeados (quadros sem ação de drible)",
+      "unidade": "q", "alvo": [0, 0], "tolerancia": 0.5, "fonte": ["E-B", "E-C"], "confianca": "A", "peso": 5,
+      "medida": { "de": "golpes_e_sequencias", "campo": "pose_neutra_q", "golpes": ["double_cross", "hesi_cross", "cross_seguidos", "btb_btb"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitações 2 e 3: janela de combo fixa de 0,15 s sem lista de cancelamento, e a ação termina e volta ao loop base antes do próximo golpe (reset duro do clipe em PlayerAnimator.startAction)."
+    },
+    {
+      "id": "entrada_no_vale", "secao": "2.1", "nome": "Próximo golpe entra no vale da base (pés juntos)",
+      "unidade": "q", "alvo": [-2, 5], "tolerancia": 1, "fonte": ["E-A"], "confianca": "M", "peso": 2,
+      "medida": { "de": "sequencias", "campo": "entrada_no_vale_q", "golpes": ["cross_seguidos", "btb_btb"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitação 2: o golpe entra em qualquer momento depois do commit; não há leitura do ciclo da base (DribbleFootwork) na hora de aceitar o comando."
+    },
+    {
+      "id": "arranque", "secao": "2.1", "nome": "Arranque com a bola (RT + LS): até 90% da velocidade máxima",
+      "unidade": "q", "alvo": [1, 3], "tolerancia": 1, "fonte": ["E-D"], "confianca": "M", "peso": 4,
+      "medida": { "de": "sequencias", "campo": "arranque_q", "golpes": ["arranque_parada"] },
+      "calibracao": { "tipo": "tempo" },
+      "nota": "No 2K a velocidade vem de um proxy (deslocamento do fundo).",
+      "hipotese": "Limitação 7: aceleração de 6,5 m/s² no Freestyle (0 -> 3,9 m/s em ~0,6 s)."
+    },
+    {
+      "id": "parada", "secao": "2.1", "nome": "Parada com a bola: soltar o LS até < 10% da velocidade",
+      "unidade": "q", "alvo": [1, 3], "tolerancia": 1, "fonte": ["E-D"], "confianca": "M", "peso": 3,
+      "medida": { "de": "sequencias", "campo": "parada_q", "golpes": ["arranque_parada"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitação 7: freio de 14 m/s² no Freestyle."
+    },
+    {
+      "id": "vel_retida", "secao": "2.1", "nome": "Velocidade mantida na troca de mão correndo (mín. no golpe / antes)",
+      "unidade": "razao", "alvo": [0.9, null], "tolerancia": 0.03, "fonte": ["E-D"], "confianca": "M", "peso": 3,
+      "medida": { "de": "golpes", "campo": "vel_retida", "golpes": ["btb_correndo", "cross_correndo"] },
+      "calibracao": { "tipo": "nenhuma" },
+      "hipotese": "Limitação 7: impulso por golpe (Freestyle.syncMoveStart/moveCarry) e pernas da locomoção só em 4 golpes."
+    },
+    {
+      "id": "quique_parado", "secao": "2.2", "nome": "Intervalo do quique no drible parado (size-up)",
+      "unidade": "q", "alvo": [10, 12], "tolerancia": 1, "fonte": ["E-E"], "confianca": "B", "peso": 3,
+      "medida": { "de": "controles", "campo": "quique_q", "golpes": ["drible_parado"] },
+      "calibracao": { "tipo": "quique" },
+      "nota": "O 2K não tem drible parado longo nos vídeos: 0,33–0,40 s é a estimativa de E-E §2 (doc 27 §5 Fase 3 pede 0,33 s).",
+      "hipotese": "Loop base do drible parado (ClipLibrary: ~2,4 quiques/s) e a divisão descida/subida do BallDribbler."
+    },
+    {
+      "id": "quique_cross", "secao": "2.2", "nome": "Intervalo do quique nos crossovers em sequência",
+      "unidade": "q", "alvo": [10, 10], "tolerancia": 1, "fonte": ["E-E"], "confianca": "A", "peso": 3,
+      "medida": { "de": "sequencias", "campo": "quique_q", "golpes": ["cross_seguidos"] },
+      "calibracao": { "tipo": "quique" },
+      "hipotese": "Duração do crossover em Specs (0,40 s) e o ritmo do comando (o teste toca a cada 0,33 s)."
+    },
+    {
+      "id": "quique_btb_duplo", "secao": "2.2", "nome": "Intervalo do quique no BTB duplo",
+      "unidade": "q", "alvo": [7, 7], "tolerancia": 2, "fonte": ["E-B"], "confianca": "B", "peso": 2,
+      "medida": { "de": "sequencias", "campo": "quique_q", "golpes": ["btb_btb"] },
+      "calibracao": { "tipo": "quique" },
+      "hipotese": "O 2º BTB espera a bola do 1º voltar à mão (pendente) e o BTB dura 0,45 s em Specs."
+    },
+    {
+      "id": "quique_correndo", "secao": "2.2", "nome": "Intervalo do quique correndo (RT)",
+      "unidade": "q", "alvo": [15, 15], "tolerancia": 2, "fonte": ["E-D"], "confianca": "M", "peso": 3,
+      "medida": { "de": "controles", "campo": "quique_q", "golpes": ["correndo"] },
+      "calibracao": { "tipo": "quique" },
+      "hipotese": "Loop de drible correndo casado com a passada (~2,9 quiques/s, um quique por passada); o 2K quica a cada 2 passadas."
+    },
+    {
+      "id": "travessia", "secao": "2.2", "nome": "Bola cruzando de um quadril ao outro (15% -> 85% do caminho lateral)",
+      "unidade": "q", "alvo": [4, 6], "tolerancia": 1, "fonte": ["E-E"], "confianca": "A", "peso": 3,
+      "medida": { "de": "golpes", "campo": "travessia_q", "golpes": ["cross_parado", "cross_correndo", "entre_pernas", "behind_back"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitação 3: o clipe é esticado (1,2x a 2,0x) para caber em Specs, e o arco da bola sai do DribbleArc do núcleo."
+    },
+    {
+      "id": "bola_entre_pernas", "secao": "2.2", "nome": "Altura da bola cruzando o meio do corpo no entre as pernas",
+      "unidade": "S", "alvo": [0.25, 0.35], "tolerancia": 0.05, "fonte": ["E-A"], "confianca": "M", "peso": 2,
+      "medida": { "de": "golpes", "campo": "bola_alt_no_meio", "golpes": ["entre_pernas"] },
+      "calibracao": { "tipo": "quadro", "chave": "bola_altura" },
+      "hipotese": "O quique do entre as pernas cai no meio, entre os pés (a bola cruza o meio rente ao chão); no 2K ela passa na altura do joelho (BallDribbler/ProceduralMoves)."
+    },
+    {
+      "id": "apice_rocker", "secao": "2.2", "nome": "Ápice lateral da bola no rocker", "unidade": "S", "alvo": [0.6, 0.7], "tolerancia": 0.05,
+      "fonte": ["E-A"], "confianca": "M", "peso": 2, "medida": { "de": "nao_existe", "golpes": [] }, "calibracao": { "tipo": "nenhuma" },
+      "nota": "O rocker (C2) não existe no jogo (Fase 4)."
+    },
+    {
+      "id": "hold", "secao": "2.2", "nome": "Pausa com a bola segurada (hold, sem quicar)", "unidade": "q", "alvo": [12, 39], "tolerancia": 3,
+      "fonte": ["E-D"], "confianca": "M", "peso": 2, "medida": { "de": "nao_existe", "golpes": [] }, "calibracao": { "tipo": "nenhuma" },
+      "nota": "Estado inexistente no jogo (0,4–1,3 s no 2K)."
+    },
+    {
+      "id": "push_ombro", "secao": "2.2", "nome": "Bola no ombro (push alto): punho a 0,9 S", "unidade": "S", "alvo": [0.85, 0.95], "tolerancia": 0.05,
+      "fonte": ["E-E"], "confianca": "M", "peso": 1, "medida": { "de": "controles", "campo": "mao_bola_alt_max", "golpes": ["drible_parado"] },
+      "calibracao": { "tipo": "quadro", "chave": "rpunho_altura" },
+      "nota": "Não existe o golpe; mostramos a maior altura do punho da bola no drible parado para referência."
+    },
+    {
+      "id": "quadril_neutro", "secao": "2.3", "nome": "Quadril no drible parado (acima dos tornozelos)",
+      "unidade": "S", "alvo": [0.48, 0.58], "tolerancia": 0.03, "fonte": ["E-B", "E-C", "E-E"], "confianca": "M", "peso": 3,
+      "medida": { "de": "controles", "campo": "quadril", "golpes": ["drible_parado"] },
+      "calibracao": { "tipo": "derivada", "chave": "nivel_quadril" },
+      "hipotese": "Postura fixa por estado (limitação 4): crouch de ~13–17 cm parado."
+    },
+    {
+      "id": "queda_quadril", "secao": "2.3", "nome": "Queda do quadril num golpe (neutro − mínimo)",
+      "unidade": "S", "alvo": [0.08, 0.14], "tolerancia": 0.02, "fonte": ["E-B", "E-F"], "confianca": "A", "peso": 4,
+      "medida": { "de": "golpes", "campo": "queda_quadril", "golpes": ["cross_parado", "entre_pernas", "behind_back", "hesitacao"] },
+      "calibracao": { "tipo": "derivada", "chave": "queda_quadril" },
+      "hipotese": "Limitação 4: não há curva de queda e volta do quadril por golpe (PlayerAnimator.applyStance usa crouch fixo por estado)."
+    },
+    {
+      "id": "queda_quadril_tempo", "secao": "2.3", "nome": "Tempo do comando ao mínimo do quadril",
+      "unidade": "q", "alvo": [6, 11], "tolerancia": 2, "fonte": ["E-B", "E-F"], "confianca": "A", "peso": 2,
+      "medida": { "de": "golpes", "campo": "queda_quadril_tempo_q", "golpes": ["cross_parado", "entre_pernas", "behind_back", "hesitacao"], "so_se": { "campo": "queda_quadril", "min": 0.04 } },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitação 4 (sem curva por golpe)."
+    },
+    {
+      "id": "queda_profunda", "secao": "2.3", "nome": "Quadril mínimo nos golpes de agachamento profundo",
+      "unidade": "S", "alvo": [0.36, 0.41], "tolerancia": 0.03, "fonte": ["E-C", "E-F"], "confianca": "A", "peso": 3,
+      "medida": { "de": "golpes", "campo": "quadril_min", "golpes": ["step_back", "double_cross", "hesi_cross"] },
+      "calibracao": { "tipo": "derivada", "chave": "nivel_quadril" },
+      "hipotese": "Limitação 4; o double cross e o hesi-cross reusam o clipe do cross (limitação 9), sem o agachamento do 2º passe."
+    },
+    {
+      "id": "antecipacao", "secao": "2.3", "nome": "Antecipação: da primeira reação do corpo ao empurrão (soltura da bola)",
+      "unidade": "q", "alvo": [10, 12], "tolerancia": 2, "fonte": ["E-E", "E-F"], "confianca": "A", "peso": 4,
+      "medida": { "de": "golpes", "campo": "antecipacao_q", "golpes": ["cross_parado", "entre_pernas", "behind_back", "hesi_cross"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitação 4: ActionInBlend de 0,12 s e nenhuma fase de carga; o empurrão sai no começo do clipe."
+    },
+    {
+      "id": "antecipacao_quadril", "secao": "2.3", "nome": "Quadril baixando durante a antecipação (neutro − na soltura)",
+      "unidade": "S", "alvo": [0.07, 0.13], "tolerancia": 0.02, "fonte": ["E-E", "E-F"], "confianca": "A", "peso": 2,
+      "medida": { "de": "golpes", "campo": "antecipacao_quadril", "golpes": ["cross_parado", "entre_pernas", "behind_back", "hesi_cross"] },
+      "calibracao": { "tipo": "derivada", "chave": "queda_quadril" },
+      "hipotese": "Limitação 4 (sem carga antes do empurrão)."
+    },
+    {
+      "id": "base_neutra", "secao": "2.3", "nome": "Base no drible parado (distância lateral entre os tornozelos)",
+      "unidade": "S", "alvo": [0.45, 0.8], "tolerancia": 0.05, "fonte": ["E-B", "E-E"], "confianca": "M", "peso": 3,
+      "medida": { "de": "controles", "campo": "base", "golpes": ["drible_parado"] },
+      "calibracao": { "tipo": "derivada", "chave": "nivel_base" },
+      "hipotese": "Base fixa dos pés do loop parado (IK prende os pés onde o clipe os pôs; PlayerAnimator.applyStance/SplitStance)."
+    },
+    {
+      "id": "base_aberta", "secao": "2.3", "nome": "Base aberta nas pausas (máximo na hesitação)",
+      "unidade": "S", "alvo": [0.8, 1.3], "tolerancia": 0.1, "fonte": ["E-A", "E-E"], "confianca": "M", "peso": 2,
+      "medida": { "de": "golpes", "campo": "base_max", "golpes": ["hesitacao"] },
+      "calibracao": { "tipo": "derivada", "chave": "base_max" },
+      "nota": "Proxy: no 2K são as pausas e o rocker.",
+      "hipotese": "Limitação 4: a base não respira (sem abrir e fechar por golpe; DribbleFootwork)."
+    },
+    {
+      "id": "passo_cruzado", "secao": "2.3", "nome": "Passo cruzado: base mínima no golpe (tornozelos a 0–0,2 S)",
+      "unidade": "S", "alvo": [0, 0.2], "tolerancia": 0.03, "fonte": ["E-B", "E-F"], "confianca": "A", "peso": 3,
+      "medida": { "de": "golpes", "campo": "base_min", "golpes": ["cross_parado", "entre_pernas", "behind_back", "hesi_cross"] },
+      "calibracao": { "tipo": "derivada", "chave": "base_min" },
+      "hipotese": "Tesoura (SplitStance) no lugar do passo cruzado: os pés trocam de frente/trás sem cruzar."
+    },
+    {
+      "id": "inclinacao_tronco", "secao": "2.3", "nome": "Inclinação do tronco para o lado da bola (máximo no golpe)",
+      "unidade": "graus", "alvo": [15, 37], "tolerancia": 3, "fonte": ["E-A", "E-B", "E-E"], "confianca": "A", "peso": 4,
+      "medida": { "de": "golpes", "campo": "inclinacao_lado_bola_max", "golpes": ["cross_parado", "entre_pernas", "behind_back", "hesitacao", "double_cross", "hesi_cross"] },
+      "calibracao": { "tipo": "derivada", "chave": "inclinacao_max_abs" },
+      "hipotese": "Limitação 4: BodyLean de 8° + 2,5°/(m/s) (hesitação 17°), sem curva de inclinação por golpe."
+    },
+    {
+      "id": "varredura_tronco", "secao": "2.3", "nome": "Varredura do tronco pico a pico no golpe",
+      "unidade": "graus", "alvo": [37, 54], "tolerancia": 5, "fonte": ["E-A", "E-B", "E-E"], "confianca": "A", "peso": 3,
+      "medida": { "de": "golpes", "campo": "varredura_tronco", "golpes": ["cross_parado", "entre_pernas", "behind_back", "double_cross", "hesi_cross"] },
+      "calibracao": { "tipo": "derivada", "chave": "varredura_tronco" },
+      "hipotese": "Limitação 4 (inclinação pequena e sem lado a lado)."
+    },
+    {
+      "id": "vel_tronco", "secao": "2.3", "nome": "Velocidade de pico da inclinação do tronco (a 30 fps)",
+      "unidade": "graus/s", "alvo": [90, 150], "tolerancia": 15, "fonte": ["E-B"], "confianca": "A", "peso": 2,
+      "medida": { "de": "golpes", "campo": "vel_tronco_pico", "golpes": ["cross_parado", "entre_pernas", "behind_back", "double_cross", "hesi_cross"] },
+      "calibracao": { "tipo": "derivada", "chave": "vel_tronco_pico" },
+      "hipotese": "Troca de clipe e inertialization de 0,12 s (PlayerAnimator.startAction): a inclinação muda em poucos quadros."
+    },
+    {
+      "id": "overshoot_tronco", "secao": "2.3", "nome": "Overshoot do tronco (passa do alvo e assenta em 12–20 q)",
+      "unidade": "razao", "alvo": [0.25, 0.35], "tolerancia": 0.1, "fonte": ["E-F"], "confianca": "M", "peso": 2,
+      "medida": { "de": "golpes", "campo": "overshoot_tronco", "golpes": ["cross_parado", "entre_pernas", "behind_back", "double_cross", "hesi_cross"] },
+      "calibracao": { "tipo": "nenhuma" },
+      "hipotese": "Mola do BodyLean (PlayerAnimator.applyBodyLean) sem curva medida."
+    },
+    {
+      "id": "cabeca", "secao": "2.3", "nome": "Cabeça estável: desvio padrão da altura cabeça − ombros",
+      "unidade": "S", "alvo": [0, 0.02], "tolerancia": 0.01, "fonte": ["E-C", "E-D"], "confianca": "A", "peso": 2,
+      "medida": { "de": "golpes_e_controles", "campo": "cabeca_desvio", "golpes": ["drible_parado", "cross_parado", "entre_pernas", "behind_back", "hesitacao", "double_cross", "hesi_cross", "step_back", "btb_correndo", "cross_correndo"] },
+      "calibracao": { "tipo": "derivada", "chave": "cabeca_desvio" },
+      "hipotese": "—"
+    },
+    {
+      "id": "braco_livre_lado", "secao": "2.3", "nome": "Braço livre (guarda): punho afastado para o lado oposto ao da bola",
+      "unidade": "S", "alvo": [0.2, 0.5], "tolerancia": 0.05, "fonte": ["E-A", "E-E"], "confianca": "M", "peso": 2,
+      "medida": { "de": "controles", "campo": "braco_livre_lado", "golpes": ["drible_parado"] },
+      "calibracao": { "tipo": "quadro", "chave": "lpunho_lado" },
+      "hipotese": "dribbleArmWeight / braço livre perto do corpo (PlayerAnimator.applyArms)."
+    },
+    {
+      "id": "braco_livre_altura", "secao": "2.3", "nome": "Braço livre (guarda): altura do punho",
+      "unidade": "S", "alvo": [0.5, 0.7], "tolerancia": 0.05, "fonte": ["E-A", "E-E"], "confianca": "M", "peso": 1,
+      "medida": { "de": "controles", "campo": "braco_livre_alt", "golpes": ["drible_parado"] },
+      "calibracao": { "tipo": "quadro", "chave": "lpunho_altura" },
+      "hipotese": "—"
+    },
+    {
+      "id": "giro_rocker", "secao": "2.3", "nome": "Rotação do tronco no rocker (~45–50°)", "unidade": "graus", "alvo": [45, 50], "tolerancia": 5,
+      "fonte": ["E-A"], "confianca": "M", "peso": 2, "medida": { "de": "nao_existe", "golpes": [] }, "calibracao": { "tipo": "nenhuma" },
+      "nota": "O rocker não existe; o giro máximo de cada golpe aparece na tabela por golpe."
+    },
+    {
+      "id": "dur_cross", "secao": "2.4", "nome": "Crossover: bola em movimento (do começo à recepção do outro lado)",
+      "unidade": "q", "alvo": [9, 11], "tolerancia": 1, "fonte": ["E-E"], "confianca": "A", "peso": 3,
+      "medida": { "de": "golpes", "campo": "bola_em_movimento_q", "golpes": ["cross_parado", "cross_correndo"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Specs do crossover 0,40 s, clipe esticado (limitação 3)."
+    },
+    {
+      "id": "dur_btb", "secao": "2.4", "nome": "Behind-the-back: bola sai da frente, passa atrás e volta à frente",
+      "unidade": "q", "alvo": [10, 12], "tolerancia": 1, "fonte": ["E-D"], "confianca": "M", "peso": 3,
+      "medida": { "de": "golpes", "campo": "bola_em_movimento_q", "golpes": ["behind_back", "btb_correndo"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Specs do BTB 0,45 s (procedural em ProceduralMoves)."
+    },
+    {
+      "id": "dur_entre_pernas", "secao": "2.4", "nome": "Entre as pernas: passe da bola por baixo",
+      "unidade": "q", "alvo": [11, 13], "tolerancia": 1, "fonte": ["E-F"], "confianca": "A", "peso": 2,
+      "medida": { "de": "golpes", "campo": "bola_em_movimento_q", "golpes": ["entre_pernas"] },
+      "calibracao": { "tipo": "tempo" },
+      "nota": "No 2K é o passe do escape entre as pernas (C1): antecipação 12 q + passe 12 q + cruzado + arranque.",
+      "hipotese": "Specs 0,42 s; o escape C1 (com passo cruzado e arranque) não existe (limitação 6)."
+    },
+    {
+      "id": "dur_hesi_cross", "secao": "2.4", "nome": "Hesi-cross: do comando à recepção do cross (2 batidas + cross)",
+      "unidade": "q", "alvo": [24, 29], "tolerancia": 3, "fonte": ["E-F"], "confianca": "M", "peso": 2,
+      "medida": { "de": "golpes", "campo": "cmd_a_recepcao_q", "golpes": ["hesi_cross"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitações 6 e 9: sem as duas batidas de base; o HesiCross reusa o clipe do cross."
+    },
+    {
+      "id": "dur_double_cross", "secao": "2.4", "nome": "Double cross: do comando à 2ª recepção (passe lento + transição + passe rápido)",
+      "unidade": "q", "alvo": [40, 46], "tolerancia": 4, "fonte": ["E-F"], "confianca": "M", "peso": 2,
+      "medida": { "de": "golpes", "campo": "cmd_a_recepcao_q", "golpes": ["double_cross"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitação 6: o double cross é dois crosses iguais em 0,70 s (Freestyle.secondCrossAt), sem o lento -> rápido."
+    },
+    {
+      "id": "dur_double_cross_total", "secao": "2.4", "nome": "Double cross: duração total com a recuperação",
+      "unidade": "q", "alvo": [72, 86], "tolerancia": 6, "fonte": ["E-F"], "confianca": "M", "peso": 1,
+      "medida": { "de": "golpes", "campo": "duracao_acao_q", "golpes": ["double_cross"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Specs 0,70 s sem recuperação pesada (36 q no 2K)."
+    },
+    {
+      "id": "hesitacao_pausa", "secao": "2.4", "nome": "Hesitação: duração da pausa (ação visível)",
+      "unidade": "q", "alvo": [13, 15], "tolerancia": 3, "fonte": ["E-E"], "confianca": "M", "peso": 2,
+      "medida": { "de": "golpes", "campo": "duracao_acao_q", "golpes": ["hesitacao"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Specs 0,40 s."
+    },
+    {
+      "id": "stepback_recuo_m", "secao": "2.4", "nome": "Step-back: recuo do corpo",
+      "unidade": "m", "alvo": [0.5, 0.7], "tolerancia": 0.1, "fonte": ["E-C"], "confianca": "M", "peso": 2,
+      "medida": { "de": "golpes", "campo": "recuo_m", "golpes": ["step_back"] },
+      "calibracao": { "tipo": "nenhuma" },
+      "hipotese": "Impulso do step-back (Specs forwardSpeed −3,2 m/s com o perfil do salto no Freestyle)."
+    },
+    {
+      "id": "stepback_recuo_q", "secao": "2.4", "nome": "Step-back: tempo do comando ao fim do recuo",
+      "unidade": "q", "alvo": [15, 21], "tolerancia": 2, "fonte": ["E-C"], "confianca": "M", "peso": 2,
+      "medida": { "de": "golpes", "campo": "recuo_q", "golpes": ["step_back"] },
+      "calibracao": { "tipo": "tempo" },
+      "hipotese": "Limitação 8 (sai só na volta do stick) somada à duração de 0,50 s."
+    }
+  ]
+}

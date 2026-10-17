@@ -208,6 +208,24 @@ aprovado/reprovado por tolerância. Sem mudar gameplay.
   impacto no feel.
 - Arquivos: só novos (`web/tools/feel/*`, `web/tools/cenarios-feel.mjs` ou entradas novas em `tools/cenarios.mjs`,
   `docs/dev/drible-2k/*`). Se precisar expor dado do animador, apenas leitura via `window.__debug`.
+- **Fase 1: feito, ver `dev/drible-2k/linha-de-base.md`** (2026-10-17, código em 7929a1b). Comando único:
+  `node tools/feel/regua.mjs` (de `web/`, ~5,5 min; uso em `web/tools/feel/README.md`). Resumo:
+  - De 110 linhas (métrica × golpe): 54 aprovadas, 30 reprovadas, 22 limítrofes (reprovadas por menos que a margem do
+    pipeline de vídeo), 3 de golpes que não existem e 1 sem dado (o crossover quase não baixa o quadril, então não há
+    tempo de queda para medir).
+  - Latência do corpo, medida contra o mesmo cenário sem o comando (o laboratório é determinístico): 1,5 q com a bola na
+    mão ou subindo, em todos os golpes. Os piores casos são o step-back, 6 q (sai só na volta do stick), e o BTB correndo
+    com a bola descendo, 5,5 q (o comando fica pendente esperando a bola).
+  - As 10 maiores diferenças, em ordem de impacto no feel: pose neutra de 11,5 q entre crossovers seguidos (2K: 0);
+    antecipação de 0,5 q no crossover (2K: 10–12 q); arranque com a bola em 26 q (2K: 1–3 q); parada em 12 q (2K:
+    1–3 q); a bola começa a cruzar em 6,5 q; o tronco no hesi-cross a 365°/s, abrupto (2K: 90–150°/s); double cross em
+    13 q (2K: ~43 q); o tronco varre 13–15° (2K: 37–54°); crossover em 6 q (2K: ~10 q); e a latência do step-back.
+  - Corpo: o quadril no drible parado bate com o 2K (0,51 S). A base fica em 0,24 S (2K: 0,45–0,8 S) e o quique correndo
+    a cada 9,5 q (2K: 15 q).
+  - Calibração do pipeline (os mesmos cenários gravados com uma câmera parecida e medidos pelo MediaPipe): o nível do
+    quadril sai sem viés (RMS 0,06 S), a base sai 0,10 S larga demais e a velocidade de pico do tronco ~94°/s baixa.
+    O detector de quique do `derivar.py` (limite de 0,15 S) acha só 23 de 70 quiques numa câmera alta; com 0,35 S acha
+    67. Os quiques do CSV do 2K não servem; re-medir o 2K com `--limite-quique 0.35` fica como próximo passo.
 
 ### Fase 2 — Resposta imediata e encadeamento
 

@@ -1,0 +1,2076 @@
+{
+ "linhas": [
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "cross_parado",
+   "valor": 2.5,
+   "fases": {
+    "mao": 1.5,
+    "descendo": 2.5,
+    "subindo": 1.5
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "entre_pernas",
+   "valor": 2.5,
+   "fases": {
+    "mao": 1.5,
+    "descendo": 2.5,
+    "subindo": 1.5
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "behind_back",
+   "valor": 3.5,
+   "fases": {
+    "mao": 1.5,
+    "descendo": 3.5,
+    "subindo": 1.5
+   },
+   "status": "aprovado",
+   "delta": 0.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "hesitacao",
+   "valor": 2.5,
+   "fases": {
+    "mao": 1.5,
+    "descendo": 2.5,
+    "subindo": 1.5
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "double_cross",
+   "valor": 2.5,
+   "fases": {
+    "mao": 1.5,
+    "descendo": 2.5,
+    "subindo": 1.5
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "hesi_cross",
+   "valor": 2.5,
+   "fases": {
+    "mao": 1.5,
+    "descendo": 2.5,
+    "subindo": 1.5
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "step_back",
+   "valor": 6.0,
+   "fases": {
+    "mao": 6.0,
+    "descendo": 3.5,
+    "subindo": 2.5
+   },
+   "status": "reprovado",
+   "delta": 3.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "btb_correndo",
+   "valor": 5.5,
+   "fases": {
+    "mao": 1.5,
+    "descendo": 5.5,
+    "subindo": 1.5
+   },
+   "status": "reprovado",
+   "delta": 2.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "cross_correndo",
+   "valor": 3.5,
+   "fases": {
+    "mao": 1.5,
+    "descendo": 3.5,
+    "subindo": 1.5
+   },
+   "status": "aprovado",
+   "delta": 0.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_bola",
+   "golpe": "cross_parado",
+   "valor": 5.5,
+   "fases": {
+    "mao": 2.5,
+    "descendo": 5.5,
+    "subindo": 3.0
+   },
+   "status": "reprovado",
+   "delta": 2.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    1,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_bola",
+   "golpe": "entre_pernas",
+   "valor": 3.0,
+   "fases": {
+    "mao": 1.5,
+    "descendo": 3.0,
+    "subindo": 2.0
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    1,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_bola",
+   "golpe": "behind_back",
+   "valor": 5.0,
+   "fases": {
+    "mao": 2.0,
+    "descendo": 5.0,
+    "subindo": 2.5
+   },
+   "status": "reprovado",
+   "delta": 2.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    1,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_bola",
+   "golpe": "btb_correndo",
+   "valor": 6.5,
+   "fases": {
+    "mao": 2.0,
+    "descendo": 6.5,
+    "subindo": 2.0
+   },
+   "status": "reprovado",
+   "delta": 3.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    1,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "latencia_bola",
+   "golpe": "cross_correndo",
+   "valor": 6.0,
+   "fases": {
+    "mao": 2.5,
+    "descendo": 6.0,
+    "subindo": 3.0
+   },
+   "status": "reprovado",
+   "delta": 3.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    1,
+    3
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "corpo_antes_da_bola",
+   "golpe": "cross_parado",
+   "valor": 6.0,
+   "fases": {
+    "mao": 6.0,
+    "descendo": 7.5,
+    "subindo": 6.0
+   },
+   "status": "reprovado",
+   "delta": -8.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    14,
+    24
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "corpo_antes_da_bola",
+   "golpe": "entre_pernas",
+   "valor": 9.0,
+   "fases": {
+    "mao": 9.0,
+    "descendo": 9.0,
+    "subindo": 9.0
+   },
+   "status": "reprovado",
+   "delta": -5.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    14,
+    24
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "corpo_antes_da_bola",
+   "golpe": "behind_back",
+   "valor": 12.0,
+   "fases": {
+    "mao": 12.0,
+    "descendo": 12.0,
+    "subindo": 12.0
+   },
+   "status": "aprovado",
+   "delta": -2.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    14,
+    24
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "pose_neutra",
+   "golpe": "double_cross",
+   "valor": 0.0,
+   "fases": {
+    "mao": 0.0,
+    "descendo": 0.0,
+    "subindo": 0.0
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    0
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "pose_neutra",
+   "golpe": "hesi_cross",
+   "valor": 0.0,
+   "fases": {
+    "mao": 0.0,
+    "descendo": 0.0,
+    "subindo": 0.0
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    0
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "pose_neutra",
+   "golpe": "cross_seguidos",
+   "valor": 11.5,
+   "fases": null,
+   "status": "reprovado",
+   "delta": 11.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    0
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "pose_neutra",
+   "golpe": "btb_btb",
+   "valor": 0.0,
+   "fases": null,
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    0,
+    0
+   ],
+   "tolerancia": 0.5
+  },
+  {
+   "metrica": "entrada_no_vale",
+   "golpe": "cross_seguidos",
+   "valor": "sem vale",
+   "fases": null,
+   "status": "reprovado",
+   "delta": null,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    -2,
+    5
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "entrada_no_vale",
+   "golpe": "btb_btb",
+   "valor": -4.5,
+   "fases": null,
+   "status": "reprovado",
+   "delta": -2.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    -2,
+    5
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "arranque",
+   "golpe": "arranque_parada",
+   "valor": 26.0,
+   "fases": null,
+   "status": "reprovado",
+   "delta": 23.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    1,
+    3
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "parada",
+   "golpe": "arranque_parada",
+   "valor": 12.0,
+   "fases": null,
+   "status": "reprovado",
+   "delta": 9.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    1,
+    3
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "vel_retida",
+   "golpe": "btb_correndo",
+   "valor": 1.0043196544276458,
+   "fases": {
+    "mao": 1.0360189246123563,
+    "descendo": 1.0043196544276458,
+    "subindo": 1.08708357685564
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    0.9,
+    null
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "vel_retida",
+   "golpe": "cross_correndo",
+   "valor": 1.0043196544276458,
+   "fases": {
+    "mao": 1.0360189246123563,
+    "descendo": 1.0043196544276458,
+    "subindo": 1.08708357685564
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    0.9,
+    null
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "quique_parado",
+   "golpe": "drible_parado",
+   "valor": 12.75,
+   "fases": null,
+   "status": "aprovado",
+   "delta": 0.75,
+   "margem": 0.9325048082403138,
+   "vies": null,
+   "alvo": [
+    10,
+    12
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "quique_cross",
+   "golpe": "cross_seguidos",
+   "valor": 10.0,
+   "fases": null,
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.9325048082403138,
+   "vies": null,
+   "alvo": [
+    10,
+    10
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "quique_btb_duplo",
+   "golpe": "btb_btb",
+   "valor": 9.5,
+   "fases": null,
+   "status": "limítrofe",
+   "delta": 2.5,
+   "margem": 0.9325048082403138,
+   "vies": null,
+   "alvo": [
+    7,
+    7
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "quique_correndo",
+   "golpe": "correndo",
+   "valor": 9.5,
+   "fases": null,
+   "status": "reprovado",
+   "delta": -5.5,
+   "margem": 0.9325048082403138,
+   "vies": null,
+   "alvo": [
+    15,
+    15
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "travessia",
+   "golpe": "cross_parado",
+   "valor": 3.0,
+   "fases": {
+    "mao": 3.5,
+    "descendo": 3.0,
+    "subindo": 3.5
+   },
+   "status": "aprovado",
+   "delta": -1.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    4,
+    6
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "travessia",
+   "golpe": "cross_correndo",
+   "valor": 2.0,
+   "fases": {
+    "mao": 4.0,
+    "descendo": 2.0,
+    "subindo": 4.5
+   },
+   "status": "limítrofe",
+   "delta": -2.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    4,
+    6
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "travessia",
+   "golpe": "entre_pernas",
+   "valor": 4.5,
+   "fases": {
+    "mao": 5.0,
+    "descendo": 5.0,
+    "subindo": 4.5
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    4,
+    6
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "travessia",
+   "golpe": "behind_back",
+   "valor": 5.0,
+   "fases": {
+    "mao": 5.0,
+    "descendo": 5.0,
+    "subindo": 5.0
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    4,
+    6
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "bola_entre_pernas",
+   "golpe": "entre_pernas",
+   "valor": 0.059620689655172414,
+   "fases": {
+    "mao": 0.059620689655172414,
+    "descendo": 0.08286206896551723,
+    "subindo": 0.059620689655172414
+   },
+   "status": "limítrofe",
+   "delta": -0.19037931034482758,
+   "margem": 0.21384343107267537,
+   "vies": 0.11984324419422941,
+   "alvo": [
+    0.25,
+    0.35
+   ],
+   "tolerancia": 0.05
+  },
+  {
+   "metrica": "apice_rocker",
+   "golpe": "—",
+   "valor": null,
+   "fases": null,
+   "status": "não existe",
+   "delta": null,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    0.6,
+    0.7
+   ],
+   "tolerancia": 0.05
+  },
+  {
+   "metrica": "hold",
+   "golpe": "—",
+   "valor": null,
+   "fases": null,
+   "status": "não existe",
+   "delta": null,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    12,
+    39
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "push_ombro",
+   "golpe": "drible_parado",
+   "valor": 0.6134827586206897,
+   "fases": null,
+   "status": "reprovado",
+   "delta": -0.2365172413793103,
+   "margem": 0.11338261815535818,
+   "vies": 0.10124606830158925,
+   "alvo": [
+    0.85,
+    0.95
+   ],
+   "tolerancia": 0.05
+  },
+  {
+   "metrica": "quadril_neutro",
+   "golpe": "drible_parado",
+   "valor": 0.5051821589205397,
+   "fases": null,
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.062111930771101845,
+   "vies": 0.00395114942528733,
+   "alvo": [
+    0.48,
+    0.58
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "queda_quadril",
+   "golpe": "cross_parado",
+   "valor": 0.024360919540229897,
+   "fases": {
+    "mao": 0.02766436781609194,
+    "descendo": 0.026025287356321813,
+    "subindo": 0.024360919540229897
+   },
+   "status": "limítrofe",
+   "delta": -0.055639080459770104,
+   "margem": 0.06880879102667423,
+   "vies": 0.022531609195402372,
+   "alvo": [
+    0.08,
+    0.14
+   ],
+   "tolerancia": 0.02
+  },
+  {
+   "metrica": "queda_quadril",
+   "golpe": "entre_pernas",
+   "valor": 0.12156091954022985,
+   "fases": {
+    "mao": 0.12156091954022985,
+    "descendo": 0.11992183908045972,
+    "subindo": 0.11825747126436781
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.06880879102667423,
+   "vies": 0.022531609195402372,
+   "alvo": [
+    0.08,
+    0.14
+   ],
+   "tolerancia": 0.02
+  },
+  {
+   "metrica": "queda_quadril",
+   "golpe": "behind_back",
+   "valor": 0.07211954022988509,
+   "fases": {
+    "mao": 0.07552643678160925,
+    "descendo": 0.07374942528735623,
+    "subindo": 0.07211954022988509
+   },
+   "status": "aprovado",
+   "delta": -0.007880459770114909,
+   "margem": 0.06880879102667423,
+   "vies": 0.022531609195402372,
+   "alvo": [
+    0.08,
+    0.14
+   ],
+   "tolerancia": 0.02
+  },
+  {
+   "metrica": "queda_quadril",
+   "golpe": "hesitacao",
+   "valor": 0.0420850574712644,
+   "fases": {
+    "mao": 0.04545747126436783,
+    "descendo": 0.04381839080459771,
+    "subindo": 0.0420850574712644
+   },
+   "status": "limítrofe",
+   "delta": -0.037914942528735604,
+   "margem": 0.06880879102667423,
+   "vies": 0.022531609195402372,
+   "alvo": [
+    0.08,
+    0.14
+   ],
+   "tolerancia": 0.02
+  },
+  {
+   "metrica": "queda_quadril_tempo",
+   "golpe": "cross_parado",
+   "valor": null,
+   "fases": null,
+   "status": "sem dado",
+   "delta": null,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    6,
+    11
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "queda_quadril_tempo",
+   "golpe": "entre_pernas",
+   "valor": 4.5,
+   "fases": {
+    "mao": 4.5,
+    "descendo": 5.5,
+    "subindo": 4.5
+   },
+   "status": "aprovado",
+   "delta": -1.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    6,
+    11
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "queda_quadril_tempo",
+   "golpe": "behind_back",
+   "valor": 4.0,
+   "fases": {
+    "mao": 4.0,
+    "descendo": 6.0,
+    "subindo": 4.0
+   },
+   "status": "aprovado",
+   "delta": -2.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    6,
+    11
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "queda_quadril_tempo",
+   "golpe": "hesitacao",
+   "valor": 4.0,
+   "fases": {
+    "mao": 4.0,
+    "descendo": 5.0,
+    "subindo": 4.0
+   },
+   "status": "aprovado",
+   "delta": -2.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    6,
+    11
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "queda_profunda",
+   "golpe": "step_back",
+   "valor": 0.4139310344827587,
+   "fases": {
+    "mao": 0.4139310344827587,
+    "descendo": 0.4139310344827587,
+    "subindo": 0.4139310344827587
+   },
+   "status": "aprovado",
+   "delta": 0.003931034482758722,
+   "margem": 0.062111930771101845,
+   "vies": 0.00395114942528733,
+   "alvo": [
+    0.36,
+    0.41
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "queda_profunda",
+   "golpe": "double_cross",
+   "valor": 0.47958620689655174,
+   "fases": {
+    "mao": 0.47958620689655174,
+    "descendo": 0.4794827586206896,
+    "subindo": 0.47958620689655174
+   },
+   "status": "limítrofe",
+   "delta": 0.06958620689655176,
+   "margem": 0.062111930771101845,
+   "vies": 0.00395114942528733,
+   "alvo": [
+    0.36,
+    0.41
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "queda_profunda",
+   "golpe": "hesi_cross",
+   "valor": 0.4616551724137931,
+   "fases": {
+    "mao": 0.4615862068965517,
+    "descendo": 0.4615862068965517,
+    "subindo": 0.4616551724137931
+   },
+   "status": "limítrofe",
+   "delta": 0.05165517241379314,
+   "margem": 0.062111930771101845,
+   "vies": 0.00395114942528733,
+   "alvo": [
+    0.36,
+    0.41
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "antecipacao",
+   "golpe": "cross_parado",
+   "valor": 0.5,
+   "fases": {
+    "mao": 0.5,
+    "descendo": 2.0,
+    "subindo": 0.5
+   },
+   "status": "reprovado",
+   "delta": -9.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    10,
+    12
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "antecipacao",
+   "golpe": "entre_pernas",
+   "valor": 3.5,
+   "fases": {
+    "mao": 3.5,
+    "descendo": 3.5,
+    "subindo": 3.5
+   },
+   "status": "reprovado",
+   "delta": -6.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    10,
+    12
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "antecipacao",
+   "golpe": "behind_back",
+   "valor": 6.5,
+   "fases": {
+    "mao": 6.5,
+    "descendo": 6.5,
+    "subindo": 6.5
+   },
+   "status": "reprovado",
+   "delta": -3.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    10,
+    12
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "antecipacao",
+   "golpe": "hesi_cross",
+   "valor": 8.5,
+   "fases": {
+    "mao": 8.5,
+    "descendo": 8.5,
+    "subindo": 8.5
+   },
+   "status": "aprovado",
+   "delta": -1.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    10,
+    12
+   ],
+   "tolerancia": 2
+  },
+  {
+   "metrica": "antecipacao_quadril",
+   "golpe": "cross_parado",
+   "valor": 0.0005425287356322084,
+   "fases": {
+    "mao": 0.004422988505747183,
+    "descendo": 0.0005425287356322084,
+    "subindo": 0.0017747126436782334
+   },
+   "status": "limítrofe",
+   "delta": -0.0694574712643678,
+   "margem": 0.06880879102667423,
+   "vies": 0.022531609195402372,
+   "alvo": [
+    0.07,
+    0.13
+   ],
+   "tolerancia": 0.02
+  },
+  {
+   "metrica": "antecipacao_quadril",
+   "golpe": "entre_pernas",
+   "valor": 0.11576781609195402,
+   "fases": {
+    "mao": 0.11576781609195402,
+    "descendo": 0.1141287356321839,
+    "subindo": 0.11246436781609198
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.06880879102667423,
+   "vies": 0.022531609195402372,
+   "alvo": [
+    0.07,
+    0.13
+   ],
+   "tolerancia": 0.02
+  },
+  {
+   "metrica": "antecipacao_quadril",
+   "golpe": "behind_back",
+   "valor": 0.0050160919540230275,
+   "fases": {
+    "mao": 0.00831954022988507,
+    "descendo": 0.006680459770114944,
+    "subindo": 0.0050160919540230275
+   },
+   "status": "limítrofe",
+   "delta": -0.06498390804597698,
+   "margem": 0.06880879102667423,
+   "vies": 0.022531609195402372,
+   "alvo": [
+    0.07,
+    0.13
+   ],
+   "tolerancia": 0.02
+  },
+  {
+   "metrica": "antecipacao_quadril",
+   "golpe": "hesi_cross",
+   "valor": 0.01474022988505752,
+   "fases": {
+    "mao": 0.018043678160919563,
+    "descendo": 0.016404597701149437,
+    "subindo": 0.01474022988505752
+   },
+   "status": "limítrofe",
+   "delta": -0.055259770114942486,
+   "margem": 0.06880879102667423,
+   "vies": 0.022531609195402372,
+   "alvo": [
+    0.07,
+    0.13
+   ],
+   "tolerancia": 0.02
+  },
+  {
+   "metrica": "base_neutra",
+   "golpe": "drible_parado",
+   "valor": 0.23793103448275865,
+   "fases": null,
+   "status": "reprovado",
+   "delta": -0.21206896551724136,
+   "margem": 0.10486372129859674,
+   "vies": 0.10215373563218388,
+   "alvo": [
+    0.45,
+    0.8
+   ],
+   "tolerancia": 0.05
+  },
+  {
+   "metrica": "base_aberta",
+   "golpe": "hesitacao",
+   "valor": 0.3033793103448276,
+   "fases": {
+    "mao": 0.3033793103448276,
+    "descendo": 0.3033793103448276,
+    "subindo": 0.3033793103448276
+   },
+   "status": "reprovado",
+   "delta": -0.4966206896551724,
+   "margem": 0.13044089424941926,
+   "vies": 0.12628448275862067,
+   "alvo": [
+    0.8,
+    1.3
+   ],
+   "tolerancia": 0.1
+  },
+  {
+   "metrica": "passo_cruzado",
+   "golpe": "cross_parado",
+   "valor": 0.23793103448275865,
+   "fases": {
+    "mao": 0.23793103448275865,
+    "descendo": 0.23793103448275865,
+    "subindo": 0.23793103448275865
+   },
+   "status": "limítrofe",
+   "delta": 0.03793103448275864,
+   "margem": 0.08020366774319587,
+   "vies": 0.0594683908045977,
+   "alvo": [
+    0,
+    0.2
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "passo_cruzado",
+   "golpe": "entre_pernas",
+   "valor": 0.23793103448275865,
+   "fases": {
+    "mao": 0.23793103448275865,
+    "descendo": 0.23793103448275865,
+    "subindo": 0.23793103448275865
+   },
+   "status": "limítrofe",
+   "delta": 0.03793103448275864,
+   "margem": 0.08020366774319587,
+   "vies": 0.0594683908045977,
+   "alvo": [
+    0,
+    0.2
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "passo_cruzado",
+   "golpe": "behind_back",
+   "valor": 0.18110344827586208,
+   "fases": {
+    "mao": 0.18110344827586208,
+    "descendo": 0.18110344827586208,
+    "subindo": 0.18110344827586208
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.08020366774319587,
+   "vies": 0.0594683908045977,
+   "alvo": [
+    0,
+    0.2
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "passo_cruzado",
+   "golpe": "hesi_cross",
+   "valor": 0.23793103448275865,
+   "fases": {
+    "mao": 0.23793103448275865,
+    "descendo": 0.23793103448275865,
+    "subindo": 0.23793103448275865
+   },
+   "status": "limítrofe",
+   "delta": 0.03793103448275864,
+   "margem": 0.08020366774319587,
+   "vies": 0.0594683908045977,
+   "alvo": [
+    0,
+    0.2
+   ],
+   "tolerancia": 0.03
+  },
+  {
+   "metrica": "inclinacao_tronco",
+   "golpe": "cross_parado",
+   "valor": 8.854342318611177,
+   "fases": {
+    "mao": 9.108132939102925,
+    "descendo": 8.854342318611177,
+    "subindo": 9.108132939102925
+   },
+   "status": "limítrofe",
+   "delta": -6.145657681388823,
+   "margem": 5.54663086632401,
+   "vies": -4.53273076815707,
+   "alvo": [
+    15,
+    37
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "inclinacao_tronco",
+   "golpe": "entre_pernas",
+   "valor": 7.037371161482785,
+   "fases": {
+    "mao": 7.131527602866958,
+    "descendo": 7.037371161482785,
+    "subindo": 7.037371161482785
+   },
+   "status": "limítrofe",
+   "delta": -7.962628838517215,
+   "margem": 5.54663086632401,
+   "vies": -4.53273076815707,
+   "alvo": [
+    15,
+    37
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "inclinacao_tronco",
+   "golpe": "behind_back",
+   "valor": 23.08225734605335,
+   "fases": {
+    "mao": 23.08225734605335,
+    "descendo": 23.08225734605335,
+    "subindo": 23.08225734605335
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 5.54663086632401,
+   "vies": -4.53273076815707,
+   "alvo": [
+    15,
+    37
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "inclinacao_tronco",
+   "golpe": "hesitacao",
+   "valor": 21.350980247653588,
+   "fases": {
+    "mao": 21.350980247653588,
+    "descendo": 21.350980247653588,
+    "subindo": 21.350980247653588
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 5.54663086632401,
+   "vies": -4.53273076815707,
+   "alvo": [
+    15,
+    37
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "inclinacao_tronco",
+   "golpe": "double_cross",
+   "valor": 8.853606496796033,
+   "fases": {
+    "mao": 8.853606496796033,
+    "descendo": 11.326208913006582,
+    "subindo": 8.867569654449753
+   },
+   "status": "limítrofe",
+   "delta": -6.146393503203967,
+   "margem": 5.54663086632401,
+   "vies": -4.53273076815707,
+   "alvo": [
+    15,
+    37
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "inclinacao_tronco",
+   "golpe": "hesi_cross",
+   "valor": 21.350980247653588,
+   "fases": {
+    "mao": 21.350980247653588,
+    "descendo": 21.350980247653588,
+    "subindo": 21.350980247653588
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 5.54663086632401,
+   "vies": -4.53273076815707,
+   "alvo": [
+    15,
+    37
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "varredura_tronco",
+   "golpe": "cross_parado",
+   "valor": 14.54516940596256,
+   "fases": {
+    "mao": 16.239660541969883,
+    "descendo": 14.951438639821049,
+    "subindo": 14.54516940596256
+   },
+   "status": "reprovado",
+   "delta": -22.45483059403744,
+   "margem": 8.59363627104335,
+   "vies": -6.899954106340696,
+   "alvo": [
+    37,
+    54
+   ],
+   "tolerancia": 5
+  },
+  {
+   "metrica": "varredura_tronco",
+   "golpe": "entre_pernas",
+   "valor": 12.734610121979241,
+   "fases": {
+    "mao": 12.828766563363416,
+    "descendo": 12.734610121979241,
+    "subindo": 12.734610121979241
+   },
+   "status": "reprovado",
+   "delta": -24.26538987802076,
+   "margem": 8.59363627104335,
+   "vies": -6.899954106340696,
+   "alvo": [
+    37,
+    54
+   ],
+   "tolerancia": 5
+  },
+  {
+   "metrica": "varredura_tronco",
+   "golpe": "behind_back",
+   "valor": 28.687653863860547,
+   "fases": {
+    "mao": 28.687653863860547,
+    "descendo": 28.687653863860547,
+    "subindo": 28.687653863860547
+   },
+   "status": "limítrofe",
+   "delta": -8.312346136139453,
+   "margem": 8.59363627104335,
+   "vies": -6.899954106340696,
+   "alvo": [
+    37,
+    54
+   ],
+   "tolerancia": 5
+  },
+  {
+   "metrica": "varredura_tronco",
+   "golpe": "double_cross",
+   "valor": 14.92276115217437,
+   "fases": {
+    "mao": 15.985134099662991,
+    "descendo": 17.423305234216453,
+    "subindo": 14.92276115217437
+   },
+   "status": "reprovado",
+   "delta": -22.07723884782563,
+   "margem": 8.59363627104335,
+   "vies": -6.899954106340696,
+   "alvo": [
+    37,
+    54
+   ],
+   "tolerancia": 5
+  },
+  {
+   "metrica": "varredura_tronco",
+   "golpe": "hesi_cross",
+   "valor": 30.16769370566025,
+   "fases": {
+    "mao": 30.358111260462824,
+    "descendo": 30.16769370566025,
+    "subindo": 30.22894244280733
+   },
+   "status": "limítrofe",
+   "delta": -6.832306294339752,
+   "margem": 8.59363627104335,
+   "vies": -6.899954106340696,
+   "alvo": [
+    37,
+    54
+   ],
+   "tolerancia": 5
+  },
+  {
+   "metrica": "vel_tronco",
+   "golpe": "cross_parado",
+   "valor": 211.93844955962166,
+   "fases": {
+    "mao": 185.29910312118193,
+    "descendo": 153.93607926130977,
+    "subindo": 211.93844955962166
+   },
+   "status": "limítrofe",
+   "delta": 61.93844955962166,
+   "margem": 125.17659569909203,
+   "vies": -93.53068987057047,
+   "alvo": [
+    90,
+    150
+   ],
+   "tolerancia": 15
+  },
+  {
+   "metrica": "vel_tronco",
+   "golpe": "entre_pernas",
+   "valor": 88.74010520154312,
+   "fases": {
+    "mao": 88.74010520154312,
+    "descendo": 88.74010520154312,
+    "subindo": 88.74010520154312
+   },
+   "status": "aprovado",
+   "delta": -1.2598947984568838,
+   "margem": 125.17659569909203,
+   "vies": -93.53068987057047,
+   "alvo": [
+    90,
+    150
+   ],
+   "tolerancia": 15
+  },
+  {
+   "metrica": "vel_tronco",
+   "golpe": "behind_back",
+   "valor": 198.94678843215345,
+   "fases": {
+    "mao": 198.94678843215345,
+    "descendo": 184.5885843344713,
+    "subindo": 184.5885843344713
+   },
+   "status": "limítrofe",
+   "delta": 48.946788432153454,
+   "margem": 125.17659569909203,
+   "vies": -93.53068987057047,
+   "alvo": [
+    90,
+    150
+   ],
+   "tolerancia": 15
+  },
+  {
+   "metrica": "vel_tronco",
+   "golpe": "double_cross",
+   "valor": 211.93844955962166,
+   "fases": {
+    "mao": 186.3821238258261,
+    "descendo": 183.9832268353102,
+    "subindo": 211.93844955962166
+   },
+   "status": "limítrofe",
+   "delta": 61.93844955962166,
+   "margem": 125.17659569909203,
+   "vies": -93.53068987057047,
+   "alvo": [
+    90,
+    150
+   ],
+   "tolerancia": 15
+  },
+  {
+   "metrica": "vel_tronco",
+   "golpe": "hesi_cross",
+   "valor": 364.91895846866174,
+   "fases": {
+    "mao": 364.91895846866174,
+    "descendo": 364.91895846866174,
+    "subindo": 364.91895846866174
+   },
+   "status": "reprovado",
+   "delta": 214.91895846866174,
+   "margem": 125.17659569909203,
+   "vies": -93.53068987057047,
+   "alvo": [
+    90,
+    150
+   ],
+   "tolerancia": 15
+  },
+  {
+   "metrica": "overshoot_tronco",
+   "golpe": "cross_parado",
+   "valor": 0.27090351286315434,
+   "fases": {
+    "mao": 0.3147417723525218,
+    "descendo": 0.27090351286315434,
+    "subindo": 0.32252469826754804
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    0.25,
+    0.35
+   ],
+   "tolerancia": 0.1
+  },
+  {
+   "metrica": "overshoot_tronco",
+   "golpe": "entre_pernas",
+   "valor": 0.17421018961783427,
+   "fases": {
+    "mao": 0.18519826556714966,
+    "descendo": 0.17421018961783427,
+    "subindo": 0.19110680163513116
+   },
+   "status": "aprovado",
+   "delta": -0.07578981038216573,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    0.25,
+    0.35
+   ],
+   "tolerancia": 0.1
+  },
+  {
+   "metrica": "overshoot_tronco",
+   "golpe": "behind_back",
+   "valor": -0.14203917188018014,
+   "fases": {
+    "mao": -0.137202365197847,
+    "descendo": 0.049362018317852786,
+    "subindo": -0.14203917188018014
+   },
+   "status": "reprovado",
+   "delta": -0.3920391718801801,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    0.25,
+    0.35
+   ],
+   "tolerancia": 0.1
+  },
+  {
+   "metrica": "overshoot_tronco",
+   "golpe": "double_cross",
+   "valor": 0.19918646211364094,
+   "fases": {
+    "mao": 0.19918646211364094,
+    "descendo": 0.34233923010278405,
+    "subindo": 0.2053221360650394
+   },
+   "status": "aprovado",
+   "delta": -0.05081353788635906,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    0.25,
+    0.35
+   ],
+   "tolerancia": 0.1
+  },
+  {
+   "metrica": "overshoot_tronco",
+   "golpe": "hesi_cross",
+   "valor": 0.379923059191515,
+   "fases": {
+    "mao": 0.344170105968268,
+    "descendo": 0.379923059191515,
+    "subindo": 0.3464380317162057
+   },
+   "status": "aprovado",
+   "delta": 0.029923059191515,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    0.25,
+    0.35
+   ],
+   "tolerancia": 0.1
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "drible_parado",
+   "valor": 0.0010274140980520991,
+   "fases": null,
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "cross_parado",
+   "valor": 0.007499831746031859,
+   "fases": {
+    "mao": 0.007499831746031859,
+    "descendo": 0.007589867956721996,
+    "subindo": 0.007772006843062391
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "entre_pernas",
+   "valor": 0.0060338603147758185,
+   "fases": {
+    "mao": 0.006128143256661038,
+    "descendo": 0.0060338603147758185,
+    "subindo": 0.006297209915607068
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "behind_back",
+   "valor": 0.007425965593023581,
+   "fases": {
+    "mao": 0.007425965593023581,
+    "descendo": 0.008013829198965561,
+    "subindo": 0.007724747170828114
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "hesitacao",
+   "valor": 0.007913336953204607,
+   "fases": {
+    "mao": 0.007922630526267646,
+    "descendo": 0.007913336953204607,
+    "subindo": 0.008164750857968637
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "double_cross",
+   "valor": 0.006685018848059811,
+   "fases": {
+    "mao": 0.006685018848059811,
+    "descendo": 0.0067904780930395595,
+    "subindo": 0.006915530597430294
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "hesi_cross",
+   "valor": 0.005984491239706538,
+   "fases": {
+    "mao": 0.005984491239706538,
+    "descendo": 0.0061609543874464635,
+    "subindo": 0.006183288009542634
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "step_back",
+   "valor": 0.0028684934165076276,
+   "fases": {
+    "mao": 0.0028684934165076276,
+    "descendo": 0.0029813360534821994,
+    "subindo": 0.0031991672458625744
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "btb_correndo",
+   "valor": 0.002594395465603912,
+   "fases": {
+    "mao": 0.002594395465603912,
+    "descendo": 0.0049702422436053,
+    "subindo": 0.0032873161318980513
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "cabeca",
+   "golpe": "cross_correndo",
+   "valor": 0.0040008875683265905,
+   "fases": {
+    "mao": 0.0040008875683265905,
+    "descendo": 0.005716856416560636,
+    "subindo": 0.00601161512812259
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.009703306451347716,
+   "vies": 0.008783384782007386,
+   "alvo": [
+    0,
+    0.02
+   ],
+   "tolerancia": 0.01
+  },
+  {
+   "metrica": "braco_livre_lado",
+   "golpe": "drible_parado",
+   "valor": 0.18815637181409298,
+   "fases": null,
+   "status": "aprovado",
+   "delta": -0.011843628185907035,
+   "margem": 0.049988341897367235,
+   "vies": -0.037725631768953063,
+   "alvo": [
+    0.2,
+    0.5
+   ],
+   "tolerancia": 0.05
+  },
+  {
+   "metrica": "braco_livre_altura",
+   "golpe": "drible_parado",
+   "valor": 0.6536256371814093,
+   "fases": null,
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 0.10784633017879383,
+   "vies": 0.08668305738827335,
+   "alvo": [
+    0.5,
+    0.7
+   ],
+   "tolerancia": 0.05
+  },
+  {
+   "metrica": "giro_rocker",
+   "golpe": "—",
+   "valor": null,
+   "fases": null,
+   "status": "não existe",
+   "delta": null,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    45,
+    50
+   ],
+   "tolerancia": 5
+  },
+  {
+   "metrica": "dur_cross",
+   "golpe": "cross_parado",
+   "valor": 6.0,
+   "fases": {
+    "mao": 6.0,
+    "descendo": 7.5,
+    "subindo": 6.0
+   },
+   "status": "reprovado",
+   "delta": -3.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    9,
+    11
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "dur_cross",
+   "golpe": "cross_correndo",
+   "valor": 7.0,
+   "fases": {
+    "mao": 7.0,
+    "descendo": 7.5,
+    "subindo": 7.5
+   },
+   "status": "limítrofe",
+   "delta": -2.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    9,
+    11
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "dur_btb",
+   "golpe": "behind_back",
+   "valor": 12.0,
+   "fases": {
+    "mao": 12.0,
+    "descendo": 12.0,
+    "subindo": 12.0
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    10,
+    12
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "dur_btb",
+   "golpe": "btb_correndo",
+   "valor": 12.0,
+   "fases": {
+    "mao": 12.0,
+    "descendo": 12.0,
+    "subindo": 12.0
+   },
+   "status": "aprovado",
+   "delta": 0.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    10,
+    12
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "dur_entre_pernas",
+   "golpe": "entre_pernas",
+   "valor": 8.5,
+   "fases": {
+    "mao": 9.0,
+    "descendo": 8.5,
+    "subindo": 9.0
+   },
+   "status": "reprovado",
+   "delta": -2.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    11,
+    13
+   ],
+   "tolerancia": 1
+  },
+  {
+   "metrica": "dur_hesi_cross",
+   "golpe": "hesi_cross",
+   "valor": 23.5,
+   "fases": {
+    "mao": 23.5,
+    "descendo": 24.5,
+    "subindo": 23.5
+   },
+   "status": "aprovado",
+   "delta": -0.5,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    24,
+    29
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "dur_double_cross",
+   "golpe": "double_cross",
+   "valor": 13.0,
+   "fases": {
+    "mao": 13.0,
+    "descendo": 15.5,
+    "subindo": 13.0
+   },
+   "status": "reprovado",
+   "delta": -27.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    40,
+    46
+   ],
+   "tolerancia": 4
+  },
+  {
+   "metrica": "dur_double_cross_total",
+   "golpe": "double_cross",
+   "valor": 14.0,
+   "fases": {
+    "mao": 14.0,
+    "descendo": 15.5,
+    "subindo": 14.0
+   },
+   "status": "reprovado",
+   "delta": -58.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    72,
+    86
+   ],
+   "tolerancia": 6
+  },
+  {
+   "metrica": "hesitacao_pausa",
+   "golpe": "hesitacao",
+   "valor": 12.0,
+   "fases": {
+    "mao": 12.0,
+    "descendo": 12.0,
+    "subindo": 12.0
+   },
+   "status": "aprovado",
+   "delta": -1.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    13,
+    15
+   ],
+   "tolerancia": 3
+  },
+  {
+   "metrica": "stepback_recuo_m",
+   "golpe": "step_back",
+   "valor": 0.821188899270935,
+   "fases": {
+    "mao": 0.821188899270935,
+    "descendo": 0.821188899270935,
+    "subindo": 0.821188899270935
+   },
+   "status": "reprovado",
+   "delta": 0.12118889927093501,
+   "margem": null,
+   "vies": null,
+   "alvo": [
+    0.5,
+    0.7
+   ],
+   "tolerancia": 0.1
+  },
+  {
+   "metrica": "stepback_recuo_q",
+   "golpe": "step_back",
+   "valor": 13.0,
+   "fases": {
+    "mao": 16.5,
+    "descendo": 14.0,
+    "subindo": 13.0
+   },
+   "status": "aprovado",
+   "delta": -2.0,
+   "margem": 1.0,
+   "vies": null,
+   "alvo": [
+    15,
+    21
+   ],
+   "tolerancia": 2
+  }
+ ],
+ "top10": [
+  {
+   "metrica": "pose_neutra",
+   "golpe": "cross_seguidos",
+   "valor": 11.5,
+   "score": 15.499999999999998
+  },
+  {
+   "metrica": "antecipacao",
+   "golpe": "cross_parado",
+   "valor": 0.5,
+   "score": 13.874999999999998
+  },
+  {
+   "metrica": "arranque",
+   "golpe": "arranque_parada",
+   "valor": 26.0,
+   "score": 13.6
+  },
+  {
+   "metrica": "parada",
+   "golpe": "arranque_parada",
+   "valor": 12.0,
+   "score": 10.2
+  },
+  {
+   "metrica": "latencia_bola",
+   "golpe": "btb_correndo",
+   "valor": 6.5,
+   "score": 9.588
+  },
+  {
+   "metrica": "vel_tronco",
+   "golpe": "hesi_cross",
+   "valor": 364.91895846866174,
+   "score": 7.52
+  },
+  {
+   "metrica": "dur_double_cross",
+   "golpe": "double_cross",
+   "valor": 13.0,
+   "score": 6.8
+  },
+  {
+   "metrica": "varredura_tronco",
+   "golpe": "entre_pernas",
+   "valor": 12.734610121979241,
+   "score": 6.799549368713208
+  },
+  {
+   "metrica": "dur_cross",
+   "golpe": "cross_parado",
+   "valor": 6.0,
+   "score": 6.0
+  },
+  {
+   "metrica": "latencia_corpo",
+   "golpe": "step_back",
+   "valor": 6.0,
+   "score": 5.430555555555555
+  }
+ ]
+}

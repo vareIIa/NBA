@@ -1,0 +1,9 @@
+# Régua do feel (tools/feel): pipeline de vídeo (medir.py com MediaPipe) e calibração.
+# Instale num venv próprio: python -m venv tools/feel/.venv && tools/feel/.venv/Scripts/python -m pip install -r tools/feel/requirements.txt
+# Versões testadas em 2026-10-17 (Python 3.12, Windows 11). golpes.py, calibrar.py, comparar.py e os testes só usam a
+# biblioteca padrão; o MediaPipe só é preciso para medir.py.
+mediapipe==1.1.1
+opencv-python==5.0.0.93
+numpy==2.5.4
+# Opcional: só para transcrever.py (narração dos tutoriais). Descomente para instalar.
+# faster-whisper==1.2.1

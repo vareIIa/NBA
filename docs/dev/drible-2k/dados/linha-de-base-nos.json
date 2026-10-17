@@ -1,0 +1,1979 @@
+{
+ "S_m": 1.45,
+ "altura_m": 1.86,
+ "hz": 60.0,
+ "fases": {
+  "drible_parado": {
+   "mao": 50,
+   "descendo": 55,
+   "subindo": 60
+  },
+  "correndo": {
+   "mao": 64,
+   "descendo": 69,
+   "subindo": 60
+  }
+ },
+ "controles": {
+  "drible_parado": {
+   "id": "drible_parado",
+   "quadril": 0.5051821589205397,
+   "quadril_amplitude": 0.009413793103448365,
+   "base": 0.23793103448275865,
+   "base_amplitude": 0.0,
+   "inclinacao": 4.166808600315998,
+   "inclinacao_amplitude": 6.341407906236578,
+   "cabeca_desvio": 0.0010274140980520991,
+   "braco_livre_lado": 0.18815637181409298,
+   "braco_livre_alt": 0.6536256371814093,
+   "mao_bola_alt_max": 0.6134827586206897,
+   "quique_q": 12.75,
+   "quiques": 9,
+   "vel": 0.0,
+   "ombros_aparentes": 0.258391904047976
+  },
+  "correndo": {
+   "id": "correndo",
+   "quadril": 0.37239716024340774,
+   "quadril_amplitude": 0.20465517241379305,
+   "base": 0.08585841784989857,
+   "base_amplitude": 0.18731034482758627,
+   "inclinacao": 3.2265034783767947,
+   "inclinacao_amplitude": 16.617475252496014,
+   "cabeca_desvio": 0.006747058616195392,
+   "braco_livre_lado": 0.18746308316430021,
+   "braco_livre_alt": 0.5307860040567951,
+   "mao_bola_alt_max": 0.6131379310344828,
+   "quique_q": 9.5,
+   "quiques": 8,
+   "vel": 4.473599411764706,
+   "ombros_aparentes": 0.25822880324543607
+  }
+ },
+ "golpes": {
+  "cross_parado": {
+   "mao": {
+    "id": "cross_parado__mao",
+    "cenario": "cross_parado",
+    "fase": "mao",
+    "cmd": 50,
+    "golpes": [
+     "Crossover"
+    ],
+    "golpe": "Crossover",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "hand_l (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 2.5,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      52
+     ],
+     "solturas": [
+      53,
+      85
+     ],
+     "quiques": [
+      59
+     ],
+     "recepcoes": [
+      64
+     ],
+     "fim_acao": 69
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 6.0,
+    "cmd_a_recepcao_q": 7.5,
+    "duracao_acao_q": 8.5,
+    "duracao_nucleo_q": 12.000000000000004,
+    "corpo_antes_da_bola_q": 6.0,
+    "travessia_q": 3.5,
+    "extremo_a_extremo_q": 10.0,
+    "bola_alt_no_meio": 0.05213793103448276,
+    "quadril_neutro": 0.5070436781609196,
+    "quadril_min": 0.4793793103448276,
+    "queda_quadril": 0.02766436781609194,
+    "queda_quadril_rel": 0.05456012767269361,
+    "queda_quadril_tempo_q": 12.0,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.24455172413793105,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 9.108132939102925,
+    "inclinacao_abs_max": 9.108132939102925,
+    "varredura_tronco": 16.239660541969883,
+    "vel_tronco_pico": 185.29910312118193,
+    "giro_tronco_max": 10.012141361119747,
+    "cabeca_desvio": 0.007499831746031859,
+    "overshoot_tronco": 0.3147417723525218,
+    "antecipacao_q": 0.5,
+    "antecipacao_quadril": 0.004422988505747183,
+    "antecipacao_mao": -0.03175172413793104,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "descendo": {
+    "id": "cross_parado__descendo",
+    "cenario": "cross_parado",
+    "fase": "descendo",
+    "cmd": 55,
+    "golpes": [
+     "Crossover"
+    ],
+    "golpe": "Crossover",
+    "latencia_corpo_q": 2.5,
+    "latencia_corpo_ms": 83.33333333333333,
+    "latencia_corpo_osso": "head (ang)",
+    "latencia_nucleo_q": 2.5,
+    "pendente_q": 1.0,
+    "espera_bola_q": 1.5,
+    "latencia_bola_q": 5.5,
+    "bola_reage_q": 2.5,
+    "eventos": {
+     "nucleo": [
+      59
+     ],
+     "solturas": [
+      63,
+      95
+     ],
+     "quiques": [
+      58,
+      68
+     ],
+     "recepcoes": [
+      62,
+      74
+     ],
+     "fim_acao": 79
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 7.5,
+    "cmd_a_recepcao_q": 10.0,
+    "duracao_acao_q": 10.0,
+    "duracao_nucleo_q": 11.999999999999996,
+    "corpo_antes_da_bola_q": 7.5,
+    "travessia_q": 3.0,
+    "extremo_a_extremo_q": 10.0,
+    "bola_alt_no_meio": 0.05286206896551725,
+    "quadril_neutro": 0.5054045977011494,
+    "quadril_min": 0.4793793103448276,
+    "queda_quadril": 0.026025287356321813,
+    "queda_quadril_rel": 0.05149396636813109,
+    "queda_quadril_tempo_q": 14.5,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.24455172413793105,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 8.854342318611177,
+    "inclinacao_abs_max": 8.854342318611177,
+    "varredura_tronco": 14.951438639821049,
+    "vel_tronco_pico": 153.93607926130977,
+    "giro_tronco_max": 9.27550290045799,
+    "cabeca_desvio": 0.007589867956721996,
+    "overshoot_tronco": 0.27090351286315434,
+    "antecipacao_q": 2.0,
+    "antecipacao_quadril": 0.0005425287356322084,
+    "antecipacao_mao": -0.12950574712643687,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "subindo": {
+    "id": "cross_parado__subindo",
+    "cenario": "cross_parado",
+    "fase": "subindo",
+    "cmd": 60,
+    "golpes": [
+     "Crossover"
+    ],
+    "golpe": "Crossover",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "hand_l (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 3.0,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      62
+     ],
+     "solturas": [
+      63,
+      95
+     ],
+     "quiques": [
+      69
+     ],
+     "recepcoes": [
+      62,
+      74
+     ],
+     "fim_acao": 79
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 6.0,
+    "cmd_a_recepcao_q": 7.5,
+    "duracao_acao_q": 8.5,
+    "duracao_nucleo_q": 11.999999999999996,
+    "corpo_antes_da_bola_q": 6.0,
+    "travessia_q": 3.5,
+    "extremo_a_extremo_q": 15.0,
+    "bola_alt_no_meio": 0.09441379310344827,
+    "quadril_neutro": 0.5037402298850575,
+    "quadril_min": 0.4793793103448276,
+    "queda_quadril": 0.024360919540229897,
+    "queda_quadril_rel": 0.04836008342194255,
+    "queda_quadril_tempo_q": 12.0,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.24455172413793105,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 9.108132939102925,
+    "inclinacao_abs_max": 9.108132939102925,
+    "varredura_tronco": 14.54516940596256,
+    "vel_tronco_pico": 211.93844955962166,
+    "giro_tronco_max": 10.815757716211937,
+    "cabeca_desvio": 0.007772006843062391,
+    "overshoot_tronco": 0.32252469826754804,
+    "antecipacao_q": 0.5,
+    "antecipacao_quadril": 0.0017747126436782334,
+    "antecipacao_mao": -0.04515402298850579,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   }
+  },
+  "entre_pernas": {
+   "mao": {
+    "id": "entre_pernas__mao",
+    "cenario": "entre_pernas",
+    "fase": "mao",
+    "cmd": 50,
+    "golpes": [
+     "Entre as pernas"
+    ],
+    "golpe": "Entre as pernas",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 1.5,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      52
+     ],
+     "solturas": [
+      59,
+      92
+     ],
+     "quiques": [
+      61
+     ],
+     "recepcoes": [
+      70
+     ],
+     "fim_acao": 76
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 9.0,
+    "cmd_a_recepcao_q": 10.5,
+    "duracao_acao_q": 12.0,
+    "duracao_nucleo_q": 12.599999999999998,
+    "corpo_antes_da_bola_q": 9.0,
+    "travessia_q": 5.0,
+    "extremo_a_extremo_q": 10.0,
+    "bola_alt_no_meio": 0.059620689655172414,
+    "quadril_neutro": 0.5070436781609196,
+    "quadril_min": 0.3854827586206897,
+    "queda_quadril": 0.12156091954022985,
+    "queda_quadril_rel": 0.23974447325946202,
+    "queda_quadril_tempo_q": 4.5,
+    "volta_quadril_q": 3.5,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.2617931034482759,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 7.131527602866958,
+    "inclinacao_abs_max": 7.131527602866958,
+    "varredura_tronco": 12.828766563363416,
+    "vel_tronco_pico": 88.74010520154312,
+    "giro_tronco_max": 8.061629729109447,
+    "cabeca_desvio": 0.006128143256661038,
+    "overshoot_tronco": 0.18519826556714966,
+    "antecipacao_q": 3.5,
+    "antecipacao_quadril": 0.11576781609195402,
+    "antecipacao_mao": -0.27102758620689654,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "descendo": {
+    "id": "entre_pernas__descendo",
+    "cenario": "entre_pernas",
+    "fase": "descendo",
+    "cmd": 55,
+    "golpes": [
+     "Entre as pernas"
+    ],
+    "golpe": "Entre as pernas",
+    "latencia_corpo_q": 2.5,
+    "latencia_corpo_ms": 83.33333333333333,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 2.5,
+    "pendente_q": 1.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 3.0,
+    "bola_reage_q": 3.0,
+    "eventos": {
+     "nucleo": [
+      59
+     ],
+     "solturas": [
+      66,
+      99
+     ],
+     "quiques": [
+      58,
+      69
+     ],
+     "recepcoes": [
+      62,
+      77
+     ],
+     "fim_acao": 83
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 8.5,
+    "cmd_a_recepcao_q": 11.5,
+    "duracao_acao_q": 12.0,
+    "duracao_nucleo_q": 12.599999999999998,
+    "corpo_antes_da_bola_q": 9.0,
+    "travessia_q": 5.0,
+    "extremo_a_extremo_q": 12.0,
+    "bola_alt_no_meio": 0.08286206896551723,
+    "quadril_neutro": 0.5054045977011494,
+    "quadril_min": 0.3854827586206897,
+    "queda_quadril": 0.11992183908045972,
+    "queda_quadril_rel": 0.23727888433529973,
+    "queda_quadril_tempo_q": 5.5,
+    "volta_quadril_q": 3.5,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.2617931034482759,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 7.037371161482785,
+    "inclinacao_abs_max": 7.037371161482785,
+    "varredura_tronco": 12.734610121979241,
+    "vel_tronco_pico": 88.74010520154312,
+    "giro_tronco_max": 7.3903291296459575,
+    "cabeca_desvio": 0.0060338603147758185,
+    "overshoot_tronco": 0.17421018961783427,
+    "antecipacao_q": 3.5,
+    "antecipacao_quadril": 0.1141287356321839,
+    "antecipacao_mao": -0.27750574712643683,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "subindo": {
+    "id": "entre_pernas__subindo",
+    "cenario": "entre_pernas",
+    "fase": "subindo",
+    "cmd": 60,
+    "golpes": [
+     "Entre as pernas"
+    ],
+    "golpe": "Entre as pernas",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 2.0,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      62
+     ],
+     "solturas": [
+      69,
+      102
+     ],
+     "quiques": [
+      71
+     ],
+     "recepcoes": [
+      62,
+      80
+     ],
+     "fim_acao": 86
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 9.0,
+    "cmd_a_recepcao_q": 10.5,
+    "duracao_acao_q": 12.0,
+    "duracao_nucleo_q": 12.599999999999998,
+    "corpo_antes_da_bola_q": 9.0,
+    "travessia_q": 4.5,
+    "extremo_a_extremo_q": 12.0,
+    "bola_alt_no_meio": 0.059620689655172414,
+    "quadril_neutro": 0.5037402298850575,
+    "quadril_min": 0.3854827586206897,
+    "queda_quadril": 0.11825747126436781,
+    "queda_quadril_rel": 0.23475883848179363,
+    "queda_quadril_tempo_q": 4.5,
+    "volta_quadril_q": 3.5,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.2617931034482759,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 7.037371161482785,
+    "inclinacao_abs_max": 7.037371161482785,
+    "varredura_tronco": 12.734610121979241,
+    "vel_tronco_pico": 88.74010520154312,
+    "giro_tronco_max": 8.865246084201637,
+    "cabeca_desvio": 0.006297209915607068,
+    "overshoot_tronco": 0.19110680163513116,
+    "antecipacao_q": 3.5,
+    "antecipacao_quadril": 0.11246436781609198,
+    "antecipacao_mao": -0.2652574712643679,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   }
+  },
+  "behind_back": {
+   "mao": {
+    "id": "behind_back__mao",
+    "cenario": "behind_back",
+    "fase": "mao",
+    "cmd": 50,
+    "golpes": [
+     "Por trás"
+    ],
+    "golpe": "Por trás",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 2.0,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      52
+     ],
+     "solturas": [
+      65,
+      98
+     ],
+     "quiques": [
+      71
+     ],
+     "recepcoes": [
+      76
+     ],
+     "fim_acao": 79
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 12.0,
+    "cmd_a_recepcao_q": 13.5,
+    "duracao_acao_q": 13.5,
+    "duracao_nucleo_q": 13.499999999999998,
+    "corpo_antes_da_bola_q": 12.0,
+    "travessia_q": 5.0,
+    "extremo_a_extremo_q": 13.0,
+    "bola_alt_no_meio": 0.060551724137931036,
+    "quadril_neutro": 0.5070436781609196,
+    "quadril_min": 0.4315172413793103,
+    "queda_quadril": 0.07552643678160925,
+    "queda_quadril_rel": 0.1489544984675651,
+    "queda_quadril_tempo_q": 4.0,
+    "volta_quadril_q": 3.5,
+    "base_min": 0.18110344827586208,
+    "base_max": 0.37193103448275866,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 2.5,
+    "inclinacao_lado_bola_max": 23.08225734605335,
+    "inclinacao_abs_max": 23.27842962856513,
+    "varredura_tronco": 28.687653863860547,
+    "vel_tronco_pico": 198.94678843215345,
+    "giro_tronco_max": 28.05103232674366,
+    "cabeca_desvio": 0.007425965593023581,
+    "overshoot_tronco": -0.137202365197847,
+    "antecipacao_q": 6.5,
+    "antecipacao_quadril": 0.00831954022988507,
+    "antecipacao_mao": 0.03052413793103459,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "descendo": {
+    "id": "behind_back__descendo",
+    "cenario": "behind_back",
+    "fase": "descendo",
+    "cmd": 55,
+    "golpes": [
+     "Por trás"
+    ],
+    "golpe": "Por trás",
+    "latencia_corpo_q": 3.5,
+    "latencia_corpo_ms": 116.66666666666667,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 3.5,
+    "pendente_q": 2.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 5.0,
+    "bola_reage_q": 3.5,
+    "eventos": {
+     "nucleo": [
+      61
+     ],
+     "solturas": [
+      74,
+      107
+     ],
+     "quiques": [
+      58,
+      80
+     ],
+     "recepcoes": [
+      61,
+      85
+     ],
+     "fim_acao": 88
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 12.0,
+    "cmd_a_recepcao_q": 15.5,
+    "duracao_acao_q": 13.5,
+    "duracao_nucleo_q": 13.499999999999998,
+    "corpo_antes_da_bola_q": 12.0,
+    "travessia_q": 5.0,
+    "extremo_a_extremo_q": 13.0,
+    "bola_alt_no_meio": 0.060551724137931036,
+    "quadril_neutro": 0.5054045977011494,
+    "quadril_min": 0.4316551724137932,
+    "queda_quadril": 0.07374942528735623,
+    "queda_quadril_rel": 0.14592155596290196,
+    "queda_quadril_tempo_q": 6.0,
+    "volta_quadril_q": 3.5,
+    "base_min": 0.18110344827586208,
+    "base_max": 0.37193103448275866,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 2.5,
+    "inclinacao_lado_bola_max": 23.08225734605335,
+    "inclinacao_abs_max": 23.27842962856513,
+    "varredura_tronco": 28.687653863860547,
+    "vel_tronco_pico": 184.5885843344713,
+    "giro_tronco_max": 28.722332926207148,
+    "cabeca_desvio": 0.008013829198965561,
+    "overshoot_tronco": 0.049362018317852786,
+    "antecipacao_q": 6.5,
+    "antecipacao_quadril": 0.006680459770114944,
+    "antecipacao_mao": 0.021425287356321876,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "subindo": {
+    "id": "behind_back__subindo",
+    "cenario": "behind_back",
+    "fase": "subindo",
+    "cmd": 60,
+    "golpes": [
+     "Por trás"
+    ],
+    "golpe": "Por trás",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 2.5,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      62
+     ],
+     "solturas": [
+      75,
+      108
+     ],
+     "quiques": [
+      81
+     ],
+     "recepcoes": [
+      62,
+      86
+     ],
+     "fim_acao": 89
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 12.0,
+    "cmd_a_recepcao_q": 13.5,
+    "duracao_acao_q": 13.5,
+    "duracao_nucleo_q": 13.499999999999998,
+    "corpo_antes_da_bola_q": 12.0,
+    "travessia_q": 5.0,
+    "extremo_a_extremo_q": 13.0,
+    "bola_alt_no_meio": 0.060551724137931036,
+    "quadril_neutro": 0.5037402298850575,
+    "quadril_min": 0.4316206896551724,
+    "queda_quadril": 0.07211954022988509,
+    "queda_quadril_rel": 0.14316811711929617,
+    "queda_quadril_tempo_q": 4.0,
+    "volta_quadril_q": 3.5,
+    "base_min": 0.18110344827586208,
+    "base_max": 0.37193103448275866,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 2.5,
+    "inclinacao_lado_bola_max": 23.08225734605335,
+    "inclinacao_abs_max": 23.27842962856513,
+    "varredura_tronco": 28.687653863860547,
+    "vel_tronco_pico": 184.5885843344713,
+    "giro_tronco_max": 27.247415971651467,
+    "cabeca_desvio": 0.007724747170828114,
+    "overshoot_tronco": -0.14203917188018014,
+    "antecipacao_q": 6.5,
+    "antecipacao_quadril": 0.0050160919540230275,
+    "antecipacao_mao": 0.05305287356321842,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   }
+  },
+  "hesitacao": {
+   "mao": {
+    "id": "hesitacao__mao",
+    "cenario": "hesitacao",
+    "fase": "mao",
+    "cmd": 50,
+    "golpes": [
+     "Hesitação"
+    ],
+    "golpe": "Hesitação",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": null,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      52
+     ],
+     "solturas": [
+      69
+     ],
+     "quiques": [
+      72
+     ],
+     "recepcoes": [
+      80
+     ],
+     "fim_acao": 76
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 14.0,
+    "cmd_a_recepcao_q": 15.5,
+    "duracao_acao_q": 12.0,
+    "duracao_nucleo_q": 12.000000000000004,
+    "quadril_neutro": 0.5070436781609196,
+    "quadril_min": 0.4615862068965517,
+    "queda_quadril": 0.04545747126436783,
+    "queda_quadril_rel": 0.08965198309787638,
+    "queda_quadril_tempo_q": 4.0,
+    "volta_quadril_q": 1.5,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.3033793103448276,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 21.350980247653588,
+    "inclinacao_abs_max": 21.350980247653588,
+    "varredura_tronco": 38.085016550618235,
+    "vel_tronco_pico": 364.91895846866174,
+    "giro_tronco_max": 21.942011869015765,
+    "cabeca_desvio": 0.007922630526267646,
+    "antecipacao_q": 8.5,
+    "antecipacao_quadril": 0.018043678160919563,
+    "antecipacao_mao": -0.2457172413793104,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "descendo": {
+    "id": "hesitacao__descendo",
+    "cenario": "hesitacao",
+    "fase": "descendo",
+    "cmd": 55,
+    "golpes": [
+     "Hesitação"
+    ],
+    "golpe": "Hesitação",
+    "latencia_corpo_q": 2.5,
+    "latencia_corpo_ms": 83.33333333333333,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 2.5,
+    "pendente_q": 1.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": null,
+    "bola_reage_q": 2.5,
+    "eventos": {
+     "nucleo": [
+      59
+     ],
+     "solturas": [
+      76
+     ],
+     "quiques": [
+      58,
+      79
+     ],
+     "recepcoes": [
+      62,
+      87
+     ],
+     "fim_acao": 83
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 14.0,
+    "cmd_a_recepcao_q": 16.5,
+    "duracao_acao_q": 12.0,
+    "duracao_nucleo_q": 11.999999999999996,
+    "quadril_neutro": 0.5054045977011494,
+    "quadril_min": 0.4615862068965517,
+    "queda_quadril": 0.04381839080459771,
+    "queda_quadril_rel": 0.08669962838467872,
+    "queda_quadril_tempo_q": 5.0,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.3033793103448276,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 21.350980247653588,
+    "inclinacao_abs_max": 21.350980247653588,
+    "varredura_tronco": 37.5085074494685,
+    "vel_tronco_pico": 364.91895846866174,
+    "giro_tronco_max": 20.9223320450138,
+    "cabeca_desvio": 0.007913336953204607,
+    "antecipacao_q": 8.5,
+    "antecipacao_quadril": 0.016404597701149437,
+    "antecipacao_mao": -0.25247126436781614,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "subindo": {
+    "id": "hesitacao__subindo",
+    "cenario": "hesitacao",
+    "fase": "subindo",
+    "cmd": 60,
+    "golpes": [
+     "Hesitação"
+    ],
+    "golpe": "Hesitação",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": null,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      62
+     ],
+     "solturas": [
+      79,
+      104
+     ],
+     "quiques": [
+      82
+     ],
+     "recepcoes": [
+      62,
+      90
+     ],
+     "fim_acao": 86
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 14.0,
+    "cmd_a_recepcao_q": 15.5,
+    "duracao_acao_q": 12.0,
+    "duracao_nucleo_q": 11.999999999999996,
+    "quadril_neutro": 0.5037402298850575,
+    "quadril_min": 0.4616551724137931,
+    "queda_quadril": 0.0420850574712644,
+    "queda_quadril_rel": 0.08354515874355972,
+    "queda_quadril_tempo_q": 4.0,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.3033793103448276,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 21.350980247653588,
+    "inclinacao_abs_max": 21.350980247653588,
+    "varredura_tronco": 37.4396762012133,
+    "vel_tronco_pico": 364.91895846866174,
+    "giro_tronco_max": 22.223399152041857,
+    "cabeca_desvio": 0.008164750857968637,
+    "antecipacao_q": 8.5,
+    "antecipacao_quadril": 0.01474022988505752,
+    "antecipacao_mao": -0.2220850574712644,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   }
+  },
+  "double_cross": {
+   "mao": {
+    "id": "double_cross__mao",
+    "cenario": "double_cross",
+    "fase": "mao",
+    "cmd": 50,
+    "golpes": [
+     "Crossover",
+     "Double cross"
+    ],
+    "golpe": "Double cross",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "hand_l (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 2.5,
+    "latencia_bola_q": 2.5,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      52,
+      60
+     ],
+     "solturas": [
+      53,
+      65,
+      83
+     ],
+     "quiques": [
+      59,
+      70,
+      89
+     ],
+     "recepcoes": [
+      64,
+      75,
+      94
+     ],
+     "fim_acao": 80
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 11.5,
+    "pose_neutra_q": 0.0,
+    "cmd_a_recepcao_q": 13.0,
+    "duracao_acao_q": 14.0,
+    "duracao_nucleo_q": 25.002,
+    "corpo_antes_da_bola_q": 11.5,
+    "travessia_q": 3.5,
+    "extremo_a_extremo_q": 6.0,
+    "bola_alt_no_meio": 0.05213793103448276,
+    "quadril_neutro": 0.5070436781609196,
+    "quadril_min": 0.47958620689655174,
+    "queda_quadril": 0.027457471264367816,
+    "queda_quadril_rel": 0.054152082842168256,
+    "queda_quadril_tempo_q": 17.5,
+    "volta_quadril_q": 1.5,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.2440689655172414,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 8.853606496796033,
+    "inclinacao_abs_max": 8.853606496796033,
+    "varredura_tronco": 15.985134099662991,
+    "vel_tronco_pico": 186.3821238258261,
+    "giro_tronco_max": 11.557043678194551,
+    "cabeca_desvio": 0.006685018848059811,
+    "overshoot_tronco": 0.19918646211364094,
+    "antecipacao_q": 0.5,
+    "antecipacao_quadril": 0.004422988505747183,
+    "antecipacao_mao": -0.03175172413793104,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "descendo": {
+    "id": "double_cross__descendo",
+    "cenario": "double_cross",
+    "fase": "descendo",
+    "cmd": 55,
+    "golpes": [
+     "Crossover",
+     "Double cross"
+    ],
+    "golpe": "Double cross",
+    "latencia_corpo_q": 2.5,
+    "latencia_corpo_ms": 83.33333333333333,
+    "latencia_corpo_osso": "head (ang)",
+    "latencia_nucleo_q": 2.5,
+    "pendente_q": 1.0,
+    "espera_bola_q": 4.5,
+    "latencia_bola_q": 5.5,
+    "bola_reage_q": 2.5,
+    "eventos": {
+     "nucleo": [
+      59,
+      69
+     ],
+     "solturas": [
+      63,
+      75,
+      92
+     ],
+     "quiques": [
+      58,
+      68,
+      80,
+      98
+     ],
+     "recepcoes": [
+      62,
+      74,
+      85,
+      103
+     ],
+     "fim_acao": 90
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 13.0,
+    "pose_neutra_q": 0.0,
+    "cmd_a_recepcao_q": 15.5,
+    "duracao_acao_q": 15.5,
+    "duracao_nucleo_q": 26.001,
+    "corpo_antes_da_bola_q": 13.0,
+    "travessia_q": 3.5,
+    "extremo_a_extremo_q": 6.0,
+    "bola_alt_no_meio": 0.05286206896551725,
+    "quadril_neutro": 0.5054045977011494,
+    "quadril_min": 0.4794827586206896,
+    "queda_quadril": 0.025921839080459808,
+    "queda_quadril_rel": 0.05128928228663966,
+    "queda_quadril_tempo_q": 20.0,
+    "volta_quadril_q": 2.0,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.2440689655172414,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 11.326208913006582,
+    "inclinacao_abs_max": 11.326208913006582,
+    "varredura_tronco": 17.423305234216453,
+    "vel_tronco_pico": 183.9832268353102,
+    "giro_tronco_max": 11.00243818522534,
+    "cabeca_desvio": 0.0067904780930395595,
+    "overshoot_tronco": 0.34233923010278405,
+    "antecipacao_q": 2.0,
+    "antecipacao_quadril": 0.0005425287356322084,
+    "antecipacao_mao": -0.12950574712643687,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "subindo": {
+    "id": "double_cross__subindo",
+    "cenario": "double_cross",
+    "fase": "subindo",
+    "cmd": 60,
+    "golpes": [
+     "Crossover",
+     "Double cross"
+    ],
+    "golpe": "Double cross",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "hand_l (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 2.5,
+    "latencia_bola_q": 3.0,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      62,
+      70
+     ],
+     "solturas": [
+      63,
+      75,
+      93
+     ],
+     "quiques": [
+      69,
+      80,
+      99
+     ],
+     "recepcoes": [
+      62,
+      74,
+      85,
+      104
+     ],
+     "fim_acao": 90
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 11.5,
+    "pose_neutra_q": 0.0,
+    "cmd_a_recepcao_q": 13.0,
+    "duracao_acao_q": 14.0,
+    "duracao_nucleo_q": 24.999,
+    "corpo_antes_da_bola_q": 11.5,
+    "travessia_q": 3.5,
+    "extremo_a_extremo_q": 11.0,
+    "bola_alt_no_meio": 0.09441379310344827,
+    "quadril_neutro": 0.5037402298850575,
+    "quadril_min": 0.47958620689655174,
+    "queda_quadril": 0.024154022988505774,
+    "queda_quadril_rel": 0.047949362698343934,
+    "queda_quadril_tempo_q": 17.5,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.2440689655172414,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 8.867569654449753,
+    "inclinacao_abs_max": 8.867569654449753,
+    "varredura_tronco": 14.92276115217437,
+    "vel_tronco_pico": 211.93844955962166,
+    "giro_tronco_max": 12.377862403279813,
+    "cabeca_desvio": 0.006915530597430294,
+    "overshoot_tronco": 0.2053221360650394,
+    "antecipacao_q": 0.5,
+    "antecipacao_quadril": 0.0017747126436782334,
+    "antecipacao_mao": -0.04515402298850579,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   }
+  },
+  "hesi_cross": {
+   "mao": {
+    "id": "hesi_cross__mao",
+    "cenario": "hesi_cross",
+    "fase": "mao",
+    "cmd": 50,
+    "golpes": [
+     "Hesitação",
+     "Hesi-cross"
+    ],
+    "golpe": "Hesi-cross",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 3.5,
+    "latencia_bola_q": 2.0,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      52,
+      73
+     ],
+     "solturas": [
+      69,
+      81,
+      117
+     ],
+     "quiques": [
+      72,
+      89
+     ],
+     "recepcoes": [
+      80,
+      96
+     ],
+     "fim_acao": 101
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 22.0,
+    "pose_neutra_q": 0.0,
+    "cmd_a_recepcao_q": 23.5,
+    "duracao_acao_q": 24.5,
+    "duracao_nucleo_q": 26.154000000000003,
+    "corpo_antes_da_bola_q": 22.0,
+    "travessia_q": 4.0,
+    "extremo_a_extremo_q": 18.0,
+    "bola_alt_no_meio": 0.05720689655172414,
+    "quadril_neutro": 0.5070436781609196,
+    "quadril_min": 0.4615862068965517,
+    "queda_quadril": 0.04545747126436783,
+    "queda_quadril_rel": 0.08965198309787638,
+    "queda_quadril_tempo_q": 4.0,
+    "volta_quadril_q": 1.5,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.37193103448275866,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 21.350980247653588,
+    "inclinacao_abs_max": 21.350980247653588,
+    "varredura_tronco": 30.358111260462824,
+    "vel_tronco_pico": 364.91895846866174,
+    "giro_tronco_max": 21.942011869015765,
+    "cabeca_desvio": 0.005984491239706538,
+    "overshoot_tronco": 0.344170105968268,
+    "antecipacao_q": 8.5,
+    "antecipacao_quadril": 0.018043678160919563,
+    "antecipacao_mao": -0.2457172413793104,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "descendo": {
+    "id": "hesi_cross__descendo",
+    "cenario": "hesi_cross",
+    "fase": "descendo",
+    "cmd": 55,
+    "golpes": [
+     "Hesitação",
+     "Hesi-cross"
+    ],
+    "golpe": "Hesi-cross",
+    "latencia_corpo_q": 2.5,
+    "latencia_corpo_ms": 83.33333333333333,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 2.5,
+    "pendente_q": 1.0,
+    "espera_bola_q": 3.5,
+    "latencia_bola_q": 13.0,
+    "bola_reage_q": 2.5,
+    "eventos": {
+     "nucleo": [
+      59,
+      80
+     ],
+     "solturas": [
+      76,
+      88,
+      124
+     ],
+     "quiques": [
+      58,
+      79,
+      96
+     ],
+     "recepcoes": [
+      62,
+      87,
+      103
+     ],
+     "fim_acao": 108
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 22.0,
+    "pose_neutra_q": 0.0,
+    "cmd_a_recepcao_q": 24.5,
+    "duracao_acao_q": 24.5,
+    "duracao_nucleo_q": 26.150999999999996,
+    "corpo_antes_da_bola_q": 22.0,
+    "travessia_q": 4.0,
+    "extremo_a_extremo_q": 24.0,
+    "bola_alt_no_meio": 0.05720689655172414,
+    "quadril_neutro": 0.5054045977011494,
+    "quadril_min": 0.4615862068965517,
+    "queda_quadril": 0.04381839080459771,
+    "queda_quadril_rel": 0.08669962838467872,
+    "queda_quadril_tempo_q": 5.0,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.37193103448275866,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 21.350980247653588,
+    "inclinacao_abs_max": 21.350980247653588,
+    "varredura_tronco": 30.16769370566025,
+    "vel_tronco_pico": 364.91895846866174,
+    "giro_tronco_max": 20.9223320450138,
+    "cabeca_desvio": 0.0061609543874464635,
+    "overshoot_tronco": 0.379923059191515,
+    "antecipacao_q": 8.5,
+    "antecipacao_quadril": 0.016404597701149437,
+    "antecipacao_mao": -0.25247126436781614,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   },
+   "subindo": {
+    "id": "hesi_cross__subindo",
+    "cenario": "hesi_cross",
+    "fase": "subindo",
+    "cmd": 60,
+    "golpes": [
+     "Hesitação",
+     "Hesi-cross"
+    ],
+    "golpe": "Hesi-cross",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 3.5,
+    "latencia_bola_q": 11.0,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      62,
+      83
+     ],
+     "solturas": [
+      79,
+      91,
+      127
+     ],
+     "quiques": [
+      82,
+      99
+     ],
+     "recepcoes": [
+      62,
+      90,
+      106
+     ],
+     "fim_acao": 111
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 22.0,
+    "pose_neutra_q": 0.0,
+    "cmd_a_recepcao_q": 23.5,
+    "duracao_acao_q": 24.5,
+    "duracao_nucleo_q": 26.150999999999996,
+    "corpo_antes_da_bola_q": 22.0,
+    "travessia_q": 4.0,
+    "extremo_a_extremo_q": 18.0,
+    "bola_alt_no_meio": 0.05720689655172414,
+    "quadril_neutro": 0.5037402298850575,
+    "quadril_min": 0.4616551724137931,
+    "queda_quadril": 0.0420850574712644,
+    "queda_quadril_rel": 0.08354515874355972,
+    "queda_quadril_tempo_q": 4.0,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.23793103448275865,
+    "base_max": 0.37193103448275866,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 0.0,
+    "inclinacao_lado_bola_max": 21.350980247653588,
+    "inclinacao_abs_max": 21.350980247653588,
+    "varredura_tronco": 30.22894244280733,
+    "vel_tronco_pico": 364.91895846866174,
+    "giro_tronco_max": 22.223399152041857,
+    "cabeca_desvio": 0.006183288009542634,
+    "overshoot_tronco": 0.3464380317162057,
+    "antecipacao_q": 8.5,
+    "antecipacao_quadril": 0.01474022988505752,
+    "antecipacao_mao": -0.2220850574712644,
+    "recuo_m": -0.0,
+    "recuo_q": 0.5,
+    "vel_pre": 0.0
+   }
+  },
+  "step_back": {
+   "mao": {
+    "id": "step_back__mao",
+    "cenario": "step_back",
+    "fase": "mao",
+    "cmd": 50,
+    "golpes": [
+     "Step-back"
+    ],
+    "golpe": "Step-back",
+    "latencia_corpo_q": 6.0,
+    "latencia_corpo_ms": 200.0,
+    "latencia_corpo_osso": "spine_02 (ang)",
+    "latencia_nucleo_q": 6.0,
+    "pendente_q": 3.5,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": null,
+    "bola_reage_q": 6.0,
+    "eventos": {
+     "nucleo": [
+      61
+     ],
+     "solturas": [
+      53,
+      65,
+      101
+     ],
+     "quiques": [
+      58,
+      72,
+      106
+     ],
+     "recepcoes": [
+      62,
+      87,
+      110
+     ],
+     "fim_acao": 91
+    },
+    "duracao_bola_q": 11.0,
+    "bola_em_movimento_q": 13.0,
+    "cmd_a_recepcao_q": 19.0,
+    "duracao_acao_q": 15.0,
+    "duracao_nucleo_q": 15.0,
+    "quadril_neutro": 0.5070436781609196,
+    "quadril_min": 0.4139310344827587,
+    "queda_quadril": 0.09311264367816086,
+    "queda_quadril_rel": 0.18363830906222217,
+    "queda_quadril_tempo_q": 19.0,
+    "volta_quadril_q": 6.0,
+    "base_min": 0.09289655172413792,
+    "base_max": 0.24455172413793105,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 9.5,
+    "inclinacao_lado_bola_max": 22.650628138790676,
+    "inclinacao_abs_max": 22.650628138790676,
+    "varredura_tronco": 21.321890952036565,
+    "vel_tronco_pico": 224.55515268466473,
+    "giro_tronco_max": 9.730406359664611,
+    "cabeca_desvio": 0.0028684934165076276,
+    "antecipacao_q": 2.0,
+    "antecipacao_quadril": 0.045836781609195354,
+    "antecipacao_mao": -0.17192413793103445,
+    "recuo_m": 0.821188899270935,
+    "recuo_q": 16.5,
+    "vel_pre": 0.0
+   },
+   "descendo": {
+    "id": "step_back__descendo",
+    "cenario": "step_back",
+    "fase": "descendo",
+    "cmd": 55,
+    "golpes": [
+     "Step-back"
+    ],
+    "golpe": "Step-back",
+    "latencia_corpo_q": 3.5,
+    "latencia_corpo_ms": 116.66666666666667,
+    "latencia_corpo_osso": "spine_02 (ang)",
+    "latencia_nucleo_q": 3.5,
+    "pendente_q": 1.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": null,
+    "bola_reage_q": 3.5,
+    "eventos": {
+     "nucleo": [
+      61
+     ],
+     "solturas": [
+      65,
+      101
+     ],
+     "quiques": [
+      58,
+      72,
+      106
+     ],
+     "recepcoes": [
+      62,
+      87,
+      110
+     ],
+     "fim_acao": 91
+    },
+    "duracao_bola_q": 11.0,
+    "bola_em_movimento_q": 13.0,
+    "cmd_a_recepcao_q": 16.5,
+    "duracao_acao_q": 15.0,
+    "duracao_nucleo_q": 15.0,
+    "quadril_neutro": 0.5054045977011494,
+    "quadril_min": 0.4139310344827587,
+    "queda_quadril": 0.09147356321839073,
+    "queda_quadril_rel": 0.18099076192512187,
+    "queda_quadril_tempo_q": 16.5,
+    "volta_quadril_q": 6.0,
+    "base_min": 0.09289655172413792,
+    "base_max": 0.24455172413793105,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 9.5,
+    "inclinacao_lado_bola_max": 22.650628138790676,
+    "inclinacao_abs_max": 22.650628138790676,
+    "varredura_tronco": 21.321890952036565,
+    "vel_tronco_pico": 225.9825627101189,
+    "giro_tronco_max": 10.4017069591281,
+    "cabeca_desvio": 0.0029813360534821994,
+    "antecipacao_q": 2.0,
+    "antecipacao_quadril": 0.04419770114942523,
+    "antecipacao_mao": -0.17978160919540231,
+    "recuo_m": 0.821188899270935,
+    "recuo_q": 14.0,
+    "vel_pre": 0.0
+   },
+   "subindo": {
+    "id": "step_back__subindo",
+    "cenario": "step_back",
+    "fase": "subindo",
+    "cmd": 60,
+    "golpes": [
+     "Step-back"
+    ],
+    "golpe": "Step-back",
+    "latencia_corpo_q": 2.5,
+    "latencia_corpo_ms": 83.33333333333333,
+    "latencia_corpo_osso": "spine_02 (ang)",
+    "latencia_nucleo_q": 2.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": null,
+    "bola_reage_q": 2.5,
+    "eventos": {
+     "nucleo": [
+      64
+     ],
+     "solturas": [
+      68,
+      102
+     ],
+     "quiques": [
+      73,
+      107
+     ],
+     "recepcoes": [
+      62,
+      90,
+      111
+     ],
+     "fim_acao": 94
+    },
+    "duracao_bola_q": 11.0,
+    "bola_em_movimento_q": 13.0,
+    "cmd_a_recepcao_q": 15.5,
+    "duracao_acao_q": 15.0,
+    "duracao_nucleo_q": 15.0,
+    "quadril_neutro": 0.5037402298850575,
+    "quadril_min": 0.4139310344827587,
+    "queda_quadril": 0.08980919540229881,
+    "queda_quadril_rel": 0.17828473898698008,
+    "queda_quadril_tempo_q": 15.5,
+    "volta_quadril_q": 5.5,
+    "base_min": 0.09289655172413792,
+    "base_max": 0.24455172413793105,
+    "base_neutra": 0.23793103448275865,
+    "passo_cruzado_q": 9.5,
+    "inclinacao_lado_bola_max": 22.64595196073761,
+    "inclinacao_abs_max": 22.64595196073761,
+    "varredura_tronco": 20.627324966400344,
+    "vel_tronco_pico": 225.72436091287392,
+    "giro_tronco_max": 8.938597468208929,
+    "cabeca_desvio": 0.0031991672458625744,
+    "antecipacao_q": 2.0,
+    "antecipacao_quadril": 0.04253333333333337,
+    "antecipacao_mao": -0.12308505747126441,
+    "recuo_m": 0.821188899270935,
+    "recuo_q": 13.0,
+    "vel_pre": 0.0
+   }
+  },
+  "btb_correndo": {
+   "mao": {
+    "id": "btb_correndo__mao",
+    "cenario": "btb_correndo",
+    "fase": "mao",
+    "cmd": 64,
+    "golpes": [
+     "Por trás"
+    ],
+    "golpe": "Por trás",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 2.0,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      66
+     ],
+     "solturas": [
+      79,
+      106
+     ],
+     "quiques": [
+      85
+     ],
+     "recepcoes": [
+      90
+     ],
+     "fim_acao": 93
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 12.0,
+    "cmd_a_recepcao_q": 13.5,
+    "duracao_acao_q": 13.5,
+    "duracao_nucleo_q": 13.499999999999998,
+    "corpo_antes_da_bola_q": 12.0,
+    "travessia_q": 6.0,
+    "extremo_a_extremo_q": 13.0,
+    "bola_alt_no_meio": -0.0035172413793103405,
+    "quadril_neutro": 0.3352252873563219,
+    "quadril_min": 0.32103448275862073,
+    "queda_quadril": 0.014190804597701168,
+    "queda_quadril_rel": 0.04233214239180381,
+    "queda_quadril_tempo_q": 18.5,
+    "volta_quadril_q": 0.0,
+    "base_min": 0.06896551724137931,
+    "base_max": 0.13110344827586207,
+    "base_neutra": 0.07622528735632184,
+    "passo_cruzado_q": 15.0,
+    "inclinacao_lado_bola_max": 20.449638990455224,
+    "inclinacao_abs_max": 20.449638990455224,
+    "varredura_tronco": 27.01870746639878,
+    "vel_tronco_pico": 242.8912657102531,
+    "giro_tronco_max": 42.44502988499012,
+    "cabeca_desvio": 0.002594395465603912,
+    "overshoot_tronco": -0.279259406316939,
+    "antecipacao_q": 6.5,
+    "antecipacao_quadril": -0.09215402298850572,
+    "antecipacao_mao": 0.04720459770114949,
+    "recuo_m": -0.10335265158496977,
+    "recuo_q": 0.5,
+    "vel_pre": 5.984446666666667,
+    "vel_retida": 1.0360189246123563
+   },
+   "descendo": {
+    "id": "btb_correndo__descendo",
+    "cenario": "btb_correndo",
+    "fase": "descendo",
+    "cmd": 69,
+    "golpes": [
+     "Por trás"
+    ],
+    "golpe": "Por trás",
+    "latencia_corpo_q": 5.5,
+    "latencia_corpo_ms": 183.33333333333334,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 5.5,
+    "pendente_q": 4.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 6.5,
+    "bola_reage_q": 5.5,
+    "eventos": {
+     "nucleo": [
+      79
+     ],
+     "solturas": [
+      92,
+      106,
+      125
+     ],
+     "quiques": [
+      74,
+      98,
+      113
+     ],
+     "recepcoes": [
+      79,
+      103,
+      119
+     ],
+     "fim_acao": 106
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 12.0,
+    "cmd_a_recepcao_q": 17.5,
+    "duracao_acao_q": 13.5,
+    "duracao_nucleo_q": 13.500000000000005,
+    "corpo_antes_da_bola_q": 12.0,
+    "travessia_q": 6.5,
+    "extremo_a_extremo_q": 15.0,
+    "bola_alt_no_meio": -0.028896551724137926,
+    "quadril_neutro": 0.3300942528735632,
+    "quadril_min": 0.30258620689655175,
+    "queda_quadril": 0.027508045977011453,
+    "queda_quadril_rel": 0.08333391368539798,
+    "queda_quadril_tempo_q": 25.0,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.06896551724137931,
+    "base_max": 0.08075862068965517,
+    "base_neutra": 0.06945747126436783,
+    "passo_cruzado_q": 19.0,
+    "inclinacao_lado_bola_max": 14.52755769391516,
+    "inclinacao_abs_max": 14.52755769391516,
+    "varredura_tronco": 21.51041830787316,
+    "vel_tronco_pico": 149.62871303582662,
+    "giro_tronco_max": 30.053160364068454,
+    "cabeca_desvio": 0.0049702422436053,
+    "overshoot_tronco": -1.1811883812938035,
+    "antecipacao_q": 6.5,
+    "antecipacao_quadril": -0.04521609195402304,
+    "antecipacao_mao": 0.0038873563218391194,
+    "recuo_m": -0.10325271757590786,
+    "recuo_q": 0.5,
+    "vel_pre": 6.173333333333334,
+    "vel_retida": 1.0043196544276458
+   },
+   "subindo": {
+    "id": "btb_correndo__subindo",
+    "cenario": "btb_correndo",
+    "fase": "subindo",
+    "cmd": 60,
+    "golpes": [
+     "Por trás"
+    ],
+    "golpe": "Por trás",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 2.0,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      62
+     ],
+     "solturas": [
+      75,
+      104
+     ],
+     "quiques": [
+      81
+     ],
+     "recepcoes": [
+      61,
+      86
+     ],
+     "fim_acao": 89
+    },
+    "duracao_bola_q": 5.5,
+    "bola_em_movimento_q": 12.0,
+    "cmd_a_recepcao_q": 13.5,
+    "duracao_acao_q": 13.5,
+    "duracao_nucleo_q": 13.499999999999998,
+    "corpo_antes_da_bola_q": 12.0,
+    "travessia_q": 4.5,
+    "extremo_a_extremo_q": 13.0,
+    "bola_alt_no_meio": -0.016999999999999967,
+    "quadril_neutro": 0.3501425287356322,
+    "quadril_min": 0.2878275862068966,
+    "queda_quadril": 0.062314942528735595,
+    "queda_quadril_rel": 0.1779702190241083,
+    "queda_quadril_tempo_q": 16.5,
+    "volta_quadril_q": 2.0,
+    "base_min": 0.06896551724137931,
+    "base_max": 0.1263448275862069,
+    "base_neutra": 0.08719540229885057,
+    "passo_cruzado_q": 15.0,
+    "inclinacao_lado_bola_max": 18.310518133730273,
+    "inclinacao_abs_max": 18.310518133730273,
+    "varredura_tronco": 23.264658835131456,
+    "vel_tronco_pico": 251.5602344468375,
+    "giro_tronco_max": 42.981441810678184,
+    "cabeca_desvio": 0.0032873161318980513,
+    "antecipacao_q": 6.5,
+    "antecipacao_quadril": -0.031788505747126494,
+    "antecipacao_mao": -0.003947126436781634,
+    "recuo_m": -0.1033495509706107,
+    "recuo_q": 0.5,
+    "vel_pre": 5.703333333333333,
+    "vel_retida": 1.08708357685564
+   }
+  },
+  "cross_correndo": {
+   "mao": {
+    "id": "cross_correndo__mao",
+    "cenario": "cross_correndo",
+    "fase": "mao",
+    "cmd": 64,
+    "golpes": [
+     "Crossover de ataque"
+    ],
+    "golpe": "Crossover de ataque",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 2.5,
+    "bola_reage_q": 2.0,
+    "eventos": {
+     "nucleo": [
+      66
+     ],
+     "solturas": [
+      72,
+      91
+     ],
+     "quiques": [
+      76,
+      98
+     ],
+     "recepcoes": [
+      81,
+      105
+     ],
+     "fim_acao": 87
+    },
+    "duracao_bola_q": 4.5,
+    "bola_em_movimento_q": 7.0,
+    "cmd_a_recepcao_q": 9.0,
+    "duracao_acao_q": 10.5,
+    "duracao_nucleo_q": 12.599999999999998,
+    "corpo_antes_da_bola_q": 7.5,
+    "travessia_q": 4.0,
+    "extremo_a_extremo_q": 9.0,
+    "bola_alt_no_meio": -0.13620689655172413,
+    "quadril_neutro": 0.3352252873563219,
+    "quadril_min": 0.2823793103448276,
+    "queda_quadril": 0.052845977011494294,
+    "queda_quadril_rel": 0.15764317014462748,
+    "queda_quadril_tempo_q": 21.5,
+    "volta_quadril_q": 3.0,
+    "base_min": 0.06896551724137931,
+    "base_max": 0.18406896551724136,
+    "base_neutra": 0.07622528735632184,
+    "passo_cruzado_q": 12.0,
+    "inclinacao_lado_bola_max": 7.590383395996499,
+    "inclinacao_abs_max": 7.590383395996499,
+    "varredura_tronco": 14.369467166463036,
+    "vel_tronco_pico": 189.15933792280322,
+    "giro_tronco_max": 15.050559173013951,
+    "cabeca_desvio": 0.0040008875683265905,
+    "overshoot_tronco": 1.3945116549440288,
+    "antecipacao_q": 3.0,
+    "antecipacao_quadril": -0.018602298850574683,
+    "antecipacao_mao": -0.15114022988505738,
+    "recuo_m": -0.10335265158496977,
+    "recuo_q": 0.5,
+    "vel_pre": 5.984446666666667,
+    "vel_retida": 1.0360189246123563
+   },
+   "descendo": {
+    "id": "cross_correndo__descendo",
+    "cenario": "cross_correndo",
+    "fase": "descendo",
+    "cmd": 69,
+    "golpes": [
+     "Crossover de ataque"
+    ],
+    "golpe": "Crossover de ataque",
+    "latencia_corpo_q": 3.5,
+    "latencia_corpo_ms": 116.66666666666667,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 3.5,
+    "pendente_q": 2.0,
+    "espera_bola_q": 0.5,
+    "latencia_bola_q": 6.0,
+    "bola_reage_q": 4.0,
+    "eventos": {
+     "nucleo": [
+      75
+     ],
+     "solturas": [
+      82,
+      101
+     ],
+     "quiques": [
+      74,
+      87,
+      108
+     ],
+     "recepcoes": [
+      81,
+      91,
+      115
+     ],
+     "fim_acao": 97
+    },
+    "duracao_bola_q": 4.5,
+    "bola_em_movimento_q": 7.5,
+    "cmd_a_recepcao_q": 11.5,
+    "duracao_acao_q": 11.0,
+    "duracao_nucleo_q": 12.600000000000005,
+    "corpo_antes_da_bola_q": 8.0,
+    "travessia_q": 2.0,
+    "extremo_a_extremo_q": 11.5,
+    "bola_alt_no_meio": -0.0010689655172413765,
+    "quadril_neutro": 0.3300942528735632,
+    "quadril_min": 0.29279310344827586,
+    "queda_quadril": 0.03730114942528734,
+    "queda_quadril_rel": 0.11300151123677663,
+    "queda_quadril_tempo_q": 21.0,
+    "volta_quadril_q": 1.0,
+    "base_min": 0.06896551724137931,
+    "base_max": 0.10124137931034483,
+    "base_neutra": 0.06945747126436783,
+    "passo_cruzado_q": 14.5,
+    "inclinacao_lado_bola_max": 19.758034701062936,
+    "inclinacao_abs_max": 19.758034701062936,
+    "varredura_tronco": 30.99997881192401,
+    "vel_tronco_pico": 351.5839483278643,
+    "giro_tronco_max": 26.840269540145567,
+    "cabeca_desvio": 0.005716856416560636,
+    "overshoot_tronco": 0.9987006596002388,
+    "antecipacao_q": 3.5,
+    "antecipacao_quadril": -0.07749195402298853,
+    "antecipacao_mao": -0.08135402298850575,
+    "recuo_m": -0.10325271757590786,
+    "recuo_q": 0.5,
+    "vel_pre": 6.173333333333334,
+    "vel_retida": 1.0043196544276458
+   },
+   "subindo": {
+    "id": "cross_correndo__subindo",
+    "cenario": "cross_correndo",
+    "fase": "subindo",
+    "cmd": 60,
+    "golpes": [
+     "Crossover de ataque"
+    ],
+    "golpe": "Crossover de ataque",
+    "latencia_corpo_q": 1.5,
+    "latencia_corpo_ms": 50.0,
+    "latencia_corpo_osso": "spine_02 (pos)",
+    "latencia_nucleo_q": 1.5,
+    "pendente_q": 0.0,
+    "espera_bola_q": 0.0,
+    "latencia_bola_q": 3.0,
+    "bola_reage_q": 1.5,
+    "eventos": {
+     "nucleo": [
+      62
+     ],
+     "solturas": [
+      68,
+      87
+     ],
+     "quiques": [
+      72,
+      94
+     ],
+     "recepcoes": [
+      61,
+      77,
+      101
+     ],
+     "fim_acao": 83
+    },
+    "duracao_bola_q": 4.5,
+    "bola_em_movimento_q": 7.5,
+    "cmd_a_recepcao_q": 9.0,
+    "duracao_acao_q": 10.5,
+    "duracao_nucleo_q": 12.599999999999998,
+    "corpo_antes_da_bola_q": 7.5,
+    "travessia_q": 4.5,
+    "extremo_a_extremo_q": 9.0,
+    "bola_alt_no_meio": -0.12627586206896552,
+    "quadril_neutro": 0.3501425287356322,
+    "quadril_min": 0.28762068965517235,
+    "queda_quadril": 0.06252183908045983,
+    "queda_quadril_rel": 0.17856111140290998,
+    "queda_quadril_tempo_q": 13.5,
+    "volta_quadril_q": 1.5,
+    "base_min": 0.06896551724137931,
+    "base_max": 0.11682758620689655,
+    "base_neutra": 0.08719540229885057,
+    "passo_cruzado_q": 12.0,
+    "inclinacao_lado_bola_max": 7.147817284247426,
+    "inclinacao_abs_max": 7.147817284247426,
+    "varredura_tronco": 11.4571984800113,
+    "vel_tronco_pico": 158.29473168592313,
+    "giro_tronco_max": 11.325403439887705,
+    "cabeca_desvio": 0.00601161512812259,
+    "antecipacao_q": 3.0,
+    "antecipacao_quadril": -0.057409195402298774,
+    "antecipacao_mao": -0.12346436781609199,
+    "recuo_m": -0.1033495509706107,
+    "recuo_q": 0.5,
+    "vel_pre": 5.703333333333333,
+    "vel_retida": 1.08708357685564
+   }
+  }
+ },
+ "sequencias": {
+  "cross_seguidos": {
+   "id": "cross_seguidos",
+   "golpes": [
+    "Crossover",
+    "Crossover",
+    "Crossover",
+    "Crossover",
+    "Crossover",
+    "Crossover"
+   ],
+   "intervalo_golpes_q": [
+    10.0,
+    10.0,
+    10.0,
+    10.0,
+    10.0
+   ],
+   "pose_neutra_q": 11.5,
+   "nucleo_parado_q": 0.0,
+   "quique_q": 10.0,
+   "quiques_q": [
+    9.0,
+    10.0,
+    10.0,
+    10.0,
+    10.0
+   ],
+   "base_amplitude": 0.3609655172413794,
+   "entrada_no_vale_q": [
+    2.0,
+    3.0,
+    null,
+    null,
+    null
+   ]
+  },
+  "btb_btb": {
+   "id": "btb_btb",
+   "golpes": [
+    "Por trás",
+    "Por trás"
+   ],
+   "intervalo_golpes_q": [
+    11.0
+   ],
+   "pose_neutra_q": 0.0,
+   "nucleo_parado_q": 0.0,
+   "quique_q": 9.5,
+   "quiques_q": [
+    9.5
+   ],
+   "base_amplitude": 0.18620689655172418,
+   "entrada_no_vale_q": [
+    -4.5
+   ]
+  },
+  "arranque_parada": {
+   "id": "arranque_parada",
+   "golpes": [],
+   "vel_max": 6.2,
+   "arranque_q": 26.0,
+   "parada_q": 12.0
+  }
+ }
+}

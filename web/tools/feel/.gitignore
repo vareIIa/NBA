@@ -1,0 +1,4 @@
+# Baixados ou gerados localmente: não versionar (modelo do MediaPipe, venv, cache do Python).
+modelos/
+.venv/
+__pycache__/
