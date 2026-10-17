@@ -29,6 +29,7 @@ import { StealCooldownMs, StealLungeM, ballExposure, contestJumpM, slideFor, sta
 import { type BallState, Vec3, clamp, computeContest, distance2D, makeBallState, makeDefenderPose } from '../sim';
 import { fromThree } from '../units';
 import { AnimRecorder, RemotePlayer } from '../online';
+import { sanitizeLook, wearFor } from '../build/PlayerLook';
 import { type BlockDefenderNow, BlockWatch, finishBlock } from './BlockWatch';
 import { type CatchBody, LowPickupZ, ReboundCatch } from './ReboundCatch';
 
@@ -192,12 +193,18 @@ export class OnlineMatch {
 
   static async create(deps: OnlineMatchDeps): Promise<OnlineMatch> {
     const opp = opponentCard(deps.start.room, deps.start.you);
+    // Uniformes (docs/26): cada um veste o do seu lado (casa ou visitante); se a cor principal do visitante se confundir
+    // com a do mandante, ele veste o outro uniforme dele (wearFor).
+    const mine = sanitizeLook(deps.start.room.players.find((p) => p.side === deps.start.you)?.card.look);
+    const oppLook = sanitizeLook(opp.look);
+    const wear = wearFor(deps.start.you === 0, mine, oppLook);
     const remote = deps.opponent
       ? await deps.opponent(deps)
       : await RemotePlayer.load(deps.scene, {
           heightCm: opp.heightCm,
           wingspanOverM: opp.wingspanOverM,
-          kit: 'branca',
+          look: oppLook,
+          wear: wear.theirs,
           onFloorBounce: (speed) => deps.sfx?.bounce(speed),
         });
     return new OnlineMatch(deps, remote);

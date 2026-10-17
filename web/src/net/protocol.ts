@@ -1,5 +1,5 @@
 // Protocolo do multiplayer (docs/24-multiplayer.md): o que cliente e servidor trocam pelo WebSocket. Um único endpoint
-// (/ws), quadros de texto JSON {t, ...}. Este arquivo não importa nada: o servidor de desenvolvimento (Node, sem
+// (/ws), quadros de texto JSON {t, ...}. Este arquivo só importa tipos: o servidor de desenvolvimento (Node, sem
 // bundler) e o Worker da Cloudflare usam o mesmo arquivo do jogo.
 //
 // Quem manda em quê (netcode do 1x1):
@@ -8,6 +8,7 @@
 //   - A bola é do dono da posse: driblando, no voo e solta depois do arremesso, quem a simula é o cliente do atacante.
 //   - O servidor é o juiz: placar, posse, check-ball, relógio de posse, rebote (o primeiro pedido válido leva), roubo
 //     (sorteado aqui, src/net/defense.ts), toco, vitória, queda de conexão e revanche.
+import type { PlayerLook } from '../build/PlayerLook.ts'; // só o tipo (some na compilação)
 
 /**
  * 2: defesa (roubo, toco, contestação com o estado do defensor) e cartão com os ratings de defesa.
@@ -47,6 +48,8 @@ export interface PlayerCard {
   /** Níveis (0 = sem, 1–4 = Bronze–HOF) dos badges de roubo: Glove do defensor e Unpluckable do atacante. */
   glove?: number;
   unpluckable?: number;
+  /** Aparência (pele, uniforme escolhido, tênis): o oponente monta o boneco com ela. Sem o campo (cliente antigo), a padrão. */
+  look?: PlayerLook;
 }
 
 /** Regras da partida (docs/10-modos.md: 1x1 de rua até 11, cestas de 1 e 2). */

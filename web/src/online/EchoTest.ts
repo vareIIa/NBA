@@ -52,7 +52,7 @@ export async function startEcho(debug: Debug, opts: EchoOptions = {}) {
   const delay = (opts.delayMs ?? 60) / 1000;
   const jitter = (opts.jitterMs ?? 25) / 1000;
   const offset = opts.offset ?? [0, 0, 2.2];
-  const remote = await RemotePlayer.load(scene, { heightCm: opts.heightCm ?? 196, wingspanOverM: 0, kit: 'branca' });
+  const remote = await RemotePlayer.load(scene, { heightCm: opts.heightCm ?? 196, wingspanOverM: 0, wear: 'visitante' });
   const rec = AnimRecorder.attach(animator);
   if (opts.hideLocal) animator.root.visible = false;
 

@@ -7,7 +7,9 @@
 import * as THREE from 'three';
 import { PlayerAnimator } from '../../anim/PlayerAnimator';
 import { Freestyle, type ShotRecord } from '../Freestyle';
-import { PlayerGear } from '../PlayerGear';
+import type { PlayerGear } from '../PlayerGear';
+import { PlayerOutfit } from '../PlayerOutfit';
+import { wearFor } from '../../build/PlayerLook';
 import type { InputState } from '../Input';
 import {
   missDecided,
@@ -104,12 +106,12 @@ export class CpuOpponent implements MatchOpponent {
 
   static async load(deps: OnlineMatchDeps, setup: CpuSetup): Promise<CpuOpponent> {
     const animator = await PlayerAnimator.load('assets/hoops_player.glb', 'assets/hoops_player.clips.json');
-    const gear = await PlayerGear.load(animator, {
-      shoes: 'assets/gear/tenis_retro_alto_1.glb',
-      jersey: 'assets/gear/regata_branca.glb',
-      shorts: 'assets/gear/bermuda_branca.glb',
-    }).catch((e: unknown) => (console.warn('roupa da CPU não carregou', e), null));
-    return new CpuOpponent(deps, setup, animator, gear);
+    // A aparência sorteada do adversário (cpuBuild); ele é o visitante: veste o de visitante, e o de casa se a cor
+    // principal dele se confundir com a do jogador (wearFor).
+    const look = setup.build.look;
+    const side = wearFor(false, look, setup.humanBuild.look).mine;
+    const outfit = await PlayerOutfit.create(animator, look, { side });
+    return new CpuOpponent(deps, setup, animator, outfit.gear);
   }
 
   private constructor(

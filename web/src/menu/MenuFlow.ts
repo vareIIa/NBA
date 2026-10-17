@@ -1,5 +1,6 @@
 // Fluxo do menu principal, antes do Freestyle (docs/23-myplayer-builder.md):
-//   Menu principal → Meu Jogador (builds) → Jogador (nome, posição, mão, número) → Corpo (altura, peso, envergadura)
+//   Menu principal → Meu Jogador (builds) → Jogador (nome, posição, mão, número) → Aparência (pele, uniforme, tênis)
+//   → Corpo (altura, peso, envergadura)
 //   → Atributos (builder/BuilderView) → Shades Of → Freestyle.
 // O fluxo monta a moldura (topo, palco, rodapé), troca as telas, lê teclado e controle (com repetição de direção
 // segurada, como a pausa) e roda o showroom (o nosso jogador 3D no meio). run() termina quando o jogador entra no
@@ -10,6 +11,7 @@ import { MainMenu } from './MainMenu';
 import { BuildList } from './BuildList';
 import { CreatePlayer } from './CreatePlayer';
 import { BodyScreen } from './BodyScreen';
+import { AppearanceScreen } from './AppearanceScreen';
 import { BuilderView } from './builder/BuilderView';
 import { ShadesOf } from './ShadesOf';
 import type { Showroom } from './Showroom';
@@ -119,6 +121,16 @@ export class MenuFlow {
     this.show(
       new CreatePlayer(draft, {
         onBack: () => this.show(this.list),
+        onNext: (b) => this.editLook(b),
+      }),
+    );
+  }
+
+  /** Aparência antes do corpo, como no 2K (decisão do diretor, 2026-10-16; docs/26). */
+  private editLook(draft: PlayerBuild): void {
+    this.show(
+      new AppearanceScreen(draft, {
+        onBack: (b) => this.editIdentity(b),
         onNext: (b) => this.editBody(b),
       }),
     );
@@ -127,7 +139,7 @@ export class MenuFlow {
   private editBody(draft: PlayerBuild): void {
     this.show(
       new BodyScreen(draft, {
-        onBack: (b) => this.editIdentity(b),
+        onBack: (b) => this.editLook(b),
         onNext: (b) => this.editAttributes(b),
       }),
     );
@@ -307,6 +319,9 @@ export class MenuFlow {
     // O corpo do showroom segue o rascunho da tela (altura ao vivo na tela de corpo).
     const body = this.screen?.body?.() ?? this.active.body;
     this.showroom.setBody(body);
+    // A roupa e a pele seguem o rascunho da tela de aparência (nas outras telas, a aparência da build editada/ativa).
+    this.showroom.setLook(this.screen?.look?.() ?? this.active.look, this.screen?.wear?.() ?? 'casa');
+    this.showroom.setFocus(this.screen?.focus?.() ?? 'corpo');
     this.showroom.update(dt);
     requestAnimationFrame((n) => this.frame(n));
   }

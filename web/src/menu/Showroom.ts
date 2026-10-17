@@ -1,13 +1,21 @@
 // Cena do menu: o nosso jogador em pé no meio da tela, como o MyPlayer das telas do 2K. Usa a mesma cena do jogo (arena
 // atrás, desfocada pelo CSS do menu) e o mesmo animador, parado no idle. A altura da build escala o boneco (o rascunho
-// muda ao vivo na tela de corpo); arrastar com o mouse ou o RS gira o jogador.
+// muda ao vivo na tela de corpo); arrastar com o mouse ou o RS gira o jogador. Na tela de aparência a roupa e a pele
+// mudam ao vivo (PlayerOutfit) e a câmera chega perto do que a aba mexe (rosto, uniforme, tênis).
 import * as THREE from 'three';
 import type { PlayerAnimator } from '../anim/PlayerAnimator';
 import { bodyScaleOf, wingspanOverModelM } from '../build/BuildRatings';
+import { type PlayerLook, type Side, sameLook } from '../build/PlayerLook';
 
 export interface ShowroomGear {
   update(dt: number): void;
+  /** Veste a aparência (PlayerOutfit), com o uniforme do lado pedido. Sem isso, o showroom só mostra a roupa do jogador. */
+  apply?(look: PlayerLook, side?: Side): Promise<void>;
+  readonly busy?: boolean;
 }
+
+/** O que a câmera enquadra: o corpo inteiro (padrão), o rosto, do quadril para cima (uniforme) ou os pés (tênis). */
+export type ShowroomFocus = 'corpo' | 'rosto' | 'tronco' | 'pes';
 
 export class Showroom {
   /** Giro do jogador em volta do próprio eixo (rad). 0 = de frente para a câmera. */
@@ -23,6 +31,12 @@ export class Showroom {
   private offset = 0;
   private targetOffset = 0;
   private readonly spot = new THREE.Vector3();
+  private look: PlayerLook | null = null;
+  private side: Side = 'casa';
+  private focus: ShowroomFocus = 'corpo';
+  /** Enquadramento atual (altura visível e centro, m), suavizado até o do foco. */
+  private view: { tall: number; center: number; lift: number } | null = null;
+  private readonly headPos = new THREE.Vector3();
   private readonly onDown = (e: PointerEvent): void => {
     // Só o canvas gira o boneco (os painéis HTML ficam por cima e não repassam o clique).
     if (e.target !== this.canvas) return;
@@ -75,6 +89,26 @@ export class Showroom {
     this.wingOver = wingspanOverModelM(body);
   }
 
+  /**
+   * Aparência mostrada (a da tela de aparência, ou a da build ativa) e o uniforme que está em foco (casa ou visitante).
+   * Só veste de novo quando muda.
+   */
+  setLook(look: PlayerLook, side: Side = 'casa'): void {
+    if (this.look && sameLook(this.look, look) && this.side === side) return;
+    this.look = { ...look };
+    this.side = side;
+    void this.gear?.apply?.(look, side);
+  }
+
+  /** Trocando de roupa (a tela mostra "vestindo…"). */
+  get dressing(): boolean {
+    return !!this.gear?.busy;
+  }
+
+  setFocus(focus: ShowroomFocus): void {
+    this.focus = focus;
+  }
+
   /** Empurra o jogador para um lado da tela (as telas com painel à esquerda o põem mais à direita). */
   setOffset(offset: number): void {
     this.targetOffset = offset;
@@ -101,22 +135,41 @@ export class Showroom {
     root.rotation.set(0, Math.atan2(this.facing.x, this.facing.z) + this.spin, 0);
     this.animator.update(dt, { right: 0, forward: 0, ballHand: 'r', hasBall: false, low: false, accelRight: 0, accelForward: 0 });
     this.gear?.update(dt);
-    this.frame();
+    this.frame(dt);
     this.renderer.render(this.scene, this.camera);
   }
 
   /**
-   * Câmera de frente e parada, enquadrando até 2,45 m (o 7'4" com folga): o jogador cresce e encolhe dentro do quadro
-   * quando a altura muda, como no 2K.
+   * Enquadramento de cada foco: altura visível e centro (m) e quanto a câmera fica acima do centro (nos pés ela olha de
+   * cima, senão via por dentro da bermuda). O rosto e o tronco seguem a altura do jogador.
    */
-  private frame(): void {
+  private focusView(): { tall: number; center: number; lift: number } {
+    const y = this.spot.y;
+    if (this.focus === 'corpo') return { tall: 2.45, center: y + 2.45 * 0.47, lift: 0.05 };
+    if (this.focus === 'pes') return { tall: 0.8, center: y + 0.22, lift: 0.55 };
+    this.animator.bone('head').getWorldPosition(this.headPos);
+    if (this.focus === 'rosto') return { tall: 0.62, center: this.headPos.y + 0.04, lift: 0.03 };
+    return { tall: 1.8, center: y + (this.headPos.y - y) * 0.64, lift: 0.12 };
+  }
+
+  /**
+   * Câmera de frente e parada, enquadrando até 2,45 m (o 7'4" com folga): o jogador cresce e encolhe dentro do quadro
+   * quando a altura muda, como no 2K. Nas abas da aparência ela desliza até o rosto, o tronco ou os pés.
+   */
+  private frame(dt: number): void {
     const cam = this.camera;
-    const tall = 2.45; // altura visível (m)
+    const want = this.focusView();
+    const k = this.view ? 1 - Math.exp(-6 * dt) : 1;
+    const view = (this.view ??= { ...want });
+    view.tall += (want.tall - view.tall) * k;
+    view.center += (want.center - view.center) * k;
+    view.lift += (want.lift - view.lift) * k;
+    const tall = view.tall; // altura visível (m)
     const vfov = THREE.MathUtils.degToRad(cam.fov);
     const dist = (tall / 2) / Math.tan(vfov / 2) + 0.6;
-    const center = this.spot.y + tall * 0.47;
+    const center = view.center;
     cam.position.copy(this.spot).addScaledVector(this.facing, dist);
-    cam.position.y = center + 0.05;
+    cam.position.y = center + view.lift;
     cam.lookAt(this.spot.x, center, this.spot.z);
     const w = window.innerWidth;
     const h = window.innerHeight;

@@ -1,7 +1,8 @@
 // Build do jogador (MyPlayer do 2K): identidade, corpo e os 22 atributos do builder do 2K24/2K25 (mesma lista e mesma
 // ordem das telas de referência). As regras (faixas de corpo, caps, custo, overall, arquétipo, Shades Of) ficam em
 // BuildRules.ts; o que a build muda no Freestyle, em BuildRatings.ts; salvar e carregar, em BuildSave.ts.
-// Doc: docs/23-myplayer-builder.md.
+// Doc: docs/23-myplayer-builder.md. A aparência (pele, uniforme, tênis…) fica em PlayerLook.ts (docs/26-aparencia.md).
+import type { PlayerLook } from './PlayerLook.ts';
 
 export type Position = 'PG' | 'SG' | 'SF' | 'PF' | 'C';
 export type Hand = 'r' | 'l';
@@ -113,6 +114,8 @@ export interface PlayerBuild {
   /** País (bandeira no cartão, estilo EA FC). Código livre (BR, US…). */
   country: string;
   body: Body;
+  /** Aparência (tela "Aparência", antes do corpo). Builds de antes dela saem com DefaultLook (sanitizeBuild). */
+  look: PlayerLook;
   attrs: Attributes;
   createdAt: number;
   updatedAt: number;

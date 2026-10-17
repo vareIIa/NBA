@@ -21,6 +21,7 @@ import {
   attrsFilled,
   newBuildId,
 } from './PlayerBuild';
+import { DefaultLook, sanitizeLook } from './PlayerLook';
 
 const In = 2.54;
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
@@ -440,6 +441,7 @@ export const DefaultBuild: PlayerBuild = Object.freeze({
   jersey: 7,
   country: 'BR',
   body: { heightCm: 186, weightKg: 90, wingspanCm: 186, shape: 'atletico' },
+  look: DefaultLook,
   // prettier-ignore
   attrs: {
     closeShot: 85, drivingLayup: 85, drivingDunk: 80, standingDunk: 45, postControl: 45,
@@ -465,6 +467,7 @@ export function newDraft(position: Position): PlayerBuild {
     jersey: 0,
     country: 'BR',
     body: defaultBody(position),
+    look: { ...DefaultLook },
     attrs: { ...AttrStart },
     createdAt: now,
     updatedAt: now,
@@ -496,6 +499,7 @@ export function sanitizeBuild(raw: PlayerBuild): PlayerBuild {
     jersey: clamp(Math.round(Number(raw.jersey) || 0), 0, 99),
     country: String(raw.country ?? 'BR'),
     body,
+    look: sanitizeLook(raw.look),
     attrs,
     createdAt: Number(raw.createdAt) || Date.now(),
     updatedAt: Number(raw.updatedAt) || Date.now(),

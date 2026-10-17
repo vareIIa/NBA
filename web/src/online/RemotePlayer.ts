@@ -7,7 +7,7 @@
 // manda nela). Sem bola (null), não mostra nada.
 //
 // Uso:
-//   const remote = await RemotePlayer.load(scene, { heightCm, wingspanOverM, kit: 'branca' });
+//   const remote = await RemotePlayer.load(scene, { heightCm, wingspanOverM, wear: 'visitante' });
 //   remote.push(d, performance.now() / 1000);   // a cada mensagem 'st'
 //   remote.update(dt, performance.now() / 1000); // a cada quadro
 import * as THREE from 'three';
@@ -16,7 +16,9 @@ import type { ShotCarry } from '../anim/JumpShotMotion';
 import { bodyScaleOf } from '../build/BuildRatings';
 import { BallDribbler } from '../game/BallDribbler';
 import { buildBall } from '../game/BallMesh';
-import { PlayerGear } from '../game/PlayerGear';
+import type { PlayerGear } from '../game/PlayerGear';
+import { PlayerOutfit } from '../game/PlayerOutfit';
+import { DefaultLook, type PlayerLook, type Side } from '../build/PlayerLook';
 import { defaultBallSimConfig } from '../sim';
 import type { HoldPose } from '../sim/HoopsHold';
 import type { LayupPlan } from '../sim/HoopsLayup';
@@ -28,10 +30,10 @@ export interface RemotePlayerOptions {
   heightCm: number;
   /** Envergadura além do modelo (m): o 2º argumento de PlayerAnimator.setBodyScale. */
   wingspanOverM: number;
-  /** Uniforme do outro time (cada um se vê de vermelho e vê o adversário de branco). */
-  kit: 'branca' | 'vermelha';
-  /** Tênis (nome do GLB em assets/gear). */
-  shoes?: string;
+  /** Uniforme que o outro jogador veste: o de casa ou o de visitante (já resolvido pelo choque, wearFor). */
+  wear: Side;
+  /** Pele, tênis, modelos e cores do outro jogador (o cartão dele); o uniforme que veste é `wear`. */
+  look?: PlayerLook;
   /** Pasta dos assets (padrão 'assets/'). */
   assetsBase?: string;
   /** Quique da bola do boneco no chão (velocidade de chegada, m/s), para o som. */
@@ -113,12 +115,8 @@ export class RemotePlayer {
   static async load(scene: THREE.Scene, opts: RemotePlayerOptions): Promise<RemotePlayer> {
     const base = opts.assetsBase ?? 'assets/';
     const animator = await PlayerAnimator.load(`${base}hoops_player.glb`, `${base}hoops_player.clips.json`);
-    const gear = await PlayerGear.load(animator, {
-      shoes: `${base}gear/${opts.shoes ?? 'tenis_retro_alto_1'}.glb`,
-      jersey: `${base}gear/regata_${opts.kit}.glb`,
-      shorts: `${base}gear/bermuda_${opts.kit}.glb`,
-    }).catch((e: unknown) => (console.warn('roupa do adversário não carregou', e), null));
-    return new RemotePlayer(scene, animator, gear, opts);
+    const outfit = await PlayerOutfit.create(animator, opts.look ?? DefaultLook, { base, side: opts.wear });
+    return new RemotePlayer(scene, animator, outfit.gear, opts);
   }
 
   /** Uma mensagem do outro jogador. `recvTimeS` = performance.now()/1000 na chegada. false se o payload não presta. */

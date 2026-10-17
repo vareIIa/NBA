@@ -8,6 +8,7 @@
 // O servidor de desenvolvimento roda este arquivo no Node sem build (só tira os tipos): imports com .ts e nada de
 // sintaxe que precise de transformação (parameter properties, enum).
 import { AttrCeil, AttrFloor, AttributeIds, type Attributes, type BodyShape, type PlayerBuild, type Position } from '../../build/PlayerBuild.ts';
+import { sanitizeLook } from '../../build/PlayerLook.ts';
 
 export const BuildsPath = '/api/builds';
 /** Cabeçalho com a chave do dono (PUT e DELETE). */
@@ -113,6 +114,7 @@ export function normalizeBuild(raw: unknown, now: number): PlayerBuild | null {
       wingspanCm: clamp(wingspanCm, 140, 270),
       shape: Shapes.find((s) => s === body['shape']) ?? 'atletico',
     },
+    look: sanitizeLook(r['look']),
     attrs,
     createdAt: createdAt !== null && createdAt > 0 && createdAt <= now ? Math.round(createdAt) : now,
     updatedAt: now,

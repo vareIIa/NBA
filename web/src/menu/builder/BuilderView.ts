@@ -362,6 +362,10 @@ export class BuilderView implements MenuScreen {
     return this.build.body;
   }
 
+  look(): PlayerBuild['look'] {
+    return this.build.look;
+  }
+
   update(dt: number): void {
     for (const c of this.counters) c.tick(dt);
     if (this.streak && !this.horizontalHeld()) this.streak = null;

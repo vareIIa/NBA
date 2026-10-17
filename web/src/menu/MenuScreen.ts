@@ -2,6 +2,8 @@
 // canvas; o fluxo lê teclado e controle e entrega uma ação de navegação por vez (já com repetição de direção segurada).
 // A cena 3D (o nosso jogador no meio, no lugar do LeBron das telas do 2K) é do Showroom: a tela só diz qual corpo mostrar.
 import type { Body } from '../build/PlayerBuild';
+import type { PlayerLook, Side } from '../build/PlayerLook';
+import type { ShowroomFocus } from './Showroom';
 
 /**
  * Ação de navegação. `alt` = Y no controle / Tab no teclado (ação secundária da tela, ex.: "presets");
@@ -32,6 +34,12 @@ export interface MenuScreen {
   nav(action: NavAction): void;
   /** Corpo que o showroom mostra agora (altura e envergadura do rascunho). null = o corpo da build ativa. */
   body?(): Body | null;
+  /** Aparência que o showroom veste agora (o rascunho da tela de aparência). null = a da build ativa. */
+  look?(): PlayerLook | null;
+  /** Qual uniforme (casa ou visitante) a tela está editando: é o que o showroom veste (padrão: casa). */
+  wear?(): Side;
+  /** O que a câmera do showroom enquadra (padrão: o corpo inteiro). */
+  focus?(): ShowroomFocus;
   /** Por quadro, enquanto a tela está aberta (animações de barra, contadores). */
   update?(dt: number): void;
 }

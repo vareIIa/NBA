@@ -24,7 +24,7 @@ test('sem ?menu=1 o Playwright vai direto ao Freestyle (testes e ferramentas nã
   await expect(page.locator('.mn')).toHaveCount(0);
 });
 
-test('menu → Meu Jogador → criar build → corpo → atributos → Shades Of → Freestyle com a build', async ({ page }) => {
+test('menu → Meu Jogador → criar build → aparência → corpo → atributos → Shades Of → Freestyle com a build', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
 
@@ -55,6 +55,32 @@ test('menu → Meu Jogador → criar build → corpo → atributos → Shades Of
   await press(page, 'ArrowDown', 3); // mão, número, país
   await press(page, 'ArrowDown'); // continuar
   await page.screenshot({ path: `${OUT}/02-jogador.png` });
+  await press(page, 'Enter');
+  expect(await crumb(page)).toMatch(/Aparência/i);
+
+  // Aparência (docs/26): pele tom 8 (→ 6 vezes a partir do 2º, o do modelo), E = próxima aba, uniforme branco,
+  // tênis Cimento 4. O jogador do showroom veste ao vivo.
+  await expect(page.locator('.ap-swatch')).toHaveCount(15);
+  await press(page, 'ArrowRight', 6);
+  await expect(page.locator('.ap-note')).toContainText('Tom 8');
+  await page.waitForTimeout(500); // a câmera chega no rosto
+  await page.screenshot({ path: `${OUT}/02b-aparencia-pele.png` });
+  // Uniforme (fase 2): a 1ª fileira são os modelos (casa vermelho e branco; visitante vermelho e branco); → escolhe o branco de casa.
+  await press(page, 'KeyE');
+  await press(page, 'ArrowRight');
+  await page.waitForFunction(() => (window as unknown as { __showroom: { outfit: { look: { kit: string } } } }).__showroom.outfit.look.kit === 'branca');
+  await page.waitForFunction(() => !(window as unknown as { __showroom: { showroom: { dressing: boolean } } }).__showroom.showroom.dressing);
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/02c-aparencia-uniforme.png` });
+  await press(page, 'KeyE');
+  await press(page, 'ArrowRight', 2); // a fileira de tênis é horizontal: → até o Cimento 4
+  await page.waitForFunction(() => {
+    const o = (window as unknown as { __showroom: { showroom: { dressing: boolean } } }).__showroom.showroom;
+    return !o.dressing;
+  });
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/02d-aparencia-tenis.png` });
+  await press(page, 'Enter'); // na última aba, A vai para o Continuar
   await press(page, 'Enter');
   expect(await crumb(page)).toMatch(/Corpo/i);
 
@@ -91,6 +117,10 @@ test('menu → Meu Jogador → criar build → corpo → atributos → Shades Of
   expect(saved.active).toBe(saved.builds[0].id);
   expect(saved.builds[0].firstName).toBe('Tano');
   expect(saved.builds[0].lastName).toBe('Prestia');
+  expect(saved.builds[0].look).toEqual({ skin: '#9f6847', kit: 'branca', kitAway: 'branca', shoes: 'tenis_cimento_4' });
+  // O Freestyle veste a aparência da build.
+  const worn = await page.evaluate(() => (window as unknown as { __debug: { outfit: { look: unknown } } }).__debug.outfit.look);
+  expect(worn).toEqual(saved.builds[0].look);
   const badge = await page.evaluate(() => {
     const opts = (window as unknown as { __badgeMenu: { options: { playerName: string; buildName: string } } }).__badgeMenu.options;
     return { playerName: opts.playerName, buildName: opts.buildName };

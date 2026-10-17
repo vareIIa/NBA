@@ -14,6 +14,8 @@ Menu principal ─┬─ Freestyle ───────────────
                 │                                │    ▼
                 │                                │  Jogador (nome, sobrenome, posição, mão, nº, país)
                 │                                │    ▼
+                │                                │  Aparência (pele, uniforme, tênis; docs/26)
+                │                                │    ▼
                 │                                │  Corpo (altura, peso, envergadura, tipo; caps ao vivo)
                 │                                │    ▼
                 │                                │  Atributos (pontos, OVR, potencial restante, físico, badges, presets)

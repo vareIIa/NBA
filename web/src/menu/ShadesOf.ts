@@ -84,6 +84,10 @@ export class ShadesOf implements MenuScreen {
     return this.build.body;
   }
 
+  look(): PlayerBuild['look'] {
+    return this.build.look;
+  }
+
   nav(action: NavAction): void {
     const n = this.buttons.length;
     if (action === 'left' || action === 'up') this.select((this.index - 1 + n) % n);

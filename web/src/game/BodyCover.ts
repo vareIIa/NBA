@@ -305,3 +305,38 @@ export function hideCoveredTriangles(body: THREE.SkinnedMesh[], garments: (THREE
   }
   return removed;
 }
+
+/**
+ * Corte pela altura do tênis (CuffPull): sai do índice o triângulo do corpo inteiro abaixo da boca do cano e perto do
+ * pé, na posição de bind. O que sobra na boca fica por cima do cano, com a borda puxada para dentro pelo CuffPull, sem
+ * o recorte em dentes do BodyCover por triângulo. `cuffs`: tornozelo e joelho (bind) e altura da boca, no espaço da malha.
+ */
+export function cutBelowCuff(body: THREE.SkinnedMesh[], cuffs: { ankle: THREE.Vector3; knee: THREE.Vector3; mouth: number }[], reach = 0.15): number {
+  let removed = 0;
+  const seg = new THREE.Line3();
+  const near = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (const mesh of body) {
+    const pos = mesh.geometry.getAttribute('position');
+    const idx = triIndex(mesh.geometry);
+    const keep: number[] = [];
+    for (let t = 0; t + 2 < idx.length; t += 3) {
+      const a = idx[t], b = idx[t + 1], d = idx[t + 2];
+      const low = Math.max(pos.getY(a), pos.getY(b), pos.getY(d));
+      let cut = false;
+      if (low < Math.min(...cuffs.map((x) => x.mouth)) - 0.003) {
+        c.set((pos.getX(a) + pos.getX(b) + pos.getX(d)) / 3, (pos.getY(a) + pos.getY(b) + pos.getY(d)) / 3, (pos.getZ(a) + pos.getZ(b) + pos.getZ(d)) / 3);
+        for (const k of cuffs) {
+          seg.set(k.ankle, k.knee);
+          seg.closestPointToPoint(c, true, near);
+          if (near.distanceTo(c) < reach && c.y < k.mouth) cut = true;
+        }
+      }
+      if (cut) removed++;
+      else keep.push(a, b, d);
+    }
+    mesh.geometry = mesh.geometry.clone();
+    mesh.geometry.setIndex(keep);
+  }
+  return removed;
+}

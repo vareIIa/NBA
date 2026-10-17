@@ -19,6 +19,7 @@ import {
   otherSide,
 } from '../protocol.ts';
 import { Referee } from './Referee.ts';
+import { sanitizeLook } from '../../build/PlayerLook.ts';
 
 export interface Peer {
   id: string;
@@ -101,6 +102,7 @@ export function sanitizeCard(raw: unknown): PlayerCard {
     ballHandle: Math.round(clampNum(c.ballHandle, 25, 99, 60)),
     glove: Math.round(clampNum(c.glove, 0, 4, 0)),
     unpluckable: Math.round(clampNum(c.unpluckable, 0, 4, 0)),
+    look: sanitizeLook(c.look),
   };
 }
 

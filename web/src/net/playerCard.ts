@@ -25,5 +25,6 @@ export function cardFromBuild(build: PlayerBuild, nameOverride?: string | null):
     ballHandle: build.attrs.ballHandle,
     glove: loadout.Glove ?? 0,
     unpluckable: loadout.Unpluckable ?? 0,
+    look: build.look,
   };
 }

@@ -6,6 +6,7 @@ import type { PlayerCard } from '../../net/protocol';
 import { type Position, type PlayerBuild, displayName } from '../../build/PlayerBuild';
 import { archetypeName, newDraft, overall, typicalWeightKg } from '../../build/BuildRules';
 import { wingspanOverModelM } from '../../build/BuildRatings';
+import { randomLook, seededRandom } from '../../build/PlayerLook';
 import { BuildPresets, presetAttrs } from '../../menu/builder/BuilderPresets';
 
 /** Estilo de jogo da IA (0..1 cada): quanto prefere arremessar, infiltrar, driblar para criar e arriscar o roubo. */
@@ -106,7 +107,9 @@ export const cpuEntry = (id: string): CpuRosterEntry => CpuRoster.find((e) => e.
 export function cpuBuild(entry: CpuRosterEntry): PlayerBuild {
   const draft = newDraft(entry.position);
   const body = { heightCm: entry.heightCm, weightKg: Math.round(typicalWeightKg(entry.heightCm)), wingspanCm: entry.heightCm + entry.wingOverCm, shape: 'atletico' as const };
-  const base: PlayerBuild = { ...draft, id: `cpu-${entry.id}`, firstName: entry.firstName, lastName: entry.lastName, hand: entry.hand, jersey: entry.jersey, body };
+  // Aparência sorteada pelo id: cada adversário tem sempre a mesma cara (o uniforme se resolve na partida, kitsFor).
+  const look = randomLook(seededRandom(`cpu-${entry.id}`));
+  const base: PlayerBuild = { ...draft, id: `cpu-${entry.id}`, firstName: entry.firstName, lastName: entry.lastName, hand: entry.hand, jersey: entry.jersey, body, look };
   const preset = BuildPresets.find((p) => p.id === entry.preset) ?? BuildPresets[0]!;
   return { ...base, attrs: presetAttrs(base, preset) };
 }
@@ -128,5 +131,6 @@ export function cpuCard(entry: CpuRosterEntry, build: PlayerBuild = cpuBuild(ent
     ballHandle: build.attrs.ballHandle,
     glove: entry.glove,
     unpluckable: entry.unpluckable,
+    look: build.look,
   };
 }

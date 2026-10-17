@@ -122,6 +122,10 @@ export class BodyScreen implements MenuScreen {
     return this.draft.body;
   }
 
+  look(): PlayerBuild['look'] {
+    return this.draft.look;
+  }
+
   nav(action: NavAction): void {
     if (action === 'back') return this.options.onBack(this.draft);
     this.form.nav(action);

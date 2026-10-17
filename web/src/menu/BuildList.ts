@@ -91,6 +91,10 @@ export class BuildList implements MenuScreen {
     return this.selected()?.body ?? null;
   }
 
+  look(): PlayerBuild['look'] | null {
+    return this.selected()?.look ?? null;
+  }
+
   nav(action: NavAction): void {
     const count = this.builds.length + 1; // + "Criar nova build"
     if (this.actionIndex === null) {

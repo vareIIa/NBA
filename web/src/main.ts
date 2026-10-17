@@ -23,7 +23,8 @@ import { type JumpShotSetup, JumpShotStore, idealReleaseSeconds } from './shot/J
 import { toThree } from './units';
 import { Sfx } from './audio/Sfx';
 import { Lab } from './lab/Lab';
-import { PlayerGear } from './game/PlayerGear';
+import { PlayerOutfit } from './game/PlayerOutfit';
+import { type Side, lookWithParams, sanitizeLook, wearFor } from './build/PlayerLook';
 import { BuildSave } from './build/BuildSave';
 import { DefaultBuild, archetypeName, badgePoints } from './build/BuildRules';
 import { applyDribbleRatings, bodyScaleOf, playRatings, wingspanOverModelM } from './build/BuildRatings';
@@ -107,19 +108,9 @@ async function boot(): Promise<void> {
   if (arenaOn) ArenaDressing.preload(); // baixa os GLBs enquanto o jogador carrega
   hud.setLoading('Carregando o jogador…');
   const animator = await PlayerAnimator.load('assets/hoops_player.glb', 'assets/hoops_player.clips.json');
-  // Tênis, regata e bermuda do HY 3D (docs/20). ?roupa=0 volta ao boneco liso; ?uniforme=branco e ?tenis=<nome> trocam
-  // as peças. Sem os GLBs, segue sem roupa.
-  const kit = params.get('uniforme') === 'branco' ? 'branca' : 'vermelha';
-  const gear =
-    params.get('roupa') === '0'
-      ? null
-      : await PlayerGear.load(animator, {
-          shoes: `assets/gear/${params.get('tenis') ?? 'tenis_retro_alto_1'}.glb`,
-          jersey: `assets/gear/regata_${kit}.glb`,
-          shorts: `assets/gear/bermuda_${kit}.glb`,
-        }).catch(
-          (e) => (console.warn('roupa não carregou', e), null),
-        );
+  // Aparência da build ativa (docs/26): tom de pele, uniforme e tênis do HY 3D (docs/20). ?roupa=0 volta ao boneco
+  // liso; ?uniforme=branco, ?tenis=<nome> e ?pele=<0–14> trocam por cima. Sem os GLBs, segue sem roupa.
+  const outfit = await PlayerOutfit.create(animator, lookWithParams(BuildSave.active().look, params), { clothes: params.get('roupa') !== '0' });
   hud.setLoading(null);
 
   const gameHud = new GameHud();
@@ -179,8 +170,8 @@ async function boot(): Promise<void> {
       const spot = animator.root.position.clone();
       const rim = toThree(game.rimCenter());
       const facing = new THREE.Vector3(spot.x - rim.x, 0, spot.z - rim.z).normalize(); // de costas para a cesta
-      const showroom = new Showroom(renderer, scene, rig.camera, animator, gear, spot, facing, canvas, [game.ballMesh]);
-      (window as unknown as { __showroom: unknown }).__showroom = { showroom, animator, THREE };
+      const showroom = new Showroom(renderer, scene, rig.camera, animator, outfit, spot, facing, canvas, [game.ballMesh]);
+      (window as unknown as { __showroom: unknown }).__showroom = { showroom, animator, THREE, outfit };
       const result = await new MenuFlow(showroom).run();
       build = result.build;
       onlineStart = result.online ?? result.cpu ?? null;
@@ -205,6 +196,16 @@ async function boot(): Promise<void> {
       autoplay: autoplay === null ? undefined : (levelOf(autoplay) ?? 'pro'),
     });
   }
+  // Aparência da build escolhida no menu. No 1x1 cada um veste o uniforme do lado dele (casa ou visitante); se a cor
+  // principal do visitante se confundir com a do mandante, ele veste o outro (wearFor, docs/26).
+  let look = lookWithParams(build.look, params);
+  let side: Side = 'casa';
+  if (onlineStart) {
+    const you = onlineStart.start.you;
+    const opp = sanitizeLook(onlineStart.start.room.players.find((p) => p.side !== you)?.card.look);
+    side = wearFor(you === 0, look, opp).mine;
+  }
+  await outfit.apply(look, side);
   const ratings = playRatings(build);
   game.setRatings(ratings);
   // Altura e envergadura da build: o boneco escala e os braços alongam (drible, arremesso, bandeja e enterrada
@@ -408,7 +409,17 @@ async function boot(): Promise<void> {
     stats.samples++;
   };
   window.__garrafao = { ...debug, ballStats: () => ({ ...stats }), match: () => director!.snapshot(), online: () => online?.debug() ?? null };
-  (window as unknown as { __debug: unknown }).__debug = { animator, game, THREE, gear, rig };
+  (window as unknown as { __debug: unknown }).__debug = {
+    animator,
+    game,
+    THREE,
+    // A roupa vestida agora (troca quando a aparência muda; tools/roupa-quadros.mjs lê os empurradores dela).
+    get gear() {
+      return outfit.gear;
+    },
+    outfit,
+    rig,
+  };
 
   let last = performance.now();
   let gameClock = performance.now() / 1000;
@@ -450,7 +461,7 @@ async function boot(): Promise<void> {
       );
       // O boneco anima sempre (parado na lista, em loop na prévia).
       animator.update(realDt, { right: 0, forward: 0, ballHand: 'r', hasBall: false, low: false, accelRight: 0, accelForward: 0 });
-      gear?.update(realDt);
+      outfit.update(realDt);
       if (previewing) {
         const ball = game.ballMesh.position;
         if (animator.ballHeldLocal) {
@@ -491,7 +502,7 @@ async function boot(): Promise<void> {
     }
     if (state.gamepadConnected && (state.shoot || state.sprint)) sfx.unlock();
     game.update(gameClock, dt, state, rig.forward());
-    gear?.update(dt);
+    outfit.update(dt);
     rig.playerFacing = game.facing;
     rig.update(dt, game.position, game.rimCenter());
 
