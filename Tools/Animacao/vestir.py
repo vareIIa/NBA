@@ -5,11 +5,11 @@
 # --por-cima-de: GLB de uma peça já vestida (a bermuda) que esta (a regata) cobre: a barra da regata vai para fora do
 # cós da bermuda, senão as duas se cruzam na cintura.
 #
-# tipo: regata | bermuda | tenis
+# tipo: regata | bermuda | tenis (o tenis sai com a meia: meia_r e meia_l, a pele do pé e da canela inflada 3,5 mm)
 #  - encaixa a caixa da peça na região do corpo (tronco, quadril+coxas ou pé);
 #  - transfere os pesos de pele do corpo para a peça (vértice mais próximo, interpolado);
 #  - regata/bermuda: cria "ossos de pano" (pêndulos) na barra; o jogo (ClothSprings) os anima com molas;
-#  - tenis: pé direito com pesos em foot_r/ball_r; o esquerdo sai espelhado com foot_l/ball_l;
+#  - tenis: pesos copiados da pele do pé (vizinhos no corpo, bind); o esquerdo sai espelhado com os ossos _l;
 #  - reduz para [triangulos] (padrão: 9000 regata/bermuda, 5000 por pé) e exporta só a peça + esqueleto.
 #
 # Bermuda: o bind pose do corpo tem as pernas abertas (~25°); as peças geradas vêm com as pernas retas. A bermuda é
@@ -610,19 +610,32 @@ if OVER_BLEND:
         OVER_K[idx] = k
     print('barra com os pesos da peça de baixo:', len(OVER_BLEND))
 if KIND == 'tenis':
-    # Rígido no pé; a ponta dobra com ball_r (mesma divisão do corpo).
+    # Pesos copiados da pele do pé do corpo: cada vértice do tênis pega a média de 4 vértices mais próximos da pele
+    # (no bind, com peso pela distância), do mesmo pé. Assim o tênis segue o que a pele segue: o cano gira com a canela
+    # (calf_r, a pele acima do tornozelo), o calcanhar e a sola com foot_r, a biqueira com ball_r. Antes era rígido em
+    # foot_r/ball_r: ao flexionar o tornozelo a canela saía do cano e a pele aparecia por cima da borda (docs/20).
+    from mathutils.kdtree import KDTree
+    bnames = {g.index: g.name for g in body.vertex_groups}
+    ztop = max((piece.matrix_world @ v.co).z for v in piece.data.vertices) + 0.03
+    skin = [i for i, p in enumerate(bv) if (p.x > 0) == (side_x > 0) and p.z <= ztop]
+    kd = KDTree(len(skin))
+    for i in skin:
+        kd.insert(bv[i], i)
+    kd.balance()
+    bw = {i: {bnames[g.group]: g.weight for g in body.data.vertices[i].groups if g.weight > 0} for i in skin}
     for g in list(groups):
         groups.remove(g)
-    gf, gb = groups.new(name='foot_r'), groups.new(name='ball_r')
-    a, b = bone_head('foot_r'), bone_head('ball_r')
-    axis = (b - a)
-    axis.z = 0
-    L = axis.length
-    axis.normalize()
     for v in piece.data.vertices:
-        t = smooth(((piece.matrix_world @ v.co - b).dot(axis)) / (0.35 * L) + 0.3)
-        gf.add([v.index], 1 - t, 'REPLACE')
-        gb.add([v.index], t, 'REPLACE')
+        acc, tot = {}, 0.0
+        for _, i, d in kd.find_n(piece.matrix_world @ v.co, 4):
+            wgt = 1 / (d + 1e-4)
+            tot += wgt
+            for b, x in bw[i].items():
+                acc[b] = acc.get(b, 0) + x * wgt
+        for b, x in acc.items():
+            if b not in groups:
+                groups.new(name=b)
+            groups[b].add([v.index], x / tot, 'REPLACE')
 elif cloth_bones:
     vs = [piece.matrix_world @ v.co for v in piece.data.vertices]
     for nm, parent, h, t in cloth_bones:
@@ -702,12 +715,163 @@ if KIND == 'tenis':
         g.name = g.name.replace('_r', '_l')
     piece.name = 'tenis_r'
 
+# ---------------------------------------------------------------- meia
+# Meia: envelope fechado e procedural (não copia faces do corpo, que têm furos). Tubo em anéis de 1 cm ao longo do
+# eixo da perna (do topo da meia até o tornozelo), curvando no tornozelo e seguindo o pé até a ponta (ankle → ball →
+# ponta). Cada setor de cada anel (24 setores) tem o maior raio da pele do corpo ali + 3,5 mm, suavizado entre setores
+# e anéis: a pele fica dentro por construção. Ponta fechada, a sola é o fundo do tubo, topo aberto com faixa mais
+# grossa (ribana). Pesos por trecho: calf na perna, foot no pé, ball na frente do pé; sem copiar da pele.
+def sock_envelope(side, top, mat):
+    N = 24
+    A = bone_head('foot_' + side)
+    K = bone_head('calf_' + side)
+    Bh = bone_head('ball_' + side)
+    B = Vector((Bh.x, Bh.y, 0.035))
+    u = (top - A.z) / (K.z - A.z)
+    P = A + (K - A) * u
+    up_dir = (P - A).normalized()
+    fwd = Vector((B.x - A.x, B.y - A.y, 0)).normalized()
+    Q1 = A + up_dir * 0.05
+    Q2 = A + fwd * 0.05
+    T = B + fwd * 0.035
+    dense = []
+
+    def seg(p0, p1):
+        n = max(2, int((p1 - p0).length / 0.002))
+        for k in range(n):
+            dense.append(p0 + (p1 - p0) * (k / n))
+    seg(P, Q1)
+    m0 = len(dense)
+    for k in range(20):
+        t = k / 20
+        dense.append((1 - t) ** 2 * Q1 + 2 * (1 - t) * t * A + t * t * Q2)
+    m1 = len(dense)
+    seg(Q2, B)
+    iB = len(dense)
+    seg(B, T)
+    dense.append(T)
+    S = [0.0]
+    for k in range(1, len(dense)):
+        S.append(S[-1] + (dense[k] - dense[k - 1]).length)
+    sA = S[(m0 + m1) // 2]
+    sB = S[iB]
+    # Pele do lado (bind): é ela que a meia tem de cercar.
+    bpts = [q for q in bv if (q.x > 0) == (A.x > 0) and q.z <= top + 0.03]
+    ring_s = [k * 0.01 for k in range(int(S[-1] / 0.01) + 1)]
+    rings = []
+    for s_ in ring_s:
+        j = min(range(len(S)), key=lambda q: abs(S[q] - s_))
+        c = dense[j]
+        t = (dense[min(j + 1, len(dense) - 1)] - dense[max(j - 1, 0)]).normalized()
+        e1 = t.cross(Vector((0, 0, 1)))
+        if e1.length < 1e-3:
+            e1 = t.cross(Vector((1, 0, 0)))
+        e1.normalize()
+        e2 = t.cross(e1)
+        rmax = [0.0] * N
+        for q in bpts:
+            d = q - c
+            if abs(d.dot(t)) > 0.006:
+                continue
+            x_, y_ = d.dot(e1), d.dot(e2)
+            kk = int(((math.atan2(y_, x_) + math.pi) / (2 * math.pi)) * N) % N
+            rmax[kk] = max(rmax[kk], math.hypot(x_, y_))
+        if max(rmax) == 0:
+            rmax = [0.03] * N
+        for k in range(N):
+            if rmax[k] == 0:
+                rmax[k] = max(rmax[(k - 1) % N], rmax[(k + 1) % N])
+        rs = [max(rmax[k], 0.5 * rmax[k] + 0.25 * (rmax[(k - 1) % N] + rmax[(k + 1) % N])) for k in range(N)]
+        rings.append([c, t, e1, e2, rs, s_])
+    # Suaviza entre anéis (máximo com a média dos vizinhos): sem degraus, e a pele continua dentro.
+    raw = [r[4] for r in rings]
+    for i, r in enumerate(rings):
+        nb = [raw[max(0, i - 1)], raw[i], raw[min(len(rings) - 1, i + 1)]]
+        r[4] = [max(raw[i][k], sum(x[k] for x in nb) / 3) + 0.0035 for k in range(N)]
+    # Ribana: 1,5 cm do topo um pouco mais grossa; ponta que fecha em três anéis.
+    for i, r in enumerate(rings):
+        if r[5] < 0.015:
+            r[4] = [x + 0.002 for x in r[4]]
+    last = len(rings) - 1
+    for i, f in zip(range(last - 2, last + 1), (0.5, 0.2, 0.02)):
+        rings[i][4] = [x * f for x in rings[i][4]]
+    total = S[-1]
+
+    def weights(s_):
+        # calf até 4 cm antes do tornozelo, depois foot; ball nos 2 cm em volta da junta da bola; ponta em ball.
+        if s_ < sA - 0.04:
+            return {'calf': 1.0}
+        if s_ < sA + 0.04:
+            fw = smooth((s_ - (sA - 0.04)) / 0.08)
+            return {'calf': 1 - fw, 'foot': fw}
+        if s_ < sB - 0.02:
+            return {'foot': 1.0}
+        if s_ < sB + 0.02:
+            bw = smooth((s_ - (sB - 0.02)) / 0.04)
+            return {'foot': 1 - bw, 'ball': bw}
+        return {'ball': 1.0}
+    bm = bmesh.new()
+    rows, wts = [], []
+    for c, t, e1, e2, rs, s_ in rings:
+        row = []
+        for k in range(N):
+            ang = (k + 0.5) / N * 2 * math.pi - math.pi
+            q = c + (e1 * math.cos(ang) + e2 * math.sin(ang)) * rs[k]
+            q.z = max(q.z, 0.002)
+            row.append(bm.verts.new(q))
+        rows.append(row)
+        wts.append(weights(s_))
+    for i in range(len(rows) - 1):
+        for k in range(N):
+            k2 = (k + 1) % N
+            bm.faces.new((rows[i][k], rows[i][k2], rows[i + 1][k2], rows[i + 1][k]))
+    tip = bm.verts.new(rings[-1][0] + rings[-1][1] * 0.001)
+    for k in range(N):
+        k2 = (k + 1) % N
+        bm.faces.new((rows[-1][k], rows[-1][k2], tip))
+    bm.normal_update()
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    for f in bm.faces:
+        f.smooth = True  # normais suaves: sem isso o exportador separa os vértices por face (a casca abria)
+    me = bpy.data.meshes.new('meia_' + side)
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(mat)
+    ob = bpy.data.objects.new('meia_' + side, me)
+    bpy.context.collection.objects.link(ob)
+    groups = {n: ob.vertex_groups.new(name=n + '_' + side) for n in ('calf', 'foot', 'ball')}
+    for i, w in enumerate(wts):
+        for k in range(N):
+            for n, x in w.items():
+                if x > 1e-4:
+                    groups[n].add([i * N + k], x, 'REPLACE')
+    for n, x in wts[-1].items():
+        groups[n].add([len(rings) * N], x, 'REPLACE')
+    mod = ob.modifiers.new('Armature', 'ARMATURE')
+    mod.object = arm
+    print('meia', side, 'anéis', len(rings), 'vértices', len(me.vertices), 'comprimento %.3f' % total)
+    return ob
+
+
+if KIND == 'tenis':
+    top = max((piece.matrix_world @ v.co).z for v in piece.data.vertices) + 0.05
+    mat = bpy.data.materials.new('Meia')
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes['Principled BSDF']
+    bsdf.inputs['Base Color'].default_value = (0.94, 0.94, 0.94, 1)
+    bsdf.inputs['Roughness'].default_value = 0.9
+    for side in ('r', 'l'):
+        sock_envelope(side, top, mat)
+    keep_socks = {'meia_r', 'meia_l'}
+else:
+    keep_socks = set()
+
 # ---------------------------------------------------------------- exporta só a peça
 # Texturas do HY vêm em 4K (GLB de 25–45 MB): 1024 px em WebP basta para uma peça vista de longe.
 for img in bpy.data.images:
     if img.size[0] > 1024:
         img.scale(1024, 1024 * img.size[1] // img.size[0])
-keep = {piece.name} | ({'tenis_l'} if KIND == 'tenis' else set())
+keep = {piece.name} | ({'tenis_l'} | keep_socks if KIND == 'tenis' else set())
 print('objetos antes do export:', [(o.name, o.type) for o in bpy.data.objects])
 for o in [o for o in bpy.data.objects if o.type == 'MESH' and o.name not in keep]:
     bpy.data.objects.remove(o, do_unlink=True)

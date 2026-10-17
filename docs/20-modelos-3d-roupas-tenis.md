@@ -117,8 +117,8 @@ blender -b -P Tools/Animacao/trocar_corpo.py -- <hoops_player.glb com os clipes>
    - pesos: regata só no tronco (pelvis, spine_*, clavicle: a cava não acompanha o braço); onde cobre a bermuda, a barra
      copia os pesos dela e o pano balança só 20%. Bermuda: quadril acima da barra da regata, rampa de 20 cm até as coxas,
      esquerda/direita meio a meio numa faixa de ±17 cm (com a fronteira curta da pele, as pernas largas se cruzavam).
-     Depois, média espacial dos pesos (5 cm na regata, 2,5 cm na bermuda); cria os ossos de pano `pano_*`; o tênis usa
-     `foot`/`ball` e sai em par, com o esquerdo espelhado;
+     Depois, média espacial dos pesos (5 cm na regata, 2,5 cm na bermuda); cria os ossos de pano `pano_*`; o tênis copia
+     os pesos da pele do pé (ver "Pé e tênis" abaixo) e sai em par, com o esquerdo espelhado;
    - reduz para 9k (roupa) / 5k (tênis), sombreamento suave, textura 1024 px em WebP: 0,5–1 MB por GLB.
 4. Conferência: `Tools/Animacao/ver_vestido.py` (corpo + peças, frente/lado/pé) e `Tools/Animacao/vitrine.py`.
 
@@ -229,6 +229,72 @@ blender -b -P Tools/Animacao/arena.py -- web/public/assets/models_raw/arena web/
 
 ![de cima](img/arena-cima.jpg)
 ![cesta](img/arena-cesta.jpg)
+
+## Pé e tênis (16/10): a pele furava o cano (estado: parcial)
+
+O usuário viu nos prints a canela e o tornozelo aparecendo através do tênis, e o tênis sem acompanhar o pé. Duas
+rodadas. A medição é `web/tools/tenis-quadros.mjs` (pés em movimento, câmera baixa; por quadro, a pele do corpo visível
+que fica fora do tênis, por pé; "mm" = pior vértice; repete na CPU o corte e a puxada do corpo).
+
+**Medição antes (rodada 1, a medição antiga por paridade de raio; ainda serve de referência):** parado 28,4 mm; corrida de
+lado 94,7; corrida de frente 52,0; parada 30,8; agachar 28,0; crossover 27,4; pulo 26,9.
+
+**Causa.** Os tênis tinham só dois ossos, `foot_r` (rígido, com o cano inteiro) e `ball_r` (biqueira). O corpo pesa a pele
+acima do tornozelo (a partir de ~11 cm) em `calf_*`: ao flexionar o tornozelo, a canela saía do cano. Além disso, o cano
+do HY não é centrado na canela: a 13 cm do chão a parede de trás está a 1 a 3 cm do eixo da canela e a da frente a 5 a 9
+cm, e há falhas (sem tecido de fora) na parede de trás da malha. A pele que passa por essas falhas aparece mesmo com o
+cano inteiro. Empurrar o tênis para fora da canela (normal da pele, escala por altura, cilindro da canela) rasgou ou
+amassou o cano: descartado.
+
+**O que está no código.**
+- `Tools/Animacao/vestir.py` (tênis): os pesos são copiados da pele do pé do corpo (média de 4 vértices mais próximos no
+  bind, do mesmo pé). Cano segue `calf_*`, calcanhar `foot_*`, biqueira `ball_*`. Geometria e UV não mudaram.
+- `web/src/game/CuffPull.ts` (novo): no vertex shader do corpo (encadeado no material, depois da pele), a pele da perna e do
+  pé abaixo da boca do cano é puxada para o eixo do osso até o raio do cano por altura, com peso 1 abaixo da boca e 0 um
+  centímetro e meio acima. Altura medida ao longo da canela na pose atual (não no bind: com a perna dobrada a pele que
+  estava acima da boca desce).
+- `web/src/game/BodyCover.ts` (`cutBelowCuff`): corte do corpo pela altura, sem o recorte em dentes por triângulo, para os
+  triângulos inteiros abaixo da boca perto do pé.
+- `web/src/game/PlayerGear.ts` (`shoeCuffs`): boca (ponto mais alto do tênis) e perfil do cano por altura (1 cm; em 12
+  setores, o menor raio externo, menos 3 mm), medidos no GLB de cada tênis ao vestir; `dispose` desliga a puxada. Os
+  ossos do bind vêm do skeleton do próprio tênis (conferido: tornozelo a 3,6 cm).
+
+**Resultado (rodada 2, `tenis-quadros.mjs`, tênis retrô alto, pior vértice por pé):**
+parado: esquerdo 16,7 mm, direito 0; corrida de lado: esquerdo 50,5, direito 0; corrida de frente: esquerdo 49,3, direito 0;
+parada brusca: direito 30,6; agachar: direito 19,2; crossover: direito 16,3; pulo: direito 15,8.
+**Meta do diretor (< 3 mm em todas as cenas, pés direito e esquerdo, os 5 tênis): NÃO atingida.** Pendências:
+- Falhas da malha do tênis (parede de trás do cano a 1 a 3 cm do eixo, sem tecido de fora em alguns setores): a pele que
+  passa por elas aparece. Corrigir na malha (fechar a parede de trás do cano e centrá-lo na canela no `vestir.py`), o que
+  mexe nas UVs e nas máscaras de cor (`zonas-cor.py`).
+- Corrida: a câmera de `tenis-quadros.mjs` perde o pé em movimento (os quadros de corrida não servem para olhar de perto).
+- Os 5 tênis e o pé esquerdo não foram medidos nas 7 cenas com esta rodada.
+
+### Terceira rodada: meia (estado: parcial)
+- `Tools/Animacao/vestir.py` (tênis) agora sai com a **meia**: `meia_r` e `meia_l`, casca da pele do pé e da canela do corpo
+  (todos os vértices do lado até 3 cm acima do topo do cano + 5 cm), inflada 3,5 mm, pesos copiados, boca num plano 5 cm
+  acima da boca do tênis, material branco de dois lados, buracos da sola tampados. Mesmo GLB do tênis (5 GLBs regenerados).
+- No jogo (`PlayerGear.shoeCuffs`) a boca e o perfil do cano vêm da meia (`meia*`); o corte da pele e o `CuffPull`
+  (32 faixas de 1 cm) usam esse perfil.
+- Câmera do `tenis-quadros.mjs`: cada vista segue um pé (direito, esquerdo) ou o meio dos pés.
+- **Não atingido:** a medição ainda dá ~36–44 mm nos dois pés em quase todas as cenas (118 mm na corrida de lado do pé
+  direito do Retrô). A causa mais provável é a malha do próprio corpo: ele tem ~500 arestas abertas (cracks e a sola não
+  fechada), e a casca herda isso, então a medição vê buracos. O meia esquerda sai limpa no quadro parado; a direita ainda
+  escura e com dentes no topo. Próximo passo: fechar a malha do corpo antes de copiar (ou construir a meia por um
+  envelope fechado da perna, não pelas faces do corpo) e rever a orientação das faces.
+
+### Quarta rodada: meia como envelope fechado (estado: parcial)
+- `vestir.py` (tênis) gera a meia por código, sem copiar faces do corpo: tubo em anéis de 1 cm (24 setores) do topo da meia
+  até o tornozelo, curvado no tornozelo e seguindo o pé até a ponta. Raio por setor = maior raio da pele do lado ali + 3,5
+  mm, suavizado entre setores e anéis. Ponta fechada e sola fechada (malha fechada: só a borda do topo fica aberta; 24
+  arestas). Pesos por trecho (calf na perna, foot no pé, ball na frente); normais suaves; material branco fosco.
+- Não feito nesta rodada: ribana arredondada (o topo é uma borda simples mais grossa 1,5 cm, sem a dobra), e a meia não
+  se encolhe para dentro do cano (o `CuffPull` puxa a pele para o perfil da meia, sem mexer no tênis).
+- Medição (`tenis-quadros.mjs`, 7 cenas, dois pés): ~40 mm no retrô, cimento e baixo, parado e em quase todas as cenas.
+  Diagnóstico: esse número é quase todo da borda do topo da meia (a pele logo acima do aro, que a meia inclinada deixa
+  de fora de um lado), contada como pele por fora. O critério de borda local não separa "pele acima do aro" de "pele
+  furando"; por isso a medição não fecha e não serve de meta ainda.
+- Falta visível: dentes da pele dentro da abertura do topo (o corte da pele é por triângulo, e a pele que aparece por
+  dentro do aro é a borda desse corte).
 
 ## Pendências
 - Arena: torcida sem animação (próximo passo: VAT); cantos da arquibancada com blocos girados sobrepostos (um bloco de
