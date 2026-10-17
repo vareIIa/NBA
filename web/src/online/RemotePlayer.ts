@@ -344,6 +344,12 @@ export class RemotePlayer {
         case 'steal':
           A.playSteal(cmd.hand);
           break;
+        case 'catch':
+          A.playCatch(new THREE.Vector3(...cmd.p), cmd.at, cmd.h);
+          break;
+        case 'uncatch':
+          A.cancelCatch();
+          break;
       }
     } catch (error) {
       this.failed++;

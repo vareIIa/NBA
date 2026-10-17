@@ -30,6 +30,7 @@ import { type BallState, Vec3, clamp, computeContest, distance2D, makeBallState,
 import { fromThree } from '../units';
 import { AnimRecorder, RemotePlayer } from '../online';
 import { type BlockDefenderNow, BlockWatch, finishBlock } from './BlockWatch';
+import { type CatchBody, LowPickupZ, ReboundCatch } from './ReboundCatch';
 
 type StartMsg = Extract<ServerMsg, { t: 'match.start' }>;
 
@@ -65,9 +66,9 @@ export type MatchOpponent = Pick<
 const SendHz = 20;
 /** Raio do corpo (m): os dois centros não chegam a menos de 2× isto. */
 export const BodyRadius = 0.32;
-/** Passando a esta distância (m, no chão) da bola solta, o jogador pega. */
+/** Passando a esta distância (m, no chão) da bola solta e baixa (ReboundCatch.LowPickupZ), o jogador pega sozinho. */
 export const PickupRadius = 0.85;
-/** Bola solta acima disto (m, centro) ainda está alta demais para pegar correndo. */
+/** Bola solta acima disto (m, centro) era alta demais para pegar correndo (a CPU ainda usa; o jogador pega com X/Y). */
 export const PickupHeight = 1.25;
 /** Check-ball: o atacante fica este tanto além da linha de 3 e o defensor este tanto à frente dele (m). */
 export const CheckBeyondArc = 1.0;
@@ -79,6 +80,16 @@ export const ContestFarM = 2.6;
 export const PassiveHands = 0.4;
 /** Rebote no ar: sem cesta, a bola descendo este tanto (m) abaixo do aro já não entra: o erro vai para o juiz. */
 export const AirMissBelowRimM = 0.3;
+/** Rebote longo: a bola descendo a mais disto (m, no chão) do aro e se afastando dele também não entra mais. */
+export const AirMissAwayM = 1.3;
+
+/** A bola sem cesta já não entra (o erro vai antes do quique): descendo abaixo do aro, ou descendo longe dele e indo embora. */
+export function missDecided(ball: BallState, rim: Vec3): boolean {
+  if (ball.velocity.z >= 0) return false;
+  if (ball.position.z < rim.z - AirMissBelowRimM) return true;
+  const away = ball.position.sub(rim).flat();
+  return away.length() > AirMissAwayM && away.dot(ball.velocity.flat()) > 0;
+}
 /** Alcance em pé ≈ altura × isto (HoopsContest); no pulo soma a altura do pulo (pegar o rebote no ar). */
 export const ReachPerHeight = 1.33;
 /** Bola estacionada do Freestyle de quem defende (debaixo do chão, parada: a física nem roda). */
@@ -153,6 +164,15 @@ export class OnlineMatch {
   private lastEvent: MatchEvent | null = null;
   private readonly recentEvents: string[] = [];
   private readonly counts = { jumps: 0, stealTries: 0, stealSent: 0, blocks: 0, blockJumper: 0, blockFinish: 0, blockRim: 0 };
+  /** Rebote com as duas mãos (X parado, Y no pulo). */
+  private readonly catcher: ReboundCatch;
+  /** Bola que eu vejo no quadro anterior (núcleo) e a velocidade estimada dela (a do outro chega pela rede). */
+  private seenBall: Vec3 | null = null;
+  private seenVel = new Vec3();
+  /** e2e: pegadas do oponente que o boneco dele mostrou, e a maior folga (m) entre a bola e as minhas mãos na pegada. */
+  private remoteCatches = 0;
+  private remoteCatching = false;
+  private holdGap = 0;
   /** Pegada da bola solta liberada pelo juiz: 'call' = a bola é minha (rebote ofensivo); 'grab' = vem da bola do oponente. */
   private pickup: { kind: 'call' | 'grab'; from: THREE.Vector3; frames: number } | null = null;
   private prevPause = false;
@@ -192,6 +212,7 @@ export class OnlineMatch {
     this.state = deps.start.state;
     this.oppCard = opponentCard(this.room, this.you);
     this.rec = AnimRecorder.attach(deps.animator);
+    this.catcher = new ReboundCatch(deps.animator, deps.game);
     this.hud = new OnlineHud({ rematch: () => this.requestRematch(), leave: () => this.leave() });
     const net = deps.net;
     this.offs.push(
@@ -335,6 +356,16 @@ export class OnlineMatch {
       this.watchFinish();
       this.updateShotFlight();
     }
+    this.trackBall(dt);
+    this.catcher.update();
+    if (this.catcher.holding) {
+      const a = this.deps.animator;
+      const mid = a.palmWorld('l', new THREE.Vector3()).add(a.palmWorld('r', this.tmp)).multiplyScalar(0.5);
+      this.holdGap = Math.max(this.holdGap, mid.distanceTo(game.ballMesh.position));
+    }
+    const remoteCatching = !!this.remote.animator.catchPhase();
+    if (remoteCatching && !this.remoteCatching) this.remoteCatches++;
+    this.remoteCatching = remoteCatching;
 
     // Defesa: sem bola, de frente para o atacante. Se a bola não é minha, o meu Freestyle nunca fica com ela.
     if (!iOwn && !this.pickup) {
@@ -409,6 +440,16 @@ export class OnlineMatch {
         lastBlock: this.lastBlock,
         ...this.counts,
       },
+      /** Rebote com as duas mãos: tentativas, pegadas dadas pelo juiz, a fase agora e o último plano (alvo no núcleo). */
+      rebound: {
+        ...this.catcher.counts,
+        phase: this.deps.animator.catchPhase()?.phase ?? null,
+        holding: this.catcher.holding,
+        holdGap: +this.holdGap.toFixed(2),
+        remoteCatches: this.remoteCatches,
+        remotePhase: this.remote.animator.catchPhase()?.phase ?? null,
+        plan: ((pl) => (pl ? { at: +pl.at.toFixed(2), z: +pl.target.z.toFixed(2), reachable: pl.reachable } : null))(this.catcher.lastPlan),
+      },
     };
   }
 
@@ -431,6 +472,7 @@ export class OnlineMatch {
     this.placedSeq = -1;
     this.pickup = null;
     this.pendingBlock = null;
+    this.catcher.cancel();
     this.hud.hideOver();
     this.apply(start.state, null);
   }
@@ -465,10 +507,12 @@ export class OnlineMatch {
     if (event?.kind === 'rebound' || event?.kind === 'steal') {
       const wasMine = prev.offense === this.you;
       if (event.side === this.you) {
-        const from = wasMine ? this.deps.game.ballMesh.position.clone() : this.remote.ballWorld(new THREE.Vector3());
-        this.pickup = { kind: wasMine ? 'call' : 'grab', from: from ?? this.deps.game.ballMesh.position.clone(), frames: 0 };
-      } else if (wasMine) {
-        this.toDefense();
+        const from = (wasMine ? this.deps.game.ballMesh.position.clone() : this.remote.ballWorld(new THREE.Vector3())) ?? this.deps.game.ballMesh.position.clone();
+        // Rebote com as mãos na bola: ela fica presa às mãos (catcher.update) e desce para o drible no fim da pegada.
+        if (!(event.kind === 'rebound' && this.catcher.grant(from))) this.pickup = { kind: wasMine ? 'call' : 'grab', from, frames: 0 };
+      } else {
+        this.catcher.cancel();
+        if (wasMine) this.toDefense();
       }
     }
     if (event) this.announce(event);
@@ -482,6 +526,7 @@ export class OnlineMatch {
     const offX = arc + CheckBeyondArc;
     this.pickup = null;
     this.pendingBlock = null;
+    this.catcher.cancel();
     this.countdownShown = -1;
     if (this.state.offense === this.you) {
       game.faceTarget = null;
@@ -527,10 +572,10 @@ export class OnlineMatch {
     if (s.phase !== 'live' || s.ball !== 'loose' || this.claimSent === s.seq || this.clockS < this.noClaimUntil) return;
     const game = this.deps.game;
     const ball = this.ballCore();
-    // No pulo (Y) a mão alcança o rebote no ar: o alcance em pé mais a altura do pulo.
-    const jump = this.deps.animator.defenseState().jump;
-    const reachZ = jump > 0.05 ? Math.max(PickupHeight, this.deps.animator.heightMeters * ReachPerHeight + jump - 0.15) : PickupHeight;
-    if (!ball || ball.z > reachZ || distance2D(ball, game.position) > PickupRadius) return;
+    if (!ball) return;
+    // Bola baixa (rolando, quicando baixo): passar por cima pega. Mais alta: só com as mãos nela (X parado, Y no pulo).
+    const low = ball.z <= LowPickupZ && distance2D(ball, game.position) <= PickupRadius;
+    if (!low && !this.catcher.touching(ball)) return;
     this.claimSent = s.seq;
     this.deps.net.send({ t: 'g.claim', seq: s.seq, at: [ball.x, ball.y, ball.z] });
   }
@@ -559,13 +604,18 @@ export class OnlineMatch {
     this.prevContest = !!input.contest;
     const stealPressed = input.shoot && !this.prevSteal;
     this.prevSteal = input.shoot;
-    if (!frozen && !withBall && contestPressed && this.deps.animator.playContest(contestJumpM(this.myCard().vertical))) this.counts.jumps++;
+    // Bola solta (ou descendo depois do arremesso): X pega parado e Y pula e pega, com as duas mãos. Senão Y contesta.
+    const rebound = !frozen && !withBall && this.reboundBall();
+    if (rebound && (contestPressed || stealPressed)) this.startCatch(contestPressed);
+    else if (!frozen && !withBall && contestPressed && this.deps.animator.playContest(contestJumpM(this.myCard().vertical))) this.counts.jumps++;
     const defending = !frozen && !iOwn && !this.pickup;
     this.setHandsUp(defending && input.proY > 0.5);
     if (defending) {
-      if (stealPressed) this.trySteal();
+      if (stealPressed && !rebound) this.trySteal();
       out = { ...out, shoot: false, proX: 0, proY: 0 };
     }
+    // O X da pegada não chega ao Freestyle (sem a bola, o aperto guardado viraria arremesso quando ela voltasse).
+    if (rebound) out = { ...out, shoot: false };
     // Postura de defesa: perto do atacante e sem RT, agachado com as mãos abertas e o deslize mais rápido; LT (o drible
     // baixo do ataque) vira a defesa intensa (desliza mais). Com a bola na mão do atacante só (bola solta: corre).
     const guarding = defending && this.state.ball === 'held' && !input.sprint;
@@ -586,6 +636,48 @@ export class OnlineMatch {
     const defending = s.phase === 'live' && s.offense === this.you && s.ball === 'held';
     const running = this.remote.stats().ball === 'none' && this.remoteSpeed > 4.2;
     this.remote.animator.setDefenseStance(defending && !running ? stanceFor(distance2D(this.remotePos, this.deps.game.position)) : 0);
+  }
+
+  /** A bola está para rebote: solta (o juiz já liberou) ou no ar descendo (o arremesso que não entrou). */
+  private reboundBall(): boolean {
+    const s = this.state;
+    if (s.phase !== 'live') return false;
+    if (s.ball === 'loose') return true;
+    if (s.ball !== 'air' || this.scoredSeq === s.seq) return false;
+    const m = this.ballMotion();
+    return !!m && m.v.z < 0;
+  }
+
+  /** Rebote com as duas mãos: X (`jump` false) pega parado; Y pula junto. Um de cada vez (e um pulo de cada vez). */
+  private startCatch(jump: boolean): void {
+    if (this.catcher.trying || this.catcher.holding) return;
+    if (jump && this.deps.animator.defenseState().jump > 0) return;
+    this.catcher.start(this.ballMotion(), this.catchBody(), jump ? contestJumpM(this.myCard().vertical) : 0);
+    if (jump) this.counts.jumps++;
+  }
+
+  private catchBody(): CatchBody {
+    const g = this.deps.game;
+    return { pos: g.position, facing: g.facing, heightM: this.deps.animator.heightMeters, wingspanM: this.myCard().wingspanCm / 100 };
+  }
+
+  /** A bola que eu vejo e a velocidade dela: a minha no voo vem da física; a do outro, estimada quadro a quadro. */
+  private ballMotion(): { p: Vec3; v: Vec3 } | null {
+    const p = this.ballCore();
+    if (!p) return null;
+    const g = this.deps.game;
+    const mine = this.state.offense === this.you && (g.phase === 'flight' || g.phase === 'loose');
+    return { p, v: mine ? g.ball.velocity : this.seenVel };
+  }
+
+  private trackBall(dt: number): void {
+    const b = this.ballCore();
+    if (b && this.seenBall && dt > 0) {
+      const v = b.sub(this.seenBall).scale(1 / dt);
+      // Pulo grande (a bola trocou de dono ou teletransportou): recomeça a estimativa.
+      this.seenVel = v.length() > 25 ? new Vec3() : this.seenVel.add(v.sub(this.seenVel).scale(Math.min(1, dt * 15)));
+    }
+    this.seenBall = b;
   }
 
   private setHandsUp(up: boolean): void {
@@ -720,7 +812,7 @@ export class OnlineMatch {
     }
     if (this.releaseSent !== s.seq || this.resultSent === s.seq || this.scoredSeq === s.seq || game.phase !== 'flight') return;
     const b = game.ball;
-    if (b.velocity.z < 0 && b.position.z < game.rimCenter().z - AirMissBelowRimM) {
+    if (missDecided(b, game.rimCenter())) {
       this.resultSent = s.seq;
       net.send({ t: 'g.result', seq: s.seq, scored: false, isThree: false });
     }

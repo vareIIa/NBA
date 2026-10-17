@@ -1,6 +1,7 @@
 // Linha do tempo da defesa (DefenseMotion): pulo de contestação e tapa do roubo.
 import { describe, expect, it } from 'vitest';
-import { ContestTiming, DefenseMotion, StealTiming, airTime, contestJumpAt, stealReachAt } from './DefenseMotion';
+import { CatchTiming, ContestTiming, DefenseMotion, StealTiming, airTime, catchAt, contestJumpAt, stealReachAt } from './DefenseMotion';
+import * as THREE from 'three';
 
 describe('DefenseMotion', () => {
   it('pulo: agacha, sobe até a altura pedida no meio do voo, pousa; os braços sobem antes da decolagem', () => {
@@ -45,5 +46,35 @@ describe('DefenseMotion', () => {
     expect(stealReachAt(StealTiming.out + StealTiming.hold / 2)).toBeCloseTo(1, 6);
     expect(stealReachAt(StealTiming.out + StealTiming.hold + StealTiming.back)).toBe(0);
     expect(stealReachAt(-0.01)).toBe(0);
+  });
+});
+
+describe('DefenseMotion: rebote com as duas mãos', () => {
+  it('as mãos chegam no contato, seguram, levam ao peito, protegem e largam', () => {
+    const C = CatchTiming;
+    expect(catchAt(0.05, 0.3).phase).toBe('reach');
+    expect(catchAt(0.3 + C.grip / 2, 0.3).phase).toBe('grip');
+    expect(catchAt(0.3 + C.grip + C.pull / 2, 0.3).phase).toBe('pull');
+    expect(catchAt(0.3 + C.grip + C.pull + C.hold / 2, 0.3).phase).toBe('hold');
+    const out = catchAt(0.3 + C.grip + C.pull + C.hold + C.out / 2, 0.3);
+    expect(out.phase).toBe('out');
+    expect(out.w).toBeGreaterThan(0);
+    expect(out.w).toBeLessThan(1);
+    expect(catchAt(0.3 + C.grip + C.pull + C.hold + C.out + 1e-6, 0.3).done).toBe(true);
+    // Contato cedo demais: as mãos levam pelo menos minReach.
+    expect(catchAt(C.minReach - 0.01, 0).phase).toBe('reach');
+  });
+
+  it('Y pula junto; cancelada, a pegada larga e acaba', () => {
+    const d = new DefenseMotion();
+    d.catchBall(new THREE.Vector3(0, 2.8, 0.5), 0.4, 0.55);
+    for (let i = 0; i < 15; i++) d.update(1 / 60, false);
+    expect(d.state().jump).toBeGreaterThan(0.1);
+    expect(d.catchPhase()?.phase).toBe('reach');
+    d.cancelCatch();
+    d.update(1 / 60, false);
+    expect(d.catchPhase()?.phase).toBe('out');
+    for (let i = 0; i < 30; i++) d.update(1 / 60, false);
+    expect(d.catchPhase()).toBeNull();
   });
 });

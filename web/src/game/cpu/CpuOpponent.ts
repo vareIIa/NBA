@@ -10,7 +10,7 @@ import { Freestyle, type ShotRecord } from '../Freestyle';
 import { PlayerGear } from '../PlayerGear';
 import type { InputState } from '../Input';
 import {
-  AirMissBelowRimM,
+  missDecided,
   BlockNoClaimS,
   BodyRadius,
   CheckBeyondArc,
@@ -21,12 +21,11 @@ import {
   type OnlineMatch,
   type OnlineMatchDeps,
   PassiveHands,
-  PickupHeight,
   PickupRadius,
-  ReachPerHeight,
   parkedBall,
 } from '../OnlineMatch';
 import { type BlockDefenderNow, BlockWatch, finishBlock } from '../BlockWatch';
+import { type CatchBody, LowPickupZ, ReboundCatch } from '../ReboundCatch';
 import { type MatchEvent, type MatchState, type PlayerCard, type ServerMsg, shotClockLeft } from '../../net/protocol';
 import { StealCooldownMs, StealLungeM, ballExposure, contestJumpM, slideFor, stanceFor } from '../../net/defense';
 import { Vec3, clamp, computeContest, distance2D, makeBallState, makeDefenderPose } from '../../sim';
@@ -99,6 +98,8 @@ export class CpuOpponent implements MatchOpponent {
   private reboundFrame = 0;
   /** Para o debug e o e2e. */
   private readonly counts = { shots: 0, makes: 0, jumps: 0, stealTries: 0, stealSent: 0, blocks: 0, blockJumper: 0, blockFinish: 0, blockRim: 0, moves: 0 };
+  /** Rebote com as duas mãos, o mesmo do jogador (X parado, Y no pulo). */
+  private readonly catcher: ReboundCatch;
   private lastContest: { value: number; handsUp: number; jump: number; dist: number } | null = null;
 
   static async load(deps: OnlineMatchDeps, setup: CpuSetup): Promise<CpuOpponent> {
@@ -143,6 +144,7 @@ export class CpuOpponent implements MatchOpponent {
     });
     this.game.setRatings(ratings);
     this.game.ballMesh.name = 'bola da CPU';
+    this.catcher = new ReboundCatch(animator, this.game);
     const a = setup.build.attrs;
     const brainRatings: CpuRatings = {
       three: ratings.threePoint,
@@ -281,6 +283,7 @@ export class CpuOpponent implements MatchOpponent {
       defense: { ...this.animator.defenseState(), stance: +this.animator.defenseStance().toFixed(2) },
       lastContest: this.lastContest,
       pilot: this.pilot?.decision ?? null,
+      rebound: { ...this.catcher.counts, phase: this.animator.catchPhase()?.phase ?? null, holding: this.catcher.holding },
       ...this.counts,
     };
   }
@@ -347,6 +350,7 @@ export class CpuOpponent implements MatchOpponent {
   private begin(state: MatchState): void {
     this.placedSeq = -1;
     this.pickup = null;
+    this.catcher.cancel();
     this.pendingBlock = null;
     this.state = state;
     this.apply(state, null);
@@ -364,9 +368,11 @@ export class CpuOpponent implements MatchOpponent {
       const wasMine = prev.offense === CpuSide;
       if (event.side === CpuSide) {
         const human = this.deps.game.ballMesh.position;
-        this.pickup = { kind: wasMine ? 'call' : 'grab', from: (wasMine ? this.game.ballMesh.position : human).clone(), frames: 0 };
-      } else if (wasMine) {
-        this.toDefense();
+        const from = (wasMine ? this.game.ballMesh.position : human).clone();
+        if (!(event.kind === 'rebound' && this.catcher.grant(from))) this.pickup = { kind: wasMine ? 'call' : 'grab', from, frames: 0 };
+      } else {
+        this.catcher.cancel();
+        if (wasMine) this.toDefense();
       }
     }
   }
@@ -375,6 +381,7 @@ export class CpuOpponent implements MatchOpponent {
     const g = this.game;
     const offX = g.layout.spec.threePointRadius + CheckBeyondArc;
     this.pickup = null;
+    this.catcher.cancel();
     this.pendingBlock = null;
     if (this.state.offense === CpuSide) {
       g.faceTarget = null;
@@ -429,19 +436,52 @@ export class CpuOpponent implements MatchOpponent {
     this.prevContest = !!input.contest;
     const stealPressed = input.shoot && !this.prevSteal;
     this.prevSteal = input.shoot;
-    if (!frozen && !withBall && contestPressed && this.animator.playContest(contestJumpM(this.card.vertical))) this.counts.jumps++;
+    // Bola solta (ou descendo): X pega parado e Y pula e pega, com as duas mãos (como o jogador). Senão Y contesta.
+    const rebound = !frozen && !withBall && this.reboundBall();
+    if (rebound && (contestPressed || stealPressed)) this.startCatch(contestPressed);
+    else if (!frozen && !withBall && contestPressed && this.animator.playContest(contestJumpM(this.card.vertical))) this.counts.jumps++;
     const defending = !frozen && !iOwn && !this.pickup;
     this.animator.setHandsUp(defending && input.proY > 0.5);
     if (defending) {
-      if (stealPressed) this.trySteal();
+      if (stealPressed && !rebound) this.trySteal();
       out = { ...out, shoot: false, proX: 0, proY: 0 };
     }
+    if (rebound) out = { ...out, shoot: false };
     const guarding = defending && this.state.ball === 'held' && !input.sprint;
     const stance = guarding ? stanceFor(distance2D(this.deps.game.position, g.position)) : 0;
     this.animator.setDefenseStance(stance);
     g.defenseSlide = slideFor(stance, this.card.perimeterDefense, false);
     if (this.animator.defenseState().jump > 0.01) out = { ...out, moveX: 0, moveY: 0, sprint: false };
     return out;
+  }
+
+  /** A bola está para rebote: solta, ou no ar descendo (o arremesso que não entrou). */
+  private reboundBall(): boolean {
+    const s = this.state;
+    if (s.phase !== 'live') return false;
+    if (s.ball === 'loose') return true;
+    if (s.ball !== 'air' || this.scoredSeq === s.seq) return false;
+    const m = this.ballMotion();
+    return !!m && m.v.z < 0;
+  }
+
+  /** Rebote com as duas mãos (o mesmo do jogador, ReboundCatch). */
+  private startCatch(jump: boolean): void {
+    if (this.catcher.trying || this.catcher.holding) return;
+    if (jump && this.animator.defenseState().jump > 0) return;
+    const g = this.game;
+    const body: CatchBody = { pos: g.position, facing: g.facing, heightM: this.animator.heightMeters, wingspanM: this.card.wingspanCm / 100 };
+    this.catcher.start(this.ballMotion(), body, jump ? contestJumpM(this.card.vertical) : 0);
+    if (jump) this.counts.jumps++;
+  }
+
+  /** A bola e a velocidade dela (as duas físicas rodam neste navegador: a velocidade é a de verdade). */
+  private ballMotion(): { p: Vec3; v: Vec3 } | null {
+    const p = this.ballCore();
+    if (!p) return null;
+    const owner = this.state.offense === CpuSide ? this.game : this.deps.game;
+    const flying = owner.phase === 'flight' || owner.phase === 'loose';
+    return { p, v: flying ? owner.ball.velocity : new Vec3() };
   }
 
   /** Tapa da CPU: sai sempre; com a bola do jogador no drible e ao alcance, o juiz sorteia com a exposição. */
@@ -525,6 +565,7 @@ export class CpuOpponent implements MatchOpponent {
       this.watchFinish();
       this.updateShotFlight();
     }
+    this.catcher.update();
     if (!iOwn && !this.pickup) {
       if (g.phase !== 'loose' || g.ballMesh.visible) this.toDefense();
       g.faceTarget = this.deps.game.position;
@@ -562,7 +603,7 @@ export class CpuOpponent implements MatchOpponent {
     }
     if (this.releaseSent !== s.seq || this.resultSent === s.seq || this.scoredSeq === s.seq || g.phase !== 'flight') return;
     const b = g.ball;
-    if (b.velocity.z < 0 && b.position.z < g.rimCenter().z - AirMissBelowRimM) {
+    if (missDecided(b, g.rimCenter())) {
       this.resultSent = s.seq;
       this.hub.fromCpu({ t: 'g.result', seq: s.seq, scored: false, isThree: false });
     }
@@ -645,10 +686,11 @@ export class CpuOpponent implements MatchOpponent {
     if (s.phase !== 'live' || s.ball !== 'loose' || this.claimSent === s.seq || this.clockS < this.noClaimUntil) return;
     const g = this.game;
     const ball = this.ballCore();
-    const jump = this.animator.defenseState().jump;
-    const reachZ = jump > 0.05 ? Math.max(PickupHeight, this.animator.heightMeters * ReachPerHeight + jump - 0.15) : PickupHeight;
-    // Um pouco menos de alcance que o jogador: num empate, a bola é de quem joga.
-    if (!ball || ball.z > reachZ || distance2D(ball, g.position) > PickupRadius * 0.9) return;
+    if (!ball) return;
+    // Bola baixa: passar por cima pega (com um pouco menos de alcance que o jogador: num empate, a bola é de quem joga).
+    // Mais alta: só com as mãos nela (X parado, Y no pulo), como o jogador.
+    const low = ball.z <= LowPickupZ && distance2D(ball, g.position) <= PickupRadius * 0.9;
+    if (!low && !this.catcher.touching(ball)) return;
     this.claimSent = s.seq;
     this.hub.fromCpu({ t: 'g.claim', seq: s.seq, at: [ball.x, ball.y, ball.z] });
   }

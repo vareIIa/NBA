@@ -288,6 +288,8 @@ O servidor nunca simula a bola nem o corpo: ele recebe relatos (`g.release`, `g.
    sobreposição.
 4. **Defesa (botões do 2K):** **Y** (teclado **K**) pula com os dois braços esticados (contestação, toco e rebote no
    ar); **RS para cima** (teclado **↑**) levanta as mãos enquanto segura; **X** (teclado **Espaço/J**) dá o tapa do roubo.
+   Com a bola solta (ou descendo depois de um arremesso), **X pega o rebote parado e Y pula e pega**, com as duas mãos
+   (item 9).
    A pose é procedural (`web/src/anim/DefenseMotion.ts`, no `PlayerAnimator`) e vai pelo gravador para o boneco do outro
    lado (ops `hands`, `contest`, `steal`). No ar o analógico não mexe o corpo até pousar. Pulo pela impulsão da build
    (0,40 m no 25, 0,75 m no 99). Perto do atacante (até ~3,6 m), sem RT, quem defende fica na **postura de defesa**
@@ -309,10 +311,16 @@ O servidor nunca simula a bola nem o corpo: ele recebe relatos (`g.release`, `g.
    controle de bola do atacante; Glove e Unpluckable; teto 60%; um tapa a cada 0,9 s). Roubou: a posse troca como num
    rebote defensivo (precisa limpar) e a bola voa da mão do boneco para a de quem roubou.
 8. **Resultado:** quem arremessou manda `g.result` no primeiro toque da bola no chão, ou antes: um erro já decidido (a
-   bola descendo 0,3 m abaixo do aro sem cesta) vai na hora. Cesta: pontos, comemoração (1,8 s) e novo check da outra
+   bola descendo 0,3 m abaixo do aro sem cesta, ou descendo a mais de 1,3 m do aro e indo embora: o rebote longo) vai
+   na hora (`missDecided` em `OnlineMatch.ts`). Cesta: pontos, comemoração (1,8 s) e novo check da outra
    pessoa (ou da mesma, com make it take it). Erro: bola solta.
-9. **Rebote:** passar a até 85 cm da bola solta (centro abaixo de 1,25 m; no pulo, até o alcance em pé + o pulo) pede a
-   bola; o servidor dá ao primeiro pedido válido. Com o erro antecipado dá para **pegar no ar**, antes do quique.
+9. **Rebote com as duas mãos** (`web/src/game/ReboundCatch.ts`, diretor 2026-10-16): **X** pega parado, **Y** pula e
+   pega. O jogo prevê onde a bola passa ao alcance do braço (42% da envergadura a partir dos ombros; no pulo o alcance
+   sobe com o corpo) e as duas mãos vão até ela pela frente do corpo, chegam no instante do contato, seguram, trazem a
+   bola para o peito e só então ela desce para o drible (`DefenseMotion.catchBall`; o boneco do outro lado repete pelo
+   op `catch`). O pedido ao juiz sai quando as mãos estão na bola; o servidor dá ao primeiro pedido válido. Bola baixa
+   (centro abaixo de 0,95 m: rolando, quicando baixo) ainda é pega passando a até 85 cm. Com o erro antecipado dá para
+   **pegar no ar**, antes do quique. A CPU usa a mesma pegada (Y na bola alta, X na bola na altura do peito).
    Rebote ofensivo continua a posse; **rebote defensivo precisa limpar** (levar a bola para fora da linha de 3)
    antes de valer cesta. Cesta sem limpar não vale e a bola troca. Bola solta 10 s sem dono volta para a defesa.
 10. **Relógio de posse:** corre com a bola na mão, para no arremesso, zera em cada posse nova. Estourou: bola do outro.
@@ -323,7 +331,7 @@ Um endpoint (`/ws`), quadros JSON `{t, ...}`, até 64 KB, até 120 por segundo p
 
 | Cliente → servidor | |
 |---|---|
-| `hello {v, card, token?}` | Identidade (cartão da build: nome, altura, envergadura, OVR, defesa de perímetro, roubo, toco, impulsão, controle de bola, níveis de Glove e Unpluckable) e reconexão. Protocolo 2 desde a defesa, 3 desde o canal direto |
+| `hello {v, card, token?}` | Identidade (cartão da build: nome, altura, envergadura, OVR, defesa de perímetro, roubo, toco, impulsão, controle de bola, níveis de Glove e Unpluckable) e reconexão. Protocolo 2 desde a defesa, 3 desde o canal direto, 4 desde o rebote com as duas mãos (op `catch` do boneco) |
 | `ping {c}` | A cada 2 s: latência e relógio do servidor (amostra de menor ida e volta) |
 | `rtc {d}` | Sinalização do canal direto (pedido, offer, answer, ICE) para o outro da sala, só com partida (§5.1) |
 | `queue.join` / `queue.leave` | Partida rápida |

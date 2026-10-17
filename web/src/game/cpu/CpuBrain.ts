@@ -13,6 +13,7 @@
 import type { BallStatus } from '../../net/protocol';
 import { DribbleMove, StickDir, Vec3, clamp, mirrorDir } from '../../sim';
 import { jumpPeakS } from '../../sim/HoopsBlock';
+import { LowPickupZ } from '../ReboundCatch';
 import type { CpuLevelSpec, CpuStyle } from './CpuRoster';
 
 export type CpuPhase = 'dribble' | 'gather' | 'flight' | 'loose' | 'return';
@@ -251,6 +252,7 @@ export class CpuBrain {
   private stealRecoverUntil = 0;
   private contestPress = false;
   private reboundJumpAt = -Infinity;
+  private reboundGrabAt = -Infinity;
   /** Para o debug: a última decisão do ataque. */
   lastDecision = '';
 
@@ -731,6 +733,10 @@ export class CpuBrain {
     if (r.ball.z > 2.1 && r.ball.z < 3.6 && near < 1.1 && !me.jumping && v.now - this.reboundJumpAt > 1) {
       this.reboundJumpAt = v.now;
       cmd.contest = true;
+    } else if (r.ball.z > LowPickupZ && r.ball.z <= 2.1 && near < 0.9 && !me.jumping && v.now - this.reboundGrabAt > 0.7) {
+      // Bola na altura do peito chegando: pega parado com as duas mãos (X).
+      this.reboundGrabAt = v.now;
+      cmd.shoot = true;
     }
   }
 }

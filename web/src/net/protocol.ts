@@ -12,8 +12,9 @@
 /**
  * 2: defesa (roubo, toco, contestação com o estado do defensor) e cartão com os ratings de defesa.
  * 3: canal direto entre os jogadores (sinalização 'rtc', 'st' com número r nos quadros com comando; src/net/PeerLink.ts).
+ * 4: rebote com as duas mãos (o comando 'catch' do boneco remoto: um cliente velho recusaria o estado inteiro).
  */
-export const ProtocolVersion = 3;
+export const ProtocolVersion = 4;
 export const WsPath = '/ws';
 /** Porta do servidor de desenvolvimento (web/server/dev.ts). */
 export const DevServerPort = 8790;

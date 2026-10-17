@@ -1,5 +1,6 @@
 // Boneco remoto (docs/24 §5): serialização, validação do que chega, relógio, interpolação, fila de comandos e gravador.
 import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
 import { Vec3 } from '../sim';
 import type { AnimInput } from '../anim/PlayerAnimator';
 import { AnimRecorder, type RecordableAnimator } from './AnimRecorder';
@@ -84,6 +85,12 @@ class FakeAnimator {
   }
   defenseState(): { handsUp: number; jump: number } {
     return this.df;
+  }
+  playCatch(target: { x: number; y: number; z: number }, inS: number, jumpM = 0): void {
+    this.calls.push(`catch:${target.y}:${inS}:${jumpM}`);
+  }
+  cancelCatch(): void {
+    this.calls.push('uncatch');
   }
 }
 
@@ -340,5 +347,22 @@ describe('Defesa no gravador e no payload', () => {
     expect(decodePayload({ ...d, s: { ...d.s, df: [0.5] } })).toBeNull();
     expect(decodePayload({ ...d, s: { ...d.s, df: [0.5, Number.POSITIVE_INFINITY] } })).toBeNull();
     expect(decodePayload({ ...d, c: [{ op: 'hands', t: 1, up: 1 }] })?.c).toEqual([{ op: 'hands', t: 1, up: 1 }]);
+  });
+});
+
+describe('Rebote com as duas mãos no gravador e no payload', () => {
+  it('anota a pegada (alvo no mundo, contato, pulo) e o cancelamento; o decode valida', () => {
+    const { fake, anim, rec } = recorded();
+    anim.playCatch(new THREE.Vector3(1.23456, 2.5, -0.5), 0.4321, 0.55);
+    anim.cancelCatch();
+    expect(fake.calls).toEqual(['catch:2.5:0.4321:0.55', 'uncatch']);
+    anim.update(1 / 60, input({ hasBall: false }));
+    const d = JSON.parse(JSON.stringify(rec.drain(null)));
+    expect(decodePayload(d)!.c).toEqual([
+      { op: 'catch', t: 100, p: [1.235, 2.5, -0.5], at: 0.432, h: 0.55 },
+      { op: 'uncatch', t: 100 },
+    ]);
+    expect(decodePayload({ ...d, c: [{ op: 'catch', t: 1, p: [0, 1], at: 0.2, h: 0 }] })).toBeNull();
+    expect(decodePayload({ ...d, c: [{ op: 'catch', t: 1, p: [0, 1, 2], at: 9, h: 0 }] })).toBeNull();
   });
 });

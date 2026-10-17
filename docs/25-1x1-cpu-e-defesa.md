@@ -45,7 +45,8 @@ partida, sem menu. Também: `&ataque=cpu` (a CPU começa atacando), `&alvo=N` (p
 todo toco e todo roubo possível do jogador sai), `&autoplay=<nível>` (o jogador também vira CPU: CPU contra CPU).
 
 Controles da defesa (os mesmos do online, docs/24 §6.3): **Y** (K) pula — contestação, toco e rebote no ar; **RS para
-cima** (↑) mãos para cima; **X** (Espaço/J) tapa do roubo; **LT** (Q) defesa intensa; **RT** corre virado.
+cima** (↑) mãos para cima; **X** (Espaço/J) tapa do roubo; **LT** (Q) defesa intensa; **RT** corre virado. Bola solta:
+**X** pega o rebote parado e **Y** pula e pega, com as duas mãos (§4).
 
 ## 3. Toco físico (`sim/HoopsBlock.ts`, `game/BlockWatch.ts`)
 
@@ -87,6 +88,17 @@ tempo; jump shot de longe só com defensor alto, colado e pulando junto com o ar
   99 → 100% do extra), +15% com LT. No online, o boneco do oponente defensor faz a mesma postura pela mesma regra.
 - **Contestação**: a de antes (`HoopsContest` com as mãos e o pulo de verdade). Contra a CPU, quem defende vê na hora
   "Sufocado!" (≥ 0,7), "Contestado" (≥ 0,4) ou "Livre!" (< 0,12) no arremesso dela, mesmo quando a bola entra.
+- **Braços** (diretor, 2026-10-16: "quando ele vai levantar os braços para contestar, gira os dois lados meio
+  estranho"; o mesmo no toco e no rebote). A mão ia em linha reta da coxa até acima da cabeça: passava pelo ombro e o
+  cotovelo abria para trás (asa de galinha, mãos atrás da cabeça). Agora ela sobe num arco pela frente do corpo (braço
+  quase esticado à frente do rosto no meio da subida), o cotovelo aponta para baixo no começo e para fora e um pouco à
+  frente no alto, e a mão é orientada: dedos para cima, palma para a frente (no toco, a palma vira para a batida).
+  Antes e depois: `docs/img/defesa-bracos-antes-depois.jpg`. Folha de quadros: `node tools/defesa-folha.mjs <pasta>
+  <maos|pulo|toco|rebote-x|rebote-y>` + `python tools/defesa-folha.py <pasta> <saida.jpg>`.
+- **Rebote com as duas mãos** (`game/ReboundCatch.ts`, `DefenseMotion.catchBall`): X pega parado, Y pula e pega. As
+  mãos vão abertas para os lados da bola e fecham nela no instante do contato (previsto pela trajetória), a bola fica
+  presa às mãos (desce junto no pulo), vai para o peito e só então desce para o drible. Bola acima de 0,95 m só com as
+  mãos; abaixo, passando por cima. `docs/img/rebote-duas-maos.jpg`.
 
 ## 5. A CPU (`game/cpu/`)
 
@@ -117,7 +129,8 @@ Cortada na infiltração: spin, crossover ou pull-up. O arremesso é X segurado 
 (σ = 150 → 75 ms pelo rating, × o nível). Relógio de posse acabando: arremessa o que tiver.
 
 **Rebote**: os dois correm para o primeiro ponto do caminho da bola baixo o bastante para pegar (a física de verdade)
-e pulam na bola alta perto. A CPU pega um pouco mais perto que o jogador (empate é do jogador).
+e pulam (Y) na bola alta perto ou pegam parados (X) a bola na altura do peito, com as duas mãos, como o jogador. Na bola
+baixa a CPU pega um pouco mais perto que o jogador (empate é do jogador).
 
 ## 6. Medido (CPU contra CPU, 2026-10-16)
 

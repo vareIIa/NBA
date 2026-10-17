@@ -5,8 +5,11 @@ import { type Hand, MoveTimings, type MoveKind } from '../anim/ClipLibrary';
 import { type JumpShotSetup, parseSetup } from '../shot/JumpShotSetup';
 import type { Json } from './Wire';
 
-/** 2: defesa (mãos para cima, pulo de contestação, tapa do roubo) e o estado dela na amostra (df). */
-export const PayloadVersion = 2;
+/**
+ * 2: defesa (mãos para cima, pulo de contestação, tapa do roubo) e o estado dela na amostra (df).
+ * 3: rebote com as duas mãos (catch: alvo no mundo, contato em `at` s, pulo de h m; uncatch: a bola não veio).
+ */
+export const PayloadVersion = 3;
 export const MaxCommands = 32;
 
 export type V3 = [number, number, number];
@@ -68,7 +71,9 @@ export type AnimCommand =
   /** Defesa: mãos para cima (RS) liga/desliga, pulo de contestação de h m (Y) e tapa do roubo (X). */
   | { op: 'hands'; t: number; up: 0 | 1 }
   | { op: 'contest'; t: number; h: number }
-  | { op: 'steal'; t: number; hand: Hand };
+  | { op: 'steal'; t: number; hand: Hand }
+  | { op: 'catch'; t: number; p: V3; at: number; h: number }
+  | { op: 'uncatch'; t: number };
 
 export interface Payload {
   v: number;
@@ -179,6 +184,10 @@ function command(x: unknown): AnimCommand {
       return { op: 'contest', t, h: num(o.h, 1.5) };
     case 'steal':
       return { op: 'steal', t, hand: hand(o.hand) };
+    case 'catch':
+      return { op: 'catch', t, p: vec(o.p, 3), at: num(o.at, 2), h: num(o.h, 1.5) };
+    case 'uncatch':
+      return { op: 'uncatch', t };
     default:
       throw new Invalid();
   }

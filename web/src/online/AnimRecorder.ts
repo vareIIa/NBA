@@ -27,6 +27,8 @@ const Recorded = [
   'setHandsUp',
   'playContest',
   'playSteal',
+  'playCatch',
+  'cancelCatch',
 ] as const;
 type RecordedName = (typeof Recorded)[number];
 
@@ -92,6 +94,8 @@ export class AnimRecorder {
     rec.wrap('setHandsUp', (up) => rec.push({ op: 'hands', t: rec.clock(), up: up ? 1 : 0 }));
     rec.wrap('playContest', (h) => rec.push({ op: 'contest', t: rec.clock(), h: round(h, 3) }));
     rec.wrap('playSteal', (hand) => rec.push({ op: 'steal', t: rec.clock(), hand }));
+    rec.wrap('playCatch', (target, inS, jumpM) => rec.push({ op: 'catch', t: rec.clock(), p: toV3(target), at: round(inS, 3), h: round(jumpM ?? 0, 3) }));
+    rec.wrap('cancelCatch', () => rec.push({ op: 'uncatch', t: rec.clock() }));
     return rec;
   }
 

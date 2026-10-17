@@ -761,6 +761,9 @@ export class PlayerAnimator {
       aimHand: (h, dir, w) => this.aimHand(h, dir, w),
       root: this.root,
     });
+    // A defesa também orienta as mãos (dedos e palma): mede os eixos delas aqui, na pose de ligação, como o IdleLife.
+    this.defenseRig = { bone: (n) => this.bone(n), reachPalm: (h, target, w, pole) => this.reachPalm(h, target, w, pole), root: this.root };
+    this.defense.fit(this.defenseRig);
     this.armClearance = new ArmClearance({ bone: (n) => this.bone(n), scale: () => this.root.scale.y });
     this.fitArmClearance();
 
@@ -1047,6 +1050,29 @@ export class PlayerAnimator {
   /** Toco: a mão `hand` chega a `target` (mundo, onde a bola vai estar) em `inS` s e segue o tapa na direção `dir`. */
   playBlock(hand: Hand, target: THREE.Vector3, inS: number, dir?: THREE.Vector3): void {
     this.defense.block(hand, target, inS, dir);
+  }
+
+  /**
+   * Rebote com as duas mãos: chegam a `target` (mundo, o centro da bola no contato) em `inS` s, seguram, levam a bola ao
+   * peito e soltam para o drible. `jumpM` > 0 pula junto (Y); 0 pega parado (X).
+   */
+  playCatch(target: THREE.Vector3, inS: number, jumpM = 0): void {
+    this.defense.catchBall(target, inS, jumpM);
+  }
+
+  /** A bola do rebote não veio: as mãos largam a pegada. */
+  cancelCatch(): void {
+    this.defense.cancelCatch();
+  }
+
+  /** Centro da bola entre as palmas (mundo) enquanto a pegada segura; null fora disso. */
+  catchHold(): THREE.Vector3 | null {
+    return this.defense.catchHold();
+  }
+
+  /** Pegada do rebote em andamento (fase e quanto dela andou); null fora dela. */
+  catchPhase(): ReturnType<DefenseMotion['catchPhase']> {
+    return this.defense.catchPhase();
   }
 
   /** Depois dos gestos do parado: braços da defesa e o pulo (DefenseMotion). */
