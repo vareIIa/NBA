@@ -524,13 +524,13 @@
    "golpe": "btb_btb",
    "valor": 9.5,
    "fases": null,
-   "status": "limítrofe",
-   "delta": 2.5,
+   "status": "reprovado",
+   "delta": -5.5,
    "margem": 0.9325048082403138,
    "vies": null,
    "alvo": [
-    7,
-    7
+    15,
+    15
    ],
    "tolerancia": 2
   },

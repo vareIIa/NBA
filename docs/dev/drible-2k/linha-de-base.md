@@ -7,7 +7,7 @@
 
 ## 1. Resumo
 
-110 linhas (métrica × golpe): **54 aprovado**, **30 reprovado**, **22 limítrofe**, **3 não existe**, **1 sem dado**.
+110 linhas (métrica × golpe): **54 aprovado**, **31 reprovado**, **21 limítrofe**, **3 não existe**, **1 sem dado**.
 
 - §2.1 Resposta e encadeamento: 14 de 27 aprovadas.
 - §2.2 Ritmo e bola: 5 de 10 aprovadas.
@@ -87,7 +87,7 @@ Do quadro em que o stick chega à zona ativa (0,7) até o primeiro quadro em que
 |---|---|---|---|---|---|---|---|---|---|---|
 | Intervalo do quique no drible parado (size-up) | Drible parado (linha de base) | 12,8 | 10,0–12,0 | 0,8 | 1,0 | 0,9 | ✅ aprovado | B | E-E |  |
 | Intervalo do quique nos crossovers em sequência | Crossovers em sequência | 10,0 | 10,0 | 0,0 | 1,0 | 0,9 | ✅ aprovado | A | E-E |  |
-| Intervalo do quique no BTB duplo | BTB -> BTB (double BTB) | 9,5 | 7,0 | 2,5 | 2,0 | 0,9 | ⚠️ limítrofe | B | E-B |  |
+| Intervalo do quique no BTB duplo | BTB -> BTB (double BTB) | 9,5 | 15,0 | -5,5 | 2,0 | 0,9 | ❌ reprovado | M | E-B, quiques-2k |  |
 | Intervalo do quique correndo (RT) | Drible correndo (RT) | 9,5 | 15,0 | -5,5 | 2,0 | 0,9 | ❌ reprovado | M | E-D |  |
 | Bola cruzando de um quadril ao outro (15% -> 85% do caminho lateral) | Crossover parado | 3,0 | 4,0–6,0 | -1,0 | 1,0 | 1,0 | ✅ aprovado | A | E-E | pior fase: descendo; fases: mao 3,5, descendo 3,0, subindo 3,5 |
 | Bola cruzando de um quadril ao outro (15% -> 85% do caminho lateral) | Cross correndo (RT: crossover de ataque) | 2,0 | 4,0–6,0 | -2,0 | 1,0 | 1,0 | ⚠️ limítrofe | A | E-E | pior fase: descendo; fases: mao 4,0, descendo 2,0, subindo 4,5 |
@@ -231,9 +231,12 @@ Quiques: 23 de 70 achados pelo derivar.py no vídeo (±2 q), 0 falsos; com landm
   parados foram medidos sem RT (os size-ups que existem); os correndo, com RT, como no 2K.
 - **Velocidades correndo do 2K** vêm de um proxy (deslocamento do fundo da quadra, E-D), não de medida direta; o arranque e
   a parada têm confiança média.
-- **Quiques do 2K pelo CSV.** O detector de quique do `derivar.py` (limite de 0,15 S acima dos tornozelos) perde a maior
-  parte dos quiques numa câmera alta, porque a bola à frente dos pés aparece acima deles na imagem (seção 5). Os intervalos
-  de quique do 2K no doc 27 vêm da leitura visual das folhas. Re-medir o 2K com `--limite-quique 0.35` é um próximo passo.
+- **Quiques do 2K pelo CSV.** O detector de quique do `derivar.py` com os padrões (limite de 0,15 S acima dos
+  tornozelos) perde a maior parte dos quiques numa câmera alta, porque a bola à frente dos pés aparece acima deles na
+  imagem (seção 5). No 2K o problema maior era o detector de bola, que travava longe do jogador e no joelho. A re-medição
+  com `medir.py --bola-perto` e `derivar.py --limite-quique 0.35 --raio-min 0.8` está em
+  `docs/dev/drible-2k/quiques-2k.md`: confirma os alvos de crossover (10 q), correndo (15 q) e drible parado, e corrigiu o
+  BTB duplo de ~7 q para 15 q.
 - **A calibração usa a nossa câmera e o nosso boneco**, parecidos com os do 2K (atrás e acima, retrato, S ≈ 270–300 px),
   mas não iguais: proporções, roupa e lente diferem. A margem do pipeline é a ordem de grandeza do erro dos números do 2K,
   não uma correção exata. O viés medido só é mostrado (coluna Nota), não descontado do alvo.

@@ -1,6 +1,9 @@
 """Deriva métricas de corpo/bola por quadro e lista os quiques da bola no chão.
 
-Uso: python -I derivar.py <medidas.csv> <saida.csv> [--limite-quique 0.15] [--separacao 5]
+Uso: python -I derivar.py <medidas.csv> <saida.csv> [--limite-quique 0.15] [--separacao 5] [--raio-min 0.8]
+
+Os padrões reproduzem os CSVs do 2K em docs/dev/drible-2k/dados/. Para os quiques do 2K use o medir.py com
+--bola-perto e aqui --limite-quique 0.35 --raio-min 0.8 (validação em docs/dev/drible-2k/quiques-2k.md).
 
 Entrada: o CSV do medir.py (ou qualquer CSV com as mesmas colunas, como os landmarks ideais que o calibrar.py monta
 a partir do motor). Unidades: tudo dividido pelo "tamanho do corpo" S = distância ombro-médio -> tornozelo-médio (px)
@@ -70,10 +73,23 @@ def achar_quiques(alturas, limite=0.15, separacao=5):
     return bounces
 
 
-def derivar(rows, limite=0.15, separacao=5):
+def alturas_para_quique(rows, derived, raio_min=None):
+    """bola_altura de cada quadro; com raio_min (fração), descarta as manchas com raio < raio_min × o raio mediano da
+    bola no vídeo: quando a bola some, o detector de cor pega o joelho ou outro objeto pequeno (docs/dev/drible-2k/quiques-2k.md)."""
+    h = [d.get('bola_altura') for d in derived]
+    if not raio_min:
+        return h
+    raios = [num(r, 'ball_r') for r in rows if num(r, 'ball_r') is not None]
+    if not raios:
+        return h
+    corte = raio_min * sorted(raios)[len(raios) // 2]
+    return [x if (x is not None and (num(r, 'ball_r') or 0) >= corte) else None for x, r in zip(h, rows)]
+
+
+def derivar(rows, limite=0.15, separacao=5, raio_min=None):
     """Todas as linhas -> (métricas por quadro com a coluna quique, índices dos quiques)."""
     derived = [derivar_quadro(r) for r in rows]
-    bounces = achar_quiques([d.get('bola_altura') for d in derived], limite, separacao)
+    bounces = achar_quiques(alturas_para_quique(rows, derived, raio_min), limite, separacao)
     for d in derived:
         d['quique'] = ''
     for i in bounces:
@@ -99,10 +115,12 @@ def main(argv=None):
     p.add_argument('saida')
     p.add_argument('--limite-quique', type=float, default=0.15, help='altura máxima (S) de um quique')
     p.add_argument('--separacao', type=int, default=5, help='quadros mínimos entre quiques')
+    p.add_argument('--raio-min', type=float, default=None,
+                   help='só conta quique com a mancha da bola >= esta fração do raio mediano (ex.: 0.8; o joelho tem metade do raio)')
     a = p.parse_args(argv)
     with open(a.medidas) as f:
         rows = list(csv.DictReader(f))
-    derived, bounces = derivar(rows, a.limite_quique, a.separacao)
+    derived, bounces = derivar(rows, a.limite_quique, a.separacao, a.raio_min)
     escrever(derived, a.saida)
     ts = [float(derived[i]['t']) for i in bounces]
     gaps = [round(b - a, 3) for a, b in zip(ts, ts[1:])]

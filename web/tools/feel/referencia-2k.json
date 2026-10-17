@@ -103,10 +103,11 @@
     },
     {
       "id": "quique_btb_duplo", "secao": "2.2", "nome": "Intervalo do quique no BTB duplo",
-      "unidade": "q", "alvo": [7, 7], "tolerancia": 2, "fonte": ["E-B"], "confianca": "B", "peso": 2,
+      "unidade": "q", "alvo": [15, 15], "tolerancia": 2, "fonte": ["E-B", "quiques-2k"], "confianca": "M", "peso": 2,
       "medida": { "de": "sequencias", "campo": "quique_q", "golpes": ["btb_btb"] },
       "calibracao": { "tipo": "quique" },
-      "hipotese": "O 2º BTB espera a bola do 1º voltar à mão (pendente) e o BTB dura 0,45 s em Specs."
+      "nota": "Re-medido em docs/dev/drible-2k/quiques-2k.md: 14–18 q (5 intervalos conferidos à mão, o detector acha os mesmos quiques). O ~7 q antigo veio de quiques falsos do CSV.",
+      "hipotese": "O 2º BTB começa assim que a bola do 1º volta à mão (pendente do Freestyle), sem a trava de pé que o 2K faz a cada quique; o quique sai no ritmo do BTB procedural (ProceduralMoves), mais curto que o do 2K."
     },
     {
       "id": "quique_correndo", "secao": "2.2", "nome": "Intervalo do quique correndo (RT)",

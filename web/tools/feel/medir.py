@@ -35,20 +35,41 @@ def args_da_linha(argv):
     p.add_argument('--raio', nargs=2, type=float, default=[14, 55], metavar=('MIN', 'MAX'), help='raio inscrito da bola (px)')
     p.add_argument('--area', nargs=2, type=float, default=[500, 9000], metavar=('MIN', 'MAX'), help='área da mancha da bola (px²)')
     p.add_argument('--fechar', type=int, default=7, help='kernel (px) do fechamento da máscara (as costuras escuras da bola cortam a mancha)')
+    p.add_argument('--bola-perto', action='store_true',
+                   help='procura a bola só perto do jogador (pela pose do quadro: do ombro a 0,4 S abaixo dos tornozelos, '
+                        '±1,3 S do quadril). Sem isso o detector trava em objetos parados da arquibancada e na cabeça (E-C)')
     a = p.parse_args(argv)
     a.modelo = a.modelo or a.modelo_pos
     return a
 
 
-def detectar_bola(frame, a, prev_ball):
+def regiao_do_jogador(lm, w, h):
+    """Caixa (x0, y0, x1, y1) em px onde a bola pode estar, a partir dos landmarks do MediaPipe (normalizados)."""
+    def p(idx):
+        return lm[idx].x * w, lm[idx].y * h
+
+    lsh, rsh, lhip, rhip, lank, rank = (p(LM[k]) for k in ('lsh', 'rsh', 'lhip', 'rhip', 'lank', 'rank'))
+    sh = ((lsh[0] + rsh[0]) / 2, (lsh[1] + rsh[1]) / 2)
+    ank = ((lank[0] + rank[0]) / 2, (lank[1] + rank[1]) / 2)
+    S = max(1.0, ((sh[0] - ank[0]) ** 2 + (sh[1] - ank[1]) ** 2) ** 0.5)
+    hip_x = (lhip[0] + rhip[0]) / 2
+    return (hip_x - 1.3 * S, sh[1] - 0.1 * S, hip_x + 1.3 * S, max(lank[1], rank[1]) + 0.4 * S)
+
+
+def detectar_bola(frame, a, prev_ball, regiao=None):
     """Bola por cor (HSV) + raio inscrito (aguenta a mão tapando parte). Devolve (x, y, r) ou None."""
     import cv2
     import numpy as np
 
-    h = frame.shape[0]
+    h, w = frame.shape[:2]
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     ball = cv2.inRange(hsv, (a.bola_h[0], a.bola_s, a.bola_v[0]), (a.bola_h[1], 255, a.bola_v[1]))
     ball[: int(h * a.topo)] = 0
+    if regiao is not None:
+        x0, y0, x1, y1 = (int(round(v)) for v in regiao)
+        fora = np.ones_like(ball, dtype=bool)
+        fora[max(0, y0):max(0, min(h, y1)), max(0, x0):max(0, min(w, x1))] = False
+        ball[fora] = 0
     ball = cv2.morphologyEx(ball, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
     ball = cv2.morphologyEx(ball, cv2.MORPH_CLOSE, np.ones((a.fechar, a.fechar), np.uint8))
     dist = cv2.distanceTransform(ball, cv2.DIST_L2, 5)
@@ -98,6 +119,7 @@ def medir(a):
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     prev_gray = None
     prev_ball = None
+    regiao = None
     rows = []
     i = 0
     while True:
@@ -109,21 +131,28 @@ def medir(a):
         small = cv2.resize(gray, (w // 4, h // 4))
         diff = float(np.mean(cv2.absdiff(small, prev_gray))) if prev_gray is not None else 0.0
         prev_gray = small
-        bx = by = br = ''
-        best = detectar_bola(frame, a, prev_ball)
-        if best:
-            prev_ball = best[:2]
-            bx, by, br = (round(v, 1) for v in best)
-        row = {'frame': i, 't': round(i / fps, 4), 'diff': round(diff, 3), 'ball_x': bx, 'ball_y': by, 'ball_r': br}
+        lm = None
         if landmarker is not None:
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             res = landmarker.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), int(i * 1000 / fps))
             if res.pose_landmarks:
                 lm = res.pose_landmarks[0]
-                for k, idx in LM.items():
-                    row[k + '_x'] = round(lm[idx].x * w, 1)
-                    row[k + '_y'] = round(lm[idx].y * h, 1)
-                    row[k + '_v'] = round(lm[idx].visibility, 2)
+        if a.bola_perto and lm is not None:
+            regiao = regiao_do_jogador(lm, w, h)
+        elif not a.bola_perto:
+            regiao = None
+        # (com --bola-perto e sem pose neste quadro, vale a região do último quadro com pose)
+        bx = by = br = ''
+        best = detectar_bola(frame, a, prev_ball, regiao if a.bola_perto else None) if (not a.bola_perto or regiao is not None) else None
+        if best:
+            prev_ball = best[:2]
+            bx, by, br = (round(v, 1) for v in best)
+        row = {'frame': i, 't': round(i / fps, 4), 'diff': round(diff, 3), 'ball_x': bx, 'ball_y': by, 'ball_r': br}
+        if lm is not None:
+            for k, idx in LM.items():
+                row[k + '_x'] = round(lm[idx].x * w, 1)
+                row[k + '_y'] = round(lm[idx].y * h, 1)
+                row[k + '_v'] = round(lm[idx].visibility, 2)
         rows.append(row)
         i += 1
 

@@ -63,6 +63,15 @@ class DerivarQuadro(unittest.TestCase):
         self.assertEqual(derivar.achar_quiques(h, separacao=6), [3, 15])  # 8 fica a 5 quadros do 3
         self.assertEqual(derivar.achar_quiques([0.3, 0.25, 0.2, 0.25, 0.3]), [])  # longe do chão
 
+    def test_raio_minimo_descarta_mancha_pequena(self):
+        # Quadro 2: a bola de verdade no chão (raio 30); quadro 7: o detector pegou o joelho (raio 15) a 0,1 S.
+        alturas = [0.6, 0.3, 0.05, 0.3, 0.6, 0.6, 0.3, 0.1, 0.3, 0.6]
+        raios = [30, 30, 30, 30, 30, 30, 15, 15, 15, 30]
+        rows = [{'ball_r': str(r)} for r in raios]
+        derived = [{'bola_altura': h} for h in alturas]
+        self.assertEqual(derivar.achar_quiques(derivar.alturas_para_quique(rows, derived)), [2, 7])
+        self.assertEqual(derivar.achar_quiques(derivar.alturas_para_quique(rows, derived, raio_min=0.8)), [2])
+
 
 def quadro_motor(**over):
     """Quadro do motor (juntas [lado, alt, frente] em m) com o jogador de pé."""

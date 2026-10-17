@@ -90,7 +90,7 @@ Unidades: `S` = 1,45 m; quadros a 30 fps (1 q = 33 ms). Conversão para o nosso 
 | Métrica | 2K | Nós hoje | Conf. | Fonte |
 |---|---|---|---|---|
 | Quique no crossover parado | **10 q (0,33 s)**; ciclo E-D-E de 20–21 q | idle ~0,42 s (2,4/s) | A | E-E |
-| Quique no BTB duplo | ~7 q (0,23 s) | — | B | E-B |
+| Quique no BTB duplo | **~15 q (0,5 s)**, 14–18 q. Re-medido em `dev/drible-2k/quiques-2k.md`; o ~7 q antigo veio de quiques falsos do CSV | 9,5 q (`btb_btb`) | M | E-B |
 | Quique correndo | **15 q (0,5 s)**, ~1 a cada 2 passadas | ~0,34 s (2,9/s) | M | E-D |
 | Bola cruzando de um quadril ao outro (cross) | **4–6 q** | ~0,2 s (clipe esticado) | A | E-E |
 | Altura da bola cruzando entre as pernas | ~0,3 S (≈0,45 m) | — | M | E-A |
@@ -121,7 +121,7 @@ Unidades: `S` = 1,45 m; quadros a 30 fps (1 q = 33 ms). Conversão para o nosso 
 |---|---|---|---|
 | Crossover | cruza em 4–6 q; ciclo completo ~0,33 s | 0,40 s | E-E |
 | Behind-the-back | **10–12 q (0,33–0,40 s)** | 0,45 s | E-D |
-| Double BTB | 2 × BTB sem pausa (travas de pé a cada ~0,44 s) | não existe | E-B |
+| Double BTB | 2 × BTB sem pausa, um quique a cada ~0,5 s e uma trava de pé por quique (`dev/drible-2k/quiques-2k.md`) | não existe | E-B |
 | Escape entre as pernas | antecipação 12 q + passe 12 q + cruzado 10 q + arranque 9 q + 2º passe 7 q + recuperação 12 q | entre as pernas 0,42 s | E-F |
 | Hesi-cross | 2 batidas de base (15–20 q) + cross 9 q + agachamento 11 q | 0,60 s | E-F |
 | Double cross | passe lento 20 q + transição 13 q + passe rápido 10 q + recuperação 36 q (≈2,6 s no total) | 0,70 s | E-F |
@@ -210,7 +210,7 @@ aprovado/reprovado por tolerância. Sem mudar gameplay.
   `docs/dev/drible-2k/*`). Se precisar expor dado do animador, apenas leitura via `window.__debug`.
 - **Fase 1: feito, ver `dev/drible-2k/linha-de-base.md`** (2026-10-17, código em 7929a1b). Comando único:
   `node tools/feel/regua.mjs` (de `web/`, ~5,5 min; uso em `web/tools/feel/README.md`). Resumo:
-  - De 110 linhas (métrica × golpe): 54 aprovadas, 30 reprovadas, 22 limítrofes (reprovadas por menos que a margem do
+  - De 110 linhas (métrica × golpe): 54 aprovadas, 31 reprovadas, 21 limítrofes (reprovadas por menos que a margem do
     pipeline de vídeo), 3 de golpes que não existem e 1 sem dado (o crossover quase não baixa o quadril, então não há
     tempo de queda para medir).
   - Latência do corpo, medida contra o mesmo cenário sem o comando (o laboratório é determinístico): 1,5 q com a bola na
@@ -220,12 +220,15 @@ aprovado/reprovado por tolerância. Sem mudar gameplay.
     antecipação de 0,5 q no crossover (2K: 10–12 q); arranque com a bola em 26 q (2K: 1–3 q); parada em 12 q (2K:
     1–3 q); a bola começa a cruzar em 6,5 q; o tronco no hesi-cross a 365°/s, abrupto (2K: 90–150°/s); double cross em
     13 q (2K: ~43 q); o tronco varre 13–15° (2K: 37–54°); crossover em 6 q (2K: ~10 q); e a latência do step-back.
-  - Corpo: o quadril no drible parado bate com o 2K (0,51 S). A base fica em 0,24 S (2K: 0,45–0,8 S) e o quique correndo
-    a cada 9,5 q (2K: 15 q).
+  - Corpo: o quadril no drible parado bate com o 2K (0,51 S). A base fica em 0,24 S (2K: 0,45–0,8 S). O quique correndo e
+    o do BTB → BTB vêm a cada 9,5 q (2K: 15 q nos dois).
   - Calibração do pipeline (os mesmos cenários gravados com uma câmera parecida e medidos pelo MediaPipe): o nível do
     quadril sai sem viés (RMS 0,06 S), a base sai 0,10 S larga demais e a velocidade de pico do tronco ~94°/s baixa.
     O detector de quique do `derivar.py` (limite de 0,15 S) acha só 23 de 70 quiques numa câmera alta; com 0,35 S acha
-    67. Os quiques do CSV do 2K não servem; re-medir o 2K com `--limite-quique 0.35` fica como próximo passo.
+    67. Os quiques do CSV do 2K não serviam: a re-medição está em `dev/drible-2k/quiques-2k.md`, com a bola procurada
+    perto do jogador (`medir.py --bola-perto`) e as manchas pequenas descartadas (`derivar.py --raio-min 0.8`). Ela
+    confirma os alvos de crossover (10 q), correndo (15 q) e drible parado, e corrigiu o BTB duplo de ~7 q para 15 q
+    (§2.2), o que faz o nosso BTB → BTB (9,5 q) passar de limítrofe a reprovado.
 
 ### Fase 2 — Resposta imediata e encadeamento
 
