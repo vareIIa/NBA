@@ -54,7 +54,8 @@ export class Showroom {
   };
 
   constructor(
-    private readonly renderer: THREE.WebGLRenderer,
+    /** Quem desenha o quadro: o pipeline do jogo (docs/28) ou um WebGLRenderer. */
+    private readonly renderer: { render(scene: THREE.Scene, camera: THREE.PerspectiveCamera): void },
     private readonly scene: THREE.Scene,
     private readonly camera: THREE.PerspectiveCamera,
     private readonly animator: PlayerAnimator,

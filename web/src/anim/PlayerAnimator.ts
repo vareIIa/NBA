@@ -11,6 +11,8 @@
 // Os eventos de bola (soltura e recepção) saem das curvas medidas das palmas ou das trajetórias procedurais.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RenderLook } from '../render/RenderLook';
+import { smoothSkinWeights } from './SkinSmooth';
 import {
   type ClipInfo,
   type ClipsFile,
@@ -322,8 +324,6 @@ const LockSoleToe = 0.01;
  * freada ou de corte (os joelhos absorvem a carga), até crouchMax; trunkShare: o que fica da inclinação antiga do tronco.
  */
 // ballShare: com a bola o tronco já vem inclinado da postura de drible (infiltração baixa): fica só esta fração.
-const BodyLean = { gain: 0.45, maxDeg: 14, omega: 9, zeta: 0.9, pivot: 0.55, crouch: 0.004, crouchMax: 0.06, trunkShare: 0.35, ballShare: 0.55 };
-/**
 /** Antecipação do drible que espera a bola: descida do quadril (m) e inclinação para o lado da bola (graus). */
 const Anticipation = { drop: 0.08, leanDeg: 7 };
 /**
@@ -339,6 +339,8 @@ const MoveBody: Record<string, { drop: number; fromDeg: number; toDeg: number }>
   BehindBack: { drop: 0.07, fromDeg: 0, toDeg: 12 },
   Hesitation: { drop: 0.1, fromDeg: 0, toDeg: 0 },
 };
+const BodyLean = { gain: 0.45, maxDeg: 14, omega: 9, zeta: 0.9, pivot: 0.55, crouch: 0.004, crouchMax: 0.06, trunkShare: 0.35, ballShare: 0.55 };
+/**
  * Plantadas correndo sem a bola, com root motion (o clipe dirige a posição e o rumo; ver RootMotion.ts):
  *  - Turn: virada de 180° (Mixamo "Change Direction 180", ChangeDir). Freia em ~0,5 s girando o quadril 90°, desce o
  *    quadril ~30 cm, planta o pé de fora bem à frente, inclina o tronco para o lado novo e sai com um passo cruzado: a
@@ -508,8 +510,6 @@ export class PlayerAnimator {
   groundFlatEnabled = true;
   /** Corpo inclinado pela aceleração (applyBodyLean). Chave de A/B do laboratório. */
   bodyLeanEnabled = true;
-  /** Inclinação do corpo (rad: f = para a frente, r = para a direita), descida do quadril (m) e as velocidades da mola. */
-  private readonly bodyLean = { f: 0, r: 0, d: 0, vf: 0, vr: 0, vd: 0 };
   /**
    * Antecipação de um drible que ainda espera a bola (o jogo põe a cada quadro): +1 = carrega para a direita, −1 = para
    * a esquerda, 0 = nada. Entra como alvo da mola do BodyLean (quadril desce, corpo vai para o lado da bola) e sai
@@ -518,6 +518,8 @@ export class PlayerAnimator {
   anticipation = 0;
   /** Corpo do drible (MoveBody). Chave de A/B do laboratório (LAB_ANIM='{"moveBodyEnabled":false}'). */
   moveBodyEnabled = true;
+  /** Inclinação do corpo (rad: f = para a frente, r = para a direita), descida do quadril (m) e as velocidades da mola. */
+  private readonly bodyLean = { f: 0, r: 0, d: 0, vf: 0, vr: 0, vd: 0 };
   legLayerEnabled = true;
   /**
    * Dribles que, em movimento, ficam com as pernas da locomoção (camada por osso; o tronco e os braços são do drible). O
@@ -664,6 +666,14 @@ export class PlayerAnimator {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.frustumCulled = false; // a caixa do bind pose não acompanha a animação
+        smoothSkinWeights(mesh);
+        // Render novo (docs/28): a emissão quente da pele fingia a luz de ambiente; com o mapa de ambiente ela cai.
+        // Os clones do boneco dividem o material: marca para não aplicar duas vezes.
+        for (const m of ([] as THREE.Material[]).concat(mesh.material) as THREE.MeshStandardMaterial[]) {
+          if ((m.name !== 'Pele' && m.name !== 'Rosto') || m.userData.renderLook) continue;
+          m.userData.renderLook = true;
+          m.emissiveIntensity *= RenderLook.skinEmissive;
+        }
       }
     });
 
@@ -2845,16 +2855,6 @@ export class PlayerAnimator {
         td = Math.min(BodyLean.crouchMax, (Math.max(0, -along) + across) * BodyLean.crouch);
       }
     }
-    // Mola amortecida (sub-passos de 1/120 s: igual a 60 e a 144 Hz).
-    const w = BodyLean.omega;
-    const z = BodyLean.zeta;
-    for (let rest = Math.min(dt, 0.1); rest > 1e-6; ) {
-      const h = Math.min(rest, 1 / 120);
-      B.vf += (w * w * (tf - B.f) - 2 * z * w * B.vf) * h;
-      B.f += B.vf * h;
-      B.vr += (w * w * (tr - B.r) - 2 * z * w * B.vr) * h;
-      B.r += B.vr * h;
-      B.vd += (w * w * (td - B.d) - 2 * z * w * B.vd) * h;
     // Carga do drible que espera a bola (docs/27 §2.3: quadril −0,07 a −0,13 S e tronco 7–8° na antecipação do 2K).
     if (!off && this.anticipation !== 0) {
       td += Anticipation.drop;
@@ -2876,6 +2876,16 @@ export class PlayerAnimator {
       tr += side * THREE.MathUtils.degToRad(lean) * share;
       td += body.drop * share * (1 - THREE.MathUtils.smoothstep(p, 0.6, 1.3));
     }
+    // Mola amortecida (sub-passos de 1/120 s: igual a 60 e a 144 Hz).
+    const w = BodyLean.omega;
+    const z = BodyLean.zeta;
+    for (let rest = Math.min(dt, 0.1); rest > 1e-6; ) {
+      const h = Math.min(rest, 1 / 120);
+      B.vf += (w * w * (tf - B.f) - 2 * z * w * B.vf) * h;
+      B.f += B.vf * h;
+      B.vr += (w * w * (tr - B.r) - 2 * z * w * B.vr) * h;
+      B.r += B.vr * h;
+      B.vd += (w * w * (td - B.d) - 2 * z * w * B.vd) * h;
       B.d += B.vd * h;
       rest -= h;
     }

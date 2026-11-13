@@ -28,6 +28,9 @@ Inspeção: `?lento=0.25` deixa o jogo em câmera lenta (não arremesse nela: o 
 
 Inspeção da animação: `?cam=lado` ou `?cam=frente` na URL troca para uma câmera perto do jogador.
 
+Render (docs/28): HDR com reflexo no piso, oclusão de ambiente, bloom e a torcida de trás em cartões. `?render=0` volta
+ao render antigo e `?torcida=3d` à torcida toda em malha; `node tools/render-prints.mjs <saída>` tira os prints e mede o FPS.
+
 ## Testes
 
 ```bash

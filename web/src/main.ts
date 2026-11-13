@@ -34,6 +34,8 @@ import type { OnlineMatch } from './game/OnlineMatch';
 import type { OnlineStart } from './menu/OnlineLobby';
 import type { CpuStart } from './menu/CpuSetup';
 import type { CpuLevel } from './game/cpu/CpuRoster';
+import { RenderPipeline } from './render/RenderPipeline';
+import { RenderOn } from './render/RenderLook';
 
 /** Y do controle (botão 3 do mapeamento padrão): Salvar no criador. O Input só lê A, B e Start na pausa. */
 function padY(): boolean {
@@ -63,13 +65,15 @@ declare global {
 }
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// Render novo (docs/28): o MSAA fica no alvo HDR do pipeline, não no canvas. ?render=0 volta ao antigo.
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !RenderOn, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
+const pipeline = new RenderPipeline(renderer);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0d12);
@@ -89,6 +93,7 @@ const timeScale = Math.min(1, Math.max(0.05, Number(params.get('lento') ?? 1)));
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
+  pipeline.setSize();
   rig.camera.aspect = window.innerWidth / window.innerHeight;
   rig.camera.updateProjectionMatrix();
 });
@@ -135,6 +140,7 @@ async function boot(): Promise<void> {
     onBoard: () => sfx.rim(),
     onScore: () => {
       sfx.swish();
+      arena?.cheer();
       online?.onScore();
     },
     onResult: (record) => {
@@ -151,12 +157,26 @@ async function boot(): Promise<void> {
   if (arenaOn) {
     hud.setLoading('Montando a arena…');
     await buildModelHoop(scene, game.hoop).catch((e) => (console.warn('cesta do HY não carregou', e), buildHoop(scene, game.hoop)));
-    arena = await ArenaDressing.build(scene, game.layout).catch((e) => (console.warn('arena não carregou', e), null));
-    // Compila os shaders antes do 1º quadro (sem engasgo quando a arena aparece).
-    await renderer.compileAsync(scene, rig.camera).catch(() => undefined);
-    hud.setLoading(null);
+    arena = await ArenaDressing.build(scene, game.layout, params.get('torcida') === '3d' ? undefined : renderer).catch((e) => (console.warn('arena não carregou', e), null));
+    if (arena) {
+      pipeline.reflection.hidden.push(...arena.outOfReflection());
+      pipeline.boostUnlit(arena.group);
+    }
   } else {
     buildHoop(scene, game.hoop);
+  }
+  // Render novo (docs/28): reflexo nos pisos, a arena como mapa de ambiente (sem o jogador e a bola gravados nele) e os
+  // shaders compilados antes do 1º quadro (sem engasgo quando a arena aparece).
+  if (pipeline.enabled) {
+    for (const name of ['piso', 'piso_outro_lado']) {
+      const floor = scene.getObjectByName(name) as THREE.Mesh | undefined;
+      if (floor) pipeline.reflection.install(floor);
+    }
+    pipeline.captureEnvironment(scene, new THREE.Vector3(7, 2, 0), [animator.root, game.ballMesh]);
+  }
+  if (arenaOn) {
+    await pipeline.compile(scene, rig.camera).catch(() => undefined);
+    hud.setLoading(null);
   }
   // Menu principal: o jogador escolhe (ou cria) a build; o Freestyle usa os ratings dela. Sem menu, a build ativa salva
   // (ou a padrão, que joga igual a antes do builder).
@@ -170,9 +190,12 @@ async function boot(): Promise<void> {
       const spot = animator.root.position.clone();
       const rim = toThree(game.rimCenter());
       const facing = new THREE.Vector3(spot.x - rim.x, 0, spot.z - rim.z).normalize(); // de costas para a cesta
-      const showroom = new Showroom(renderer, scene, rig.camera, animator, outfit, spot, facing, canvas, [game.ballMesh]);
+      const showroom = new Showroom(pipeline, scene, rig.camera, animator, outfit, spot, facing, canvas, [game.ballMesh]);
       (window as unknown as { __showroom: unknown }).__showroom = { showroom, animator, THREE, outfit };
+      // Vitrine: fundo desfocado atrás do jogador (profundidade de campo do pipeline).
+      pipeline.look.dof = 9;
       const result = await new MenuFlow(showroom).run();
+      pipeline.look.dof = 0;
       build = result.build;
       onlineStart = result.online ?? result.cpu ?? null;
     } catch (e) {
@@ -419,6 +442,7 @@ async function boot(): Promise<void> {
     },
     outfit,
     rig,
+    render: pipeline,
   };
 
   let last = performance.now();
@@ -483,7 +507,7 @@ async function boot(): Promise<void> {
         }
       }
       framePauseCamera();
-      renderer.render(scene, rig.camera);
+      pipeline.render(scene, rig.camera);
       requestAnimationFrame(frame);
       return;
     }
@@ -491,7 +515,7 @@ async function boot(): Promise<void> {
     badgeMenu.update(realDt);
     if (online && badgeMenu.isOpen()) badgeMenu.close();
     if (badgeMenu.isOpen()) {
-      renderer.render(scene, rig.camera);
+      pipeline.render(scene, rig.camera);
       requestAnimationFrame(frame);
       return;
     }
@@ -524,7 +548,7 @@ async function boot(): Promise<void> {
     gameHud.update(dt);
     sampleBall();
 
-    renderer.render(scene, rig.camera);
+    pipeline.render(scene, rig.camera);
     debug.frame++;
     window.__garrafao!.frame = debug.frame;
     if (debug.frame === 3) window.__garrafao!.ready = true;

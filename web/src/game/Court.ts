@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { CourtSpec, Vec3 } from '../sim';
 import { toThree } from '../units';
+import { RenderLook } from '../render/RenderLook';
 
 /** Limites do piso em coordenadas do núcleo (m). O aro fica sobre a origem e a quadra cresce para +X. */
 export const FloorBounds = { minX: -3.2, maxX: 14.4, minY: -9.4, maxY: 9.4 };
@@ -207,13 +208,13 @@ export function buildCourt(scene: THREE.Scene, renderer: THREE.WebGLRenderer, la
   }
   scene.add(stands);
 
-  scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a2412, 0.55));
+  scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a2412, RenderLook.hemisphere));
 
-  const key = new THREE.DirectionalLight(0xfff3e0, 1.6);
+  const key = new THREE.DirectionalLight(0xfff3e0, RenderLook.key);
   key.position.set(8, 16, 6);
   key.target.position.set(4, 0, 0);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.mapSize.set(RenderLook.shadowMap, RenderLook.shadowMap);
   key.shadow.camera.left = -12;
   key.shadow.camera.right = 12;
   key.shadow.camera.top = 12;
@@ -229,7 +230,7 @@ export function buildCourt(scene: THREE.Scene, renderer: THREE.WebGLRenderer, la
     [7, 5],
     [12, 0],
   ] as const) {
-    const spot = new THREE.SpotLight(0xffffff, 140, 30, Math.PI / 5, 0.6, 1.6);
+    const spot = new THREE.SpotLight(0xffffff, RenderLook.spot, 30, Math.PI / 5, 0.6, 1.6);
     spot.position.set(x, 14, z);
     spot.target.position.set(x, 0, z * 0.6);
     scene.add(spot, spot.target);

@@ -14,6 +14,8 @@ import { arenaMesh, preloadArena } from './ArenaModels';
 import { FloorBounds, type CourtLayout } from './Court';
 import { HoopModelNames, buildModelHoop } from './HoopMesh';
 import { NetMesh } from './NetMesh';
+import { RenderLook } from '../render/RenderLook';
+import { CardProjectVertex, bakeCrowdAtlas } from './CrowdCards';
 
 const CrowdNames = [
   'torcedor_bone_sentado',
@@ -167,12 +169,33 @@ class RoundedRect {
 }
 
 /** Material da torcida: cor das roupas girada no matiz por instância (a pele fica), tecido cinza clareado/escurecido. */
-function crowdMaterial(source: THREE.Material): THREE.MeshStandardMaterial {
+/** Vida da torcida (docs/28, Fase 5): o relógio e a comemoração (1 na cesta, cai em ~2,5 s), iguais para todos. */
+const CrowdUniforms = { uCrowdTime: { value: 0 }, uCrowdCheer: { value: 0 } };
+
+function crowdMaterial(source: THREE.Material, card = false): THREE.MeshStandardMaterial {
   const m = (source as THREE.MeshStandardMaterial).clone();
+  m.userData.crowd = true;
   m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, CrowdUniforms);
+    // Cartão (CrowdCards.ts): o quadrado gira em pé para a câmera.
+    if (card) shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', CardProjectVertex);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 aTint;\nvarying vec2 vTint;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTint = aTint;');
+      .replace('#include <common>', '#include <common>\nattribute vec2 aTint;\nvarying vec2 vTint;\nuniform float uCrowdTime;\nuniform float uCrowdCheer;')
+      // Cada pessoa balança num ritmo e numa fase próprios (tirados da cor dela): inclina o tronco e respira. Na cesta
+      // o balanço cresce e entra um pulo rápido. Vale igual para a malha 3D e para o cartão (antes de ele girar).
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vTint = aTint;
+{
+  float crowdPhase = aTint.x * 7.0 + aTint.y * 31.0;
+  float crowdRate = 0.9 + fract(crowdPhase * 0.37) * 1.3;
+  float crowdSway = sin(uCrowdTime * crowdRate + crowdPhase);
+  float crowdJump = max(0.0, sin(uCrowdTime * (6.0 + fract(crowdPhase) * 3.0) + crowdPhase * 1.7)) * uCrowdCheer;
+  transformed.x += transformed.y * crowdSway * (0.014 + 0.03 * uCrowdCheer);
+  transformed.y *= 1.0 + 0.006 * sin(uCrowdTime * 1.9 + crowdPhase * 2.3) + 0.07 * crowdJump;
+}`,
+      );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
@@ -193,11 +216,11 @@ vec3 crowdTint(vec3 c) {
   return mix(c * vTint.y, rotated * vTint.y, smoothstep(0.15, 0.35, sat));
 }`,
       )
-      .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = crowdTint(diffuseColor.rgb);')
+      .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = crowdTint(diffuseColor.rgb) * ' + RenderLook.crowd.toFixed(2) + ';')
       // A arquibancada fica na penumbra: um pouco de luz própria na cor da roupa (sem o mapa de emissão do material).
       .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += diffuseColor.rgb * 0.16;');
   };
-  m.customProgramCacheKey = () => 'torcida';
+  m.customProgramCacheKey = () => (card ? 'torcida-cartao' : 'torcida');
   return m;
 }
 
@@ -298,18 +321,37 @@ export class ArenaDressing {
     preloadArena(ArenaModelNames);
   }
 
-  static async build(scene: THREE.Scene, layout: CourtLayout): Promise<ArenaDressing> {
+  /**
+   * `renderer`: com ele, a torcida do 2º anel para trás vira cartões (CrowdCards.ts: 2 triângulos por pessoa no lugar
+   * de 1,5 mil). Sem ele (ou com ?torcida=3d), todo mundo é malha 3D, como antes.
+   */
+  static async build(scene: THREE.Scene, layout: CourtLayout, renderer?: THREE.WebGLRenderer): Promise<ArenaDressing> {
     const arena = new ArenaDressing();
-    await arena.assemble(scene, layout);
+    await arena.assemble(scene, layout, renderer);
     return arena;
+  }
+
+  /**
+   * O que fica fora do reflexo do piso (docs/28): tudo menos a cesta do outro lado, a faixa de LED e o telão. As luzes
+   * ficam (esconder uma luz muda a iluminação e recompila os shaders).
+   */
+  outOfReflection(): THREE.Object3D[] {
+    return this.group.children.filter((o) => !o.userData.reflect && !(o as THREE.Light).isLight);
   }
 
   update(dt: number): void {
     this.time += dt;
     if (this.led) this.led.offset.x = (this.time * 0.035) % 1;
+    CrowdUniforms.uCrowdTime.value = this.time;
+    CrowdUniforms.uCrowdCheer.value *= Math.exp(-dt / 0.9);
   }
 
-  private async assemble(scene: THREE.Scene, layout: CourtLayout): Promise<void> {
+  /** Cesta: a torcida comemora (balança mais e pula por uns 2 s). */
+  cheer(): void {
+    CrowdUniforms.uCrowdCheer.value = 1;
+  }
+
+  private async assemble(scene: THREE.Scene, layout: CourtLayout, renderer?: THREE.WebGLRenderer): Promise<void> {
     await Promise.all(ArenaModelNames.map((n) => arenaMesh(n)));
     const g = this.group;
     g.name = 'arena';
@@ -320,8 +362,8 @@ export class ArenaDressing {
     const rand = makePrng(2026);
     const batch = new Batch();
     const crowd = new Map<string, Array<{ m: THREE.Matrix4; tint: [number, number] }>>();
-    const addPerson = (chunk: string, variant: number, m: THREE.Matrix4): void => {
-      const key = `${chunk}|${variant}`;
+    const addPerson = (chunk: string, variant: number, m: THREE.Matrix4, card = false): void => {
+      const key = `${chunk}|${variant}|${card ? 'cartao' : '3d'}`;
       let list = crowd.get(key);
       if (!list) crowd.set(key, (list = []));
       // Matiz: 40% com a roupa original, o resto girado em ângulos poucos (as cores do time da casa se repetem).
@@ -376,9 +418,11 @@ export class ArenaDressing {
     const farHoop = HoopSpec.fromRimFloorPoint(new Vec3(2 * C, 0, 0), new Vec3(-1, 0, 0));
     const farGroup = await buildModelHoop(scene, farHoop);
     scene.remove(farGroup);
+    farGroup.userData.reflect = true;
     g.add(farGroup);
     const farNet = new NetMesh(scene, farHoop); // assenta pendurada e fica parada
     scene.remove(farNet.mesh);
+    farNet.mesh.userData.reflect = true;
     g.add(farNet.mesh);
 
     // ---------------------------------------------------------------- volta da quadra
@@ -496,7 +540,7 @@ export class ArenaDressing {
             const variant = pick(StandWeights, rand());
             const s = variant === 7 ? 1 : 0.94 + rand() * 0.1;
             const jitter = (rand() - 0.5) * 0.35;
-            addPerson(chunk, variant, placeMatrix(wx, wy, z + row.h, Math.sin(yaw + jitter), Math.cos(yaw + jitter), s));
+            addPerson(chunk, variant, placeMatrix(wx, wy, z + row.h, Math.sin(yaw + jitter), Math.cos(yaw + jitter), s), k >= 1);
           }
         }
       }
@@ -524,6 +568,7 @@ export class ArenaDressing {
       12,
     );
     ribbon.name = 'faixa_led';
+    ribbon.userData.reflect = true;
     g.add(ribbon);
     const wall = this.ringStrip(
       new RoundedRect(C, hx0 + fasciaOff + 0.02, hy0 + fasciaOff + 0.02, r0 + fasciaOff + 0.02),
@@ -567,21 +612,27 @@ export class ArenaDressing {
     );
 
     // ---------------------------------------------------------------- torcida
+    const crowdSources = await Promise.all(CrowdNames.map((n) => arenaMesh(n)));
+    const atlas = renderer ? bakeCrowdAtlas(renderer, crowdSources) : null;
+    const cardMaterial = atlas
+      ? crowdMaterial(new THREE.MeshStandardMaterial({ map: atlas.texture, roughness: 0.9, alphaTest: 0.4, alphaToCoverage: true }), true)
+      : null;
     for (const [key, list] of crowd) {
-      const [chunk, variantText] = key.split('|');
-      const src = await arenaMesh(CrowdNames[Number(variantText)]);
+      const [chunk, variantText, kind] = key.split('|');
+      const src = crowdSources[Number(variantText)];
+      const card = kind === 'cartao' && atlas ? atlas.cards[Number(variantText)] : null;
       const geometry = new THREE.BufferGeometry();
-      geometry.index = src.geometry.index;
-      for (const [name, attr] of Object.entries(src.geometry.attributes)) geometry.setAttribute(name, attr);
+      geometry.index = (card ?? src.geometry).index;
+      for (const [name, attr] of Object.entries((card ?? src.geometry).attributes)) geometry.setAttribute(name, attr);
       const tints = new Float32Array(list.length * 2);
       list.forEach((p, i) => tints.set(p.tint, i * 2));
       geometry.setAttribute('aTint', new THREE.InstancedBufferAttribute(tints, 2));
-      const material = (src.userData.crowdMaterial ??= crowdMaterial(src.material as THREE.Material));
+      const material = card ? cardMaterial! : (src.userData.crowdMaterial ??= crowdMaterial(src.material as THREE.Material));
       const mesh = new THREE.InstancedMesh(geometry, material, list.length);
       list.forEach((p, i) => mesh.setMatrixAt(i, p.m));
       mesh.computeBoundingSphere();
       mesh.castShadow = chunk === 'vip';
-      mesh.name = `torcida_${chunk}_${variantText}`;
+      mesh.name = `torcida_${chunk}_${variantText}${card ? '_cartao' : ''}`;
       g.add(mesh);
     }
 
@@ -602,6 +653,7 @@ export class ArenaDressing {
       telao.add(ring);
     }
     telao.position.set(C, 17, 0);
+    telao.userData.reflect = true;
     g.add(telao);
     // Cabos do telão até o teto.
     const cable = new THREE.MeshBasicMaterial({ color: 0x050506 });
@@ -621,10 +673,26 @@ export class ArenaDressing {
 
     // Luz na outra metade da quadra (o Court.ts só ilumina a do jogo).
     for (const [x, z] of [[19, -5], [19, 5], [25.5, 0]] as const) {
-      const spot = new THREE.SpotLight(0xffffff, 140, 30, Math.PI / 5, 0.6, 1.6);
+      const spot = new THREE.SpotLight(0xffffff, RenderLook.spot, 30, Math.PI / 5, 0.6, 1.6);
       spot.position.set(x, 14, z);
       spot.target.position.set(x, 0, z * 0.6);
       g.add(spot, spot.target);
+    }
+
+    // Direção de arte (docs/28): a arquibancada e o que fica em volta da quadra vão para a penumbra, como numa
+    // transmissão; a quadra e os jogadores ficam com a luz. A torcida já escurece no shader dela; os pisos não mudam.
+    if (RenderLook.crowd < 1) {
+      const dimmed = new Set<THREE.Material>();
+      g.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh || mesh.name.startsWith('piso')) return;
+        for (const m of ([] as THREE.Material[]).concat(mesh.material)) {
+          const standard = m as THREE.MeshStandardMaterial;
+          if (!standard.isMeshStandardMaterial || standard.userData.crowd || dimmed.has(m)) continue;
+          dimmed.add(m);
+          standard.color.multiplyScalar(RenderLook.crowd);
+        }
+      });
     }
 
     scene.add(g);

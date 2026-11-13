@@ -7,6 +7,8 @@
  * com a corrida, o drible e o pulo, em vez de grudarem no corpo.
  */
 import * as THREE from 'three';
+import { fabricMaterial } from './GearPolish';
+import { addRimLight } from '../render/RimLight';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { PlayerAnimator } from '../anim/PlayerAnimator';
 import { bindBonePosition, hideCoveredTriangles } from './BodyCover';
@@ -199,11 +201,15 @@ export class PlayerGear {
       mesh.frustumCulled = false;
       // O PBR do HY deixa o tecido com cara de plástico molhado: pano é fosco e não metálico.
       // Dupla face: pela cava e pela boca da bermuda aparece o avesso do tecido (o corpo por baixo foi tirado).
-      if (kind !== 'shoes')
+      if (kind !== 'shoes') {
+        // Trama e brilho de tecido (GearPolish): o material do GLB vira um de tecido antes dos shaders da peça.
+        mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => fabricMaterial(m as THREE.MeshStandardMaterial)) : fabricMaterial(mesh.material as THREE.MeshStandardMaterial);
         for (const m of ([] as THREE.Material[]).concat(mesh.material) as THREE.MeshStandardMaterial[]) {
           Object.assign(m, { metalness: 0, roughness: 0.85, metalnessMap: null, roughnessMap: null, side: THREE.DoubleSide });
           insideColor(m);
         }
+      }
+      if (kind === 'shoes') for (const m of ([] as THREE.Material[]).concat(mesh.material)) addRimLight(m);
       body.parent!.add(mesh);
       this.worn.push(mesh);
       mesh.position.copy(body.position);
