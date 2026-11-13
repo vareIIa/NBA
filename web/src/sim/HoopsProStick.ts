@@ -70,8 +70,9 @@ export interface ProStickConfig {
   earlyFlickMaxTurnDegPerSecond: number;
   earlyFlickMaxSweepDegrees: number;
   /**
-   * Direções que esperam a volta ao centro: segurar para baixo é o arremesso pelo Pro Stick (docs/02 §1), e o toque
-   * para baixo (step-back) só se distingue dele quando o stick volta.
+   * Direções que esperam a volta ao centro. Vazio por padrão: o step-back (toque para baixo) saía ~200 ms depois dos
+   * outros toques (régua do docs/27: 6 q contra 1,5 q). Quando o arremesso pelo Pro Stick (segurar para baixo, docs/02
+   * §1) existir, ele precisa cancelar o step-back que já começou, ou voltar a pôr StickDir.Down aqui.
    */
   earlyFlickExcluded: StickDir[];
   /** Giro completo sai assim que a varredura passa de rotationMinDegrees (nenhum outro gesto chega lá), sem a volta. */
@@ -92,7 +93,7 @@ export const defaultProStickConfig = (): ProStickConfig => ({
   earlyFlickStableSeconds: 0.025,
   earlyFlickMaxTurnDegPerSecond: 300,
   earlyFlickMaxSweepDegrees: 30,
-  earlyFlickExcluded: [StickDir.Down],
+  earlyFlickExcluded: [],
   earlyRotation: true,
 });
 

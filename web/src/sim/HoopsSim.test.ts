@@ -461,7 +461,8 @@ describe('Pro Stick e dribles', () => {
     expect(holdFeed.recognizer.isHolding()).toBe(true);
     holdFeed.sample(0, 0, 1);
     expect(holdFeed.has(StickGestureKind.HoldRelease, StickDir.Down)).toBe(true);
-    expect(holdFeed.hasKind(StickGestureKind.Flick)).toBe(false); // soltar um hold não vira flick
+    // O toque sai uma vez na borda (o step-back); soltar o hold não vira outro flick.
+    expect(holdFeed.all.filter((g) => g.kind === StickGestureKind.Flick).length).toBe(1);
 
     const spinFeed = new StickFeed();
     spinFeed.rotate(0, -300, 18); // giro horário
@@ -508,12 +509,12 @@ describe('Pro Stick e dribles', () => {
     expect(held.all.filter((g) => g.kind === StickGestureKind.Flick).length).toBe(1);
     expect(held.has(StickGestureKind.Hold, StickDir.Right)).toBe(true);
 
-    // Para baixo espera a volta ao centro (segurar para baixo = arremesso pelo Pro Stick, docs/02 §1).
+    // Para baixo (step-back) também sai na borda, uma vez só; a volta ao centro não repete.
     const down = new StickFeed();
     down.sample(0, -1, 3);
-    expect(down.hasKind(StickGestureKind.Flick)).toBe(false);
-    down.sample(0, 0, 1);
     expect(down.has(StickGestureKind.Flick, StickDir.Down)).toBe(true);
+    down.sample(0, 0, 1);
+    expect(down.all.filter((g) => g.kind === StickGestureKind.Flick).length).toBe(1);
 
     // Giro rápido não dispara o flick na borda; giro lento que parou na borda sai marcado (afterEarlyFlick).
     const spin = new StickFeed();
@@ -605,12 +606,20 @@ describe('Pro Stick e dribles', () => {
     expectNear(controller.getActive().playRate, 1.15, 1e-9);
     expect(controller.getComboCount()).toBeGreaterThanOrEqual(2);
 
-    // Buffer expira depois de 150 ms.
+    // O buffer vale até o commit acabar: um toque no começo do commit longo do spin (0,25 s) sai quando ele acaba.
+    const long = new DribbleController();
+    long.request(DribbleMove.Spin, 0);
+    expect(long.request(DribbleMove.Crossover, 0.01)).toBe(false);
+    long.update(0.2, 0.2, false); // 190 ms depois do pedido, ainda no commit
+    expect(long.getActive().move).toBe(DribbleMove.Spin);
+    long.update(0.26, 0.06, false);
+    expect(long.getActive().move).toBe(DribbleMove.Crossover);
+
+    // Um pedido velho demais (o jogo travou muito depois do commit) é descartado.
     const late = new DribbleController();
     late.request(DribbleMove.Spin, 0);
     late.request(DribbleMove.Crossover, 0.01);
-    late.update(0.2, 0.2, false); // 190 ms depois do pedido; commit do spin acabou em 0,25
-    late.update(0.26, 0.06, false);
+    late.update(0.45, 0.45, false);
     expect(late.getActive().move).toBe(DribbleMove.Spin);
   });
 

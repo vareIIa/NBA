@@ -7,6 +7,9 @@ const sweep = (degrees, frames, extra = {}) =>
     return { n: 1, proX: Math.cos((deg * Math.PI) / 180), proY: Math.sin((deg * Math.PI) / 180), ...extra };
   }).concat([{ n: 1, ...extra }]);
 const wait = (n, extra = {}) => [{ n, ...extra }];
+// Cenários de sprint com comando no RS saem de mais longe: com o arranque da Fase 1 (docs/27), saindo de 7,4 m o jogador
+// já estava na zona de bandeja (~5 m) na hora do comando, e o RS virava finalização em vez de drible.
+const longe = [11.5, -0.6];
 
 export const Cenarios = {
   parado: { hand: 'r', steps: wait(60) },
@@ -18,7 +21,7 @@ export const Cenarios = {
   de_costas: { hand: 'r', steps: wait(70, { moveY: -1 }) },
   crossover: { hand: 'r', steps: [...flick(0, 1), ...wait(50)] },
   crossover_andando: { hand: 'r', steps: [...wait(25, { moveY: 1 }), ...flick(0, 1, { moveY: 1 }), ...wait(45, { moveY: 1 })] },
-  crossover_ataque: { hand: 'r', steps: [...wait(25, { moveY: 1, sprint: true }), ...flick(0, 1, { moveY: 1, sprint: true }), ...wait(45, { moveX: -1, sprint: true })] },
+  crossover_ataque: { hand: 'r', place: longe, steps: [...wait(25, { moveY: 1, sprint: true }), ...flick(0, 1, { moveY: 1, sprint: true }), ...wait(45, { moveX: -1, sprint: true })] },
   entre_pernas: { hand: 'r', steps: [...flick(-1, 0), ...wait(50)] },
   behind_back: { hand: 'r', steps: [...flick(-0.71, -0.71), ...wait(50)] },
   hesitacao: { hand: 'r', steps: [...flick(1, 0), ...wait(45)] },
@@ -41,7 +44,7 @@ export const Cenarios = {
   corre_cross_corre: { hand: 'r', steps: [...wait(30, { moveY: 1 }), ...flick(0, 1, { moveY: 1 }), ...wait(50, { moveX: -0.7, moveY: 0.7 })] },
   corre_cross_volta: { hand: 'r', steps: [...wait(30, { moveY: 1 }), ...flick(0, 1, { moveY: 1 }), ...wait(18, { moveX: -0.7, moveY: 0.7 }), ...flick(0, 1, { moveX: -0.7, moveY: 0.7 }), ...wait(40, { moveX: 0.7, moveY: 0.7 })] },
   corre_spin: { hand: 'r', steps: [...wait(30, { moveY: 1 }), ...sweep(300, 12, { moveY: 1 }), ...wait(45, { moveY: 1 })] },
-  corre_hesi_arranca: { hand: 'r', steps: [...wait(30, { moveY: 1, sprint: true }), ...flick(1, 0, { moveY: 1, sprint: true }), ...wait(45, { moveY: 1, sprint: true })] },
+  corre_hesi_arranca: { hand: 'r', place: longe, steps: [...wait(30, { moveY: 1, sprint: true }), ...flick(1, 0, { moveY: 1, sprint: true }), ...wait(45, { moveY: 1, sprint: true })] },
   corre_por_tras: { hand: 'r', steps: [...wait(30, { moveY: 1 }), ...flick(-0.71, -0.71, { moveY: 1 }), ...wait(45, { moveX: -0.7, moveY: 0.7 })] },
   corre_step_back: { hand: 'r', steps: [...wait(30, { moveY: 1 }), ...flick(0, -1, { moveY: 1 }), ...wait(50)] },
   // Entre as pernas em sequência (spam): direita -> esquerda -> direita... A cada troca a base escalonada inverte
@@ -49,6 +52,8 @@ export const Cenarios = {
   entre_pernas_combo: { hand: 'r', steps: [...flick(-1, 0), ...wait(18), ...flick(1, 0), ...wait(18), ...flick(-1, 0), ...wait(18), ...flick(1, 0), ...wait(45)] },
   anda_entre_pernas: { hand: 'r', steps: [...wait(30, { moveY: 0.5 }), ...flick(-1, 0, { moveY: 0.5 }), ...wait(45, { moveY: 0.5 })] },
   lado_cross_lado: { hand: 'r', steps: [...wait(30, { moveX: 1 }), ...flick(0, 1, { moveX: 1 }), ...wait(45, { moveX: -1 })] },
+  // Zigue-zague em disparada (RT): a troca de mão pelo LS sai por trás e o rumo segue o analógico.
+  zigue_sprint: { hand: 'r', place: [13.5, -0.6], steps: [...wait(30, { moveX: 0.5, moveY: 0.87, sprint: true }), ...wait(35, { moveX: -0.8, moveY: 0.6, sprint: true }), ...wait(35, { moveX: 0.8, moveY: 0.6, sprint: true }), ...wait(35, { moveX: -0.8, moveY: 0.6, sprint: true })] },
   zigue_zague: { hand: 'r', steps: [...wait(25, { moveX: 0.6, moveY: 0.8 }), ...wait(35, { moveX: -0.8, moveY: 0.6 }), ...wait(35, { moveX: 0.8, moveY: 0.6 }), ...wait(35, { moveX: -0.8, moveY: 0.6 })] },
   // Como no jogo: spin correndo e, logo depois, RT (disparo).
   spin_e_dispara: { hand: 'r', steps: [...wait(30, { moveY: 1 }), ...sweep(300, 12, { moveY: 1 }), ...wait(45, { moveY: 1 }), ...wait(60, { moveY: 1, sprint: true })] },

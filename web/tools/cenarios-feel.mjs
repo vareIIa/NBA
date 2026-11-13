@@ -21,7 +21,9 @@ export const wait = (n, extra = {}) => [{ n, ...extra }];
 const parado = {};
 const correndo = { moveY: 1, sprint: true };
 // Correndo, o jogador começa mais longe da cesta para não chegar ao aro no meio do cenário (núcleo, m; aro em 0,0).
-const longe = [12.0, -0.6];
+// 13,5 m: com o arranque da Fase 1 (docs/27) o sprint chega a 6,2 m/s em ~0,13 s e, saindo de 12 m, o comando da fase
+// "subindo" (q70) já caía na zona de bandeja (~4,8 m no sprint), onde o RS vira finalização em vez de drible.
+const longe = [13.5, -0.6];
 
 export const FeelCenarios = {
   // ---------------------------------------------------------------- controles

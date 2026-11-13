@@ -324,6 +324,21 @@ const LockSoleToe = 0.01;
 // ballShare: com a bola o tronco já vem inclinado da postura de drible (infiltração baixa): fica só esta fração.
 const BodyLean = { gain: 0.45, maxDeg: 14, omega: 9, zeta: 0.9, pivot: 0.55, crouch: 0.004, crouchMax: 0.06, trunkShare: 0.35, ballShare: 0.55 };
 /**
+/** Antecipação do drible que espera a bola: descida do quadril (m) e inclinação para o lado da bola (graus). */
+const Anticipation = { drop: 0.08, leanDeg: 7 };
+/**
+ * Corpo do drible (docs/27 §2.3): queda do quadril (m) e inclinação do tronco (graus) para o lado da bola antes da
+ * soltura (`fromDeg`) e para o lado novo enquanto ela cruza (`toDeg`). Os clipes da CMU quase não têm isso: a régua
+ * media queda de 0,02 S e 8° no crossover contra 0,08–0,14 S e 15–37° do 2K. Entra como alvo da mola do BodyLean
+ * (sem troca de pose); em movimento vale a metade.
+ */
+const MoveBody: Record<string, { drop: number; fromDeg: number; toDeg: number }> = {
+  Cross: { drop: 0.16, fromDeg: 14, toDeg: 18 },
+  EscapeCross: { drop: 0.06, fromDeg: 6, toDeg: 8 },
+  BetweenLegs: { drop: 0, fromDeg: 12, toDeg: 14 },
+  BehindBack: { drop: 0.07, fromDeg: 0, toDeg: 12 },
+  Hesitation: { drop: 0.1, fromDeg: 0, toDeg: 0 },
+};
  * Plantadas correndo sem a bola, com root motion (o clipe dirige a posição e o rumo; ver RootMotion.ts):
  *  - Turn: virada de 180° (Mixamo "Change Direction 180", ChangeDir). Freia em ~0,5 s girando o quadril 90°, desce o
  *    quadril ~30 cm, planta o pé de fora bem à frente, inclina o tronco para o lado novo e sai com um passo cruzado: a
@@ -495,6 +510,14 @@ export class PlayerAnimator {
   bodyLeanEnabled = true;
   /** Inclinação do corpo (rad: f = para a frente, r = para a direita), descida do quadril (m) e as velocidades da mola. */
   private readonly bodyLean = { f: 0, r: 0, d: 0, vf: 0, vr: 0, vd: 0 };
+  /**
+   * Antecipação de um drible que ainda espera a bola (o jogo põe a cada quadro): +1 = carrega para a direita, −1 = para
+   * a esquerda, 0 = nada. Entra como alvo da mola do BodyLean (quadril desce, corpo vai para o lado da bola) e sai
+   * sozinha quando volta a 0, sem troca de pose.
+   */
+  anticipation = 0;
+  /** Corpo do drible (MoveBody). Chave de A/B do laboratório (LAB_ANIM='{"moveBodyEnabled":false}'). */
+  moveBodyEnabled = true;
   legLayerEnabled = true;
   /**
    * Dribles que, em movimento, ficam com as pernas da locomoção (camada por osso; o tronco e os braços são do drible). O
@@ -2832,6 +2855,27 @@ export class PlayerAnimator {
       B.vr += (w * w * (tr - B.r) - 2 * z * w * B.vr) * h;
       B.r += B.vr * h;
       B.vd += (w * w * (td - B.d) - 2 * z * w * B.vd) * h;
+    // Carga do drible que espera a bola (docs/27 §2.3: quadril −0,07 a −0,13 S e tronco 7–8° na antecipação do 2K).
+    if (!off && this.anticipation !== 0) {
+      td += Anticipation.drop;
+      tr += Math.sign(this.anticipation) * THREE.MathUtils.degToRad(Anticipation.leanDeg);
+    }
+    // Corpo do drible em andamento (MoveBody).
+    const act = this.active && !this.active.fadingOut ? this.active : null;
+    const body = act && this.moveBodyEnabled ? MoveBody[act.kind] : undefined;
+    if (!off && act && body) {
+      const u = this.progress(act);
+      const span = Math.max(1e-3, act.end - act.start);
+      const uRelease = act.timing?.procedural ? act.release : (act.release - act.start) / span;
+      const uCatch = act.timing?.procedural ? act.catch : (act.catch - act.start) / span;
+      // p < 0 antes da soltura; 0..1 com a bola cruzando; > 1 depois da recepção.
+      const p = (u - uRelease) / Math.max(0.05, uCatch - uRelease);
+      const share = this.moveStartedStanding ? 1 : 0.5;
+      const side = act.fromHand === 'r' ? 1 : -1;
+      const lean = act.toHand === act.fromHand ? body.fromDeg : THREE.MathUtils.lerp(body.fromDeg, -body.toDeg, THREE.MathUtils.smoothstep(p, 0, 0.7));
+      tr += side * THREE.MathUtils.degToRad(lean) * share;
+      td += body.drop * share * (1 - THREE.MathUtils.smoothstep(p, 0.6, 1.3));
+    }
       B.d += B.vd * h;
       rest -= h;
     }

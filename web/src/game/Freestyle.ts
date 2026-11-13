@@ -65,7 +65,7 @@ import { BallDribbler } from './BallDribbler';
 import { buildBall } from './BallMesh';
 import { type CourtLayout, makeCourtLayout } from './Court';
 import type { InputState } from './Input';
-import { approachVelocity, turnFacing } from './Movement';
+import { approachVelocity, canArcTurn, driveResponse, steerVelocity, turnFacing } from './Movement';
 import { LayupDriver, TapMaxSeconds } from './LayupDriver';
 import { DunkRating, DunkTuning, HopStopTuning, LayupFinish, LayupGather, type LayupRequest, chooseDunk, type LayupPlan, type LayupSituation, type Side as LayupSide, chooseLayup, layupShotType, planHopStop, planStandingLayup } from '../sim/HoopsLayup';
 import { HoldMove, HoldMoveLabels, HoldState, holdFinishFor } from '../sim/HoopsHold';
@@ -112,11 +112,10 @@ export { PlayerHeightMeters as PlayerHeight } from '../anim/ProceduralMoves';
 const JogSpeed = 3.9; // m/s com bola, sem RT
 const SprintSpeed = 6.2; // com RT
 const RetreatSpeed = 1.4; // m/s: recuo driblando (passada do loop de costas)
-// Arrancada e freada humanas: de parado a 3,9 m/s em ~0,6 s, como no 2K23 do diretor e no real (~6–7 m/s² no primeiro
-// passo). Com 14 m/s² o corpo chegava à velocidade em 0,28 s, as pernas não acompanhavam e o pé de trás ficava 50 cm
-// para trás (a perna "chutava" para trás ao sair do lugar); freando a 18 m/s² o pé patinava na parada.
-const Acceleration = 6.5; // m/s²
-const Deceleration = 14;
+// Arrancada e freada: Movement.driveResponse. Sem a bola, a "humana" de antes (0 a 3,9 m/s em ~0,6 s; com 14 m/s² a
+// perna "chutava" para trás ao sair do lugar). Com a bola, a do 2K (docs/27 §2.1): primeiro passo e parada em poucos
+// quadros. `?arranque=antigo` volta à resposta antiga com a bola, para A/B no laboratório.
+const legacyDrive = typeof location !== 'undefined' && new URLSearchParams(location.search).get('arranque') === 'antigo';
 const MoveAcceleration = 30; // durante um drible o impulso do movimento manda
 const FixedStep = 1 / 120;
 
@@ -154,7 +153,32 @@ function moveKindFor(move: DribbleMove): MoveKind | null {
 }
 
 /** Troca de mão automática pelo LS (o "drible de transição" do jogo de referência): limiar, tempo e intervalo. */
-const AutoSwitch = { stick: 0.55, holdSeconds: 0.1, cooldown: 0.55, walkMoveSpeed: 1.6 };
+const AutoSwitch = { stick: 0.55, holdSeconds: 0.1, cooldown: 0.55, walkMoveSpeed: 1.6, sprintMoveSpeed: 3.0, ledCooldown: 0.2 };
+/**
+ * Troca pelo LS (docs/27): o drible que o jogo escolhe sozinho não tira o rumo do jogador. Durante ele o LS manda por
+ * inteiro (velocidade cheia para onde aponta), em vez dos 30% dos dribles pedidos no RS. `?trocals=antigo` volta ao
+ * impulso fixo do drible.
+ */
+/** Curva em arco em disparada com a bola (Movement.steerVelocity). `?curva=antiga` volta ao freio-e-arranque. */
+const arcTurnEnabled = typeof location === 'undefined' || new URLSearchParams(location.search).get('curva') !== 'antiga';
+/** Saída do drible na corrida (updateMovement). `?saida=antiga` desliga. */
+const exitIntoRun = typeof location === 'undefined' || new URLSearchParams(location.search).get('saida') !== 'antiga';
+const ExitRun = { from: 0.45, to: 0.9, standShare: 0.5 };
+const ExitRunMoves = new Set<DribbleMove>([
+  DribbleMove.Crossover,
+  DribbleMove.AttackingCrossover,
+  DribbleMove.BetweenLegs,
+  DribbleMove.BehindBack,
+  DribbleMove.InAndOut,
+  DribbleMove.EscapeHesitation,
+  DribbleMove.DoubleCross,
+  DribbleMove.HesiCross,
+]);
+const smoothstep = (a: number, b: number, x: number): number => {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+const stickLedSwitch = typeof location === 'undefined' || new URLSearchParams(location.search).get('trocals') !== 'antigo';
 /**
  * Comando de drible esperando a bola voltar para a mão (s). Um drible só começa com a bola na mão: começar com ela no ar
  * fazia o braço cruzar sem bola e a bola mudar de rumo no meio do quique. Num combo, o próximo entra na recepção do
@@ -205,6 +229,16 @@ const plantTurnEnabled = typeof location === 'undefined' || new URLSearchParams(
 const FlightCapSeconds = 8;
 /** Buffer do X: um aperto que cai com o drible ainda em commit vale por este tempo (s). */
 const ShotBufferSeconds = 0.12;
+/** Bandeja/enterrada pedida pelo RS durante o commit de um drible: vale até o commit mais longo acabar (s). */
+const StickFinishMaxSeconds = 0.35;
+/** Arremesso logo depois do step-back (ou cortando-o depois do commit) é um step-back jumper (s desde o fim dele). */
+const StepBackShotSeconds = 0.35;
+/**
+ * Antecipação: enquanto um comando de drible espera a bola chegar à mão, o corpo já carrega (quadril desce e o tronco
+ * vai para o lado da bola), em vez de ficar parado até o drible começar (docs/27 §2.1: no 2K o corpo reage no próprio
+ * flick e a bola chega depois). `?antecipa=0` desliga, para A/B.
+ */
+const anticipationEnabled = typeof location === 'undefined' || new URLSearchParams(location.search).get('antecipa') !== '0';
 /** Folga (s) para a bola sair: a mão a menos disto da soltura do desenho já conta como lá (meio quadro a 60 Hz). */
 const ShotLaunchSlackS = 0.008;
 /** Tolerância do RT: RT segurado até este tempo antes ou depois do X conta para a enterrada (s). */
@@ -266,7 +300,13 @@ export class Freestyle {
   private secondCrossAt = -1; // double cross: o segundo crossover
   private autoSwitchSince = -1;
   /** Comando de drible (gesto do Pro Stick ou drible de transição do LS) esperando a bola na mão. */
-  private pendingMove: { gesture: StickGesture | null; move: DribbleMove; sprint: boolean; at: number } | null = null;
+  private pendingMove: { gesture: StickGesture | null; move: DribbleMove; sprint: boolean; at: number; auto?: boolean } | null = null;
+  // Troca de mão pelo LS: o drible que vai começar / o que está tocando foi escolhido pelo jogo (o LS segue mandando).
+  private arcTurning = false;
+  private moveFromStand = false;
+  private atCourtEdge = false;
+  private nextMoveAuto = false;
+  private moveAuto = false;
   private retreatArmed = true;
   /** Achatamento da bola no quique (s restantes). */
   private squash = 0;
@@ -445,7 +485,10 @@ export class Freestyle {
     // lido aqui, para a tolerância de SprintGraceSeconds antes e depois do X.
     if (input.sprint) this.sprintSeenAt = now;
     if (shootPressed) this.shotQueuedAt = input.shootEdgeTime;
-    if (this.shotQueuedAt >= 0 && now - this.shotQueuedAt > ShotBufferSeconds) this.shotQueuedAt = -1;
+    // O aperto vale por ShotBufferSeconds; com o X ainda segurado e o drible no commit, vale até o commit acabar (o
+    // step-back e o spin têm commit de 0,20–0,25 s: o X apertado no começo deles sumia e o arremesso não saía).
+    const heldThroughCommit = this.phase === 'dribble' && input.shoot && !this.dribble.canCancel(now);
+    if (this.shotQueuedAt >= 0 && now - this.shotQueuedAt > ShotBufferSeconds && !heldThroughCommit) this.shotQueuedAt = -1;
     if (this.phase !== 'dribble') {
       this.pendingMove = null;
       this.stickFinish = null;
@@ -455,7 +498,9 @@ export class Freestyle {
       this.updateTransitionDribbles(input);
       this.flushPendingMove();
       if (this.shotQueuedAt >= 0 && this.dribble.canCancel(now)) {
-        const press = this.shotQueuedAt;
+        // Um aperto que esperou o commit conta como apertado há no máximo ShotBufferSeconds: o medidor e o desenho do
+        // arremesso começam quando o corpo começa, não lá atrás.
+        const press = Math.max(this.shotQueuedAt, now - ShotBufferSeconds);
         this.shotQueuedAt = -1;
         const finish = this.finishFor(press);
         // Perto do aro: enterrada (RT) ou bandeja pelo plano; o caminho antigo (clipe) só se o plano não couber; senão
@@ -467,9 +512,10 @@ export class Freestyle {
         }
       } else if (this.stickFinish && this.dribble.canCancel(now)) {
         // RS dirigindo para a cesta (layupFromStick): bandeja/enterrada pedida, quando o drible deixar.
+        // O pedido do RS espera o commit do drible acabar (como o buffer dos dribles); só um pedido velho de verdade cai.
         const { at, request } = this.stickFinish;
         this.stickFinish = null;
-        if (now - at <= ShotBufferSeconds) this.tryLayup(at, input, request.command === 'dunk', request);
+        if (now - at <= StickFinishMaxSeconds) this.tryLayup(Math.max(at, now - ShotBufferSeconds), input, request.command === 'dunk', request);
       } else if (this.layup.pendingAlive(now)) {
         this.updatePendingLayup(input);
       }
@@ -509,6 +555,8 @@ export class Freestyle {
       forward: (local.forward - this.prevVelocityLocal.forward) / Math.max(dt, 1e-3),
     };
     this.prevVelocityLocal = local;
+    const waiting = anticipationEnabled && this.phase === 'dribble' ? this.pendingMove : null;
+    this.animator.anticipation = waiting && waiting.move !== DribbleMove.Retreat ? (this.dribbler.ballHand() === 'r' ? 1 : -1) : 0;
     this.animator.ballInHand = this.dribbler.mode === 'held';
     this.animator.ballWorld.copy(this.dribbler.position);
     if (this.layup.plan) this.animator.layupTime = this.layup.time(now);
@@ -607,6 +655,7 @@ export class Freestyle {
     }
     if (move !== DribbleMove.None && !this.ballReadyForMove(move)) return;
     this.pendingMove = null;
+    this.nextMoveAuto = P.auto === true;
     if (move !== DribbleMove.None) this.dribble.request(move, this.now, redirect);
   }
 
@@ -624,11 +673,21 @@ export class Freestyle {
     const hand = this.dribbler.ballHand();
     const towardFreeHand = (input.moveX > AutoSwitch.stick && hand === 'l') || (input.moveX < -AutoSwitch.stick && hand === 'r');
     const sinceLast = now - this.dribble.getLastMoveEndTime();
-    if (towardFreeHand && this.dribbler.mode === 'held' && sinceLast > AutoSwitch.cooldown) {
+    // Vale com a bola no ar também: o pedido espera a recepção como qualquer drible (pendingMove). Exigindo a bola na mão
+    // pelo tempo todo, correndo rápido (bola ~50 ms na mão por quique) a troca nunca saía.
+    if (towardFreeHand && sinceLast > (stickLedSwitch ? AutoSwitch.ledCooldown : AutoSwitch.cooldown)) {
       if (this.autoSwitchSince < 0) this.autoSwitchSince = now;
       if (now - this.autoSwitchSince >= AutoSwitch.holdSeconds) {
-        const move = this.velocity.length2D() < AutoSwitch.walkMoveSpeed ? DribbleMove.BetweenLegs : DribbleMove.Crossover;
-        if (!this.pendingMove) this.pendingMove = { gesture: null, move, sprint: input.sprint, at: now };
+        // Devagar, entre as pernas; no trote, crossover; em disparada, por trás (a troca que não custa velocidade, a mais
+        // comum do 2K correndo com o turbo).
+        const speed = this.velocity.length2D();
+        const move =
+          speed < AutoSwitch.walkMoveSpeed
+            ? DribbleMove.BetweenLegs
+            : stickLedSwitch && input.sprint && speed >= AutoSwitch.sprintMoveSpeed
+              ? DribbleMove.BehindBack
+              : DribbleMove.Crossover;
+        if (!this.pendingMove) this.pendingMove = { gesture: null, move, sprint: input.sprint, at: now, auto: true };
         this.autoSwitchSince = -1;
       }
     } else {
@@ -655,6 +714,9 @@ export class Freestyle {
     }
     this.moveStart = active.startTime;
     this.moveBallHeld = 0;
+    this.moveFromStand = this.velocity.length2D() < 0.6;
+    this.moveAuto = stickLedSwitch && this.nextMoveAuto;
+    this.nextMoveAuto = false;
     const spec = getDribbleMoveSpec(active.move);
     const duration = spec.duration / active.playRate;
     const kind = moveKindFor(active.move);
@@ -731,6 +793,7 @@ export class Freestyle {
     if (turning && wish.length2D() > PlantStop.resume) this.animator.cancelPlant();
     if (!turning && this.ballFree()) this.tryPlant(wish, input);
 
+    this.arcTurning = false;
     if (turning) {
       // A velocidade sai do root motion da plantada (abaixo).
     } else if (this.phase === 'dribble' || this.ballFree()) {
@@ -741,12 +804,16 @@ export class Freestyle {
       // Para trás: ~1,4 m/s, a passada do loop de costas (Dribble_Back anda 1,36 m/s); o diretor recua devagar, alguns
       // passos (vídeo 19.46.14 7,4–9,8 s: ~1,5 m em 2,2 s). Mais rápido, o clipe não acompanhava e o pé escorregava.
       let directional = along >= 0 ? 0.55 + 0.45 * along * along : 0.55 - 0.2 * -along;
+      // Em disparada com a bola o corpo vira para onde corre (updateFacing): a curva não paga o preço do passo lateral
+      // (caía para 55% da velocidade no meio de cada mudança de rumo, até a frente alcançar o LS).
+      if (stickLedSwitch && input.sprint && this.phase === 'dribble' && along >= 0) directional = 0.8 + 0.2 * along * along;
       // Postura de defesa: de lado e para trás o defensor desliza mais rápido que a passada sem bola.
       if (this.defenseSlide > 0 && this.ballFree() && this.faceTarget && !input.sprint) directional = Math.max(directional, 0.55 + 0.35 * this.defenseSlide);
       const buildSpeed = this.ballFree() ? this.ratings.runSpeedScale : this.ratings.speedScale; // Velocidade / com bola
       const maxSpeed = (input.sprint ? SprintSpeed : JogSpeed) * this.dribble.speedScale() * directional * buildSpeed;
       let target = wish.scale(maxSpeed);
-      let accel = Acceleration * this.ratings.accelScale;
+      const drive = driveResponse(this.phase === 'dribble', input.sprint, legacyDrive);
+      let accel = drive.accel * this.ratings.accelScale;
       if (inMove) {
         // O drible dá a direção. Lateral/frente: o impulso cresce rápido e se mantém até o fim (acelera no corte, não
         // freia). Step-back/retreat: o salto para trás acontece no meio (empurrão, voo, aterrissagem).
@@ -763,6 +830,17 @@ export class Freestyle {
           .add(this.moveCarry)
           .add(wish.scale(maxSpeed * (this.moveIsStepBack ? 0.1 : 0.3)));
         accel = MoveAcceleration;
+        // Troca pelo LS: o rumo é o do analógico, na velocidade cheia (o drible só troca a bola de mão).
+        if (this.moveAuto && wish.length2D() > 0.2) target = wish.scale(maxSpeed);
+        // Saída do drible na corrida: da metade para o fim o LS vai tomando o rumo (de 30% a 100%), e o drible termina já
+        // correndo para onde o analógico aponta. Antes o impulso fixo valia até o último quadro e a corrida só começava
+        // depois (escape -> pausa -> arranque).
+        else if (exitIntoRun && ExitRunMoves.has(active.move) && wish.length2D() > 0.2) {
+          // Drible que começou parado: as pernas ainda são as do drible plantado até a saída correndo (RunOut) entrar;
+          // o LS toma só parte do rumo (com tudo, o corpo ia a 6 m/s sobre a base parada: pé deslizando a 9 m/s).
+          const k = smoothstep(ExitRun.from, ExitRun.to, alpha) * (this.moveFromStand ? ExitRun.standShare : 1);
+          target = target.scale(1 - k).add(wish.scale(maxSpeed * k));
+        }
       }
       // Arranque de saída (speedboost / cross launch): LS no referencial do ataque.
       const burst = this.dribble.tryExitBurst(now, input.moveX, input.moveY);
@@ -775,8 +853,13 @@ export class Freestyle {
       // No ar depois da soltura do jump shot: sem controle até pousar (como no 2K); o embalo do salto continua. Correndo
       // no ar, o corpo do arremesso deslizava e os pés pousavam longe do corpo.
       if (this.ballFree() && this.animator.shotAirborne()) target = this.velocity;
-      const brake = inMove ? this.moveBrake : this.moveIsEscape && this.lastWish < 0.2 ? EscapeBrake : Deceleration;
-      this.velocity = approachVelocity(this.velocity, target, dt, accel, brake);
+      const brake = inMove ? this.moveBrake : this.moveIsEscape && this.lastWish < 0.2 ? EscapeBrake : drive.brake;
+      // Em disparada com a bola a mudança de rumo é um arco (steerVelocity); o resto é freio-e-arranque.
+      const arc =
+        arcTurnEnabled && this.phase === 'dribble' && input.sprint && (!inMove || this.moveAuto) && !this.atCourtEdge && wish.length2D() > 0.2 && canArcTurn(this.velocity, target);
+      // A frente só acompanha mais de perto durante a curva de verdade (rumo a mais de ~6° do alvo).
+      this.arcTurning = arc && this.velocity.flat().normalized().dot(target.flat().normalized()) < 0.995;
+      this.velocity = arc ? steerVelocity(this.velocity, target, dt, accel, brake) : approachVelocity(this.velocity, target, dt, accel, brake);
     } else if (this.phase === 'gather' && this.finish) {
       // Bandeja/enterrada (UE: UpdateFinish): rumo à cesta na velocidade combinada, com rampa a partir da velocidade atual
       // (sem o salto de zero para a velocidade de entrada num quadro só). Sem input até a soltura.
@@ -828,6 +911,8 @@ export class Freestyle {
     // lugar e os pés saltavam ~12 cm por quadro.
     if (bounded.x !== this.position.x) this.velocity = new Vec3(0, this.velocity.y, 0);
     if (bounded.y !== this.position.y) this.velocity = new Vec3(this.velocity.x, 0, 0);
+    // Encostado na linha o arco não vale (a linha zera a velocidade para fora a cada quadro e o rumo ficaria oscilando).
+    this.atCourtEdge = bounded.x !== this.position.x || bounded.y !== this.position.y;
     this.position = bounded;
 
     // Na plantada o rumo é o do clipe (acima).
@@ -866,6 +951,12 @@ export class Freestyle {
       // O escape parado não é corte: o corpo desliza de frente (virando, a base dos pés girava junto e o pé de trás ficava).
       const move = this.dribble.getActive().move;
       const speed = this.velocity.length2D();
+      // Troca pelo LS em disparada: o corpo corre de frente para o rumo desde o começo (esperando a soltura da bola, o
+      // arco inteiro saía de lado: 4 m/s de passo lateral com a passada de corrida).
+      if (this.moveAuto && this.lastSprint && speed >= 3) {
+        this.facing = turnFacing(this.facing, this.velocity.flat().normalized(this.facing), 14, dt);
+        return;
+      }
       if (!CutMoves.has(move) || this.moveIsEscape || speed < 2 || !this.animator.moveBallReleased()) return;
       const dir = this.velocity.flat().normalized(this.facing);
       if (dir.dot(this.facing) < -0.2) return;
@@ -892,7 +983,8 @@ export class Freestyle {
       // Sem a bola na mão o boneco é livre: vira para onde corre e, parado, mantém a frente (não volta para a cesta).
       desired = speed > 0.8 ? this.velocity.flat().normalized(this.facing) : this.facing;
     }
-    const rate = this.phase === 'gather' ? 14 : speed > 3 ? 9 : 7;
+    // No arco a frente acompanha o rumo de perto (a 9/s ela ficava ~30° atrás e a passada saía de lado).
+    const rate = this.phase === 'gather' || this.arcTurning ? 14 : speed > 3 ? 9 : 7;
     this.facing = turnFacing(this.facing, desired, rate, dt);
   }
 
@@ -902,7 +994,14 @@ export class Freestyle {
     const toRim = distance2D(this.position, this.layout.rimFloorPoint);
     const isThree = this.layout.spec.isThreePointer(this.position, this.layout.rimFloorPoint, this.hoop.forward);
     const entrySpeed = this.velocity.length2D();
-    const type = entrySpeed > 1.5 ? ShotType.PullUp : ShotType.SpotUp;
+    // Step-back jumper: o arremesso corta o step-back (depois do commit) ou sai logo depois dele. O modelo já tinha o
+    // tipo (dificuldade, janela e embalo próprios), mas ele nunca era criado: saía como pull-up ou spot-up pela velocidade.
+    const isStepBack = (move: DribbleMove) => move === DribbleMove.StepBack || move === DribbleMove.EscapeStepBack;
+    const activeMove = this.dribble.getActive();
+    const fromStepBack =
+      (activeMove.isActive(this.now) && isStepBack(activeMove.move)) ||
+      (isStepBack(this.dribble.getLastMove()) && this.now - this.dribble.getLastMoveEndTime() <= StepBackShotSeconds);
+    const type = fromStepBack ? ShotType.StepBack : entrySpeed > 1.5 ? ShotType.PullUp : ShotType.SpotUp;
     this.context = makeShotContext({
       rating: jumpShotRating(this.ratings, isThree, toRim),
       distanceMeters: toRim,
@@ -927,8 +1026,9 @@ export class Freestyle {
     // Pull-up: o desenho recebe o embalo (planta os pés à frente, freia e sobe alto); o carry anda a raiz até a decolagem.
     const carry = this.carry;
     const lag = Math.max(0, this.now - this.gatherTime);
+    // O step-back com embalo usa o mesmo desenho (os pés plantam onde o corpo vai parar, sem patinar com o recuo).
     const pullUp =
-      type === ShotType.PullUp
+      type === ShotType.PullUp || (type === ShotType.StepBack && entrySpeed > 1.5)
         ? { momentum: pullUpMomentum(entrySpeed), carry: { dir: toThree(this.carryDir).normalize(), speedAt: (t: number) => carry.speedAt(t + lag) } }
         : undefined;
     this.animator.playShot(this.dribbler.ballHand(), Math.max(0.2, idealS), this.shotSetup, true, pullUp);

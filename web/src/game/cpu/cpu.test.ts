@@ -134,7 +134,7 @@ describe('Pro Stick da CPU', () => {
       expect(g[0]!.kind).toBe(StickGestureKind.Flick);
       expect(g[0]!.dir).toBe(dir);
     }
-    // Para baixo espera a volta ao centro (o segurar para baixo é arremesso), mas sai.
+    // Para baixo (step-back) também sai na borda, uma vez só.
     const down = new StickScript();
     down.flick(0, StickDir.Down);
     const g = play(down);

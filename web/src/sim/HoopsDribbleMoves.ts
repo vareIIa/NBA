@@ -311,7 +311,7 @@ export class DribbleController {
   modifiers: DribbleModifiers = neutralDribbleModifiers();
   private active = new ActiveDribbleMove();
   private buffered = DribbleMove.None;
-  private bufferedTime = -1000;
+  private bufferedUntil = -1000;
   private hand = BallHand.Right;
   private energy = 1;
   private comboCount = 0;
@@ -362,8 +362,13 @@ export class DribbleController {
     if (!this.active.isActive(now)) {
       return true;
     }
+    return now >= this.commitEndTime();
+  }
+
+  /** Instante em que o commit do movimento atual acaba (a partir dali ele cancela em drible, arremesso ou bandeja). */
+  commitEndTime(): number {
     const rate = this.active.playRate > 1e-6 ? this.active.playRate : 1;
-    return now >= this.active.startTime + getDribbleMoveSpec(this.active.move).commitSeconds / rate;
+    return this.active.startTime + getDribbleMoveSpec(this.active.move).commitSeconds / rate;
   }
 
   /** Ainda dá para trocar o movimento atual (misdirection, antes do 1º quique)? */
@@ -483,7 +488,9 @@ export class DribbleController {
 
     if (!this.canCancel(now)) {
       this.buffered = move;
-      this.bufferedTime = now;
+      // O pedido vale até o commit acabar (mais um quadro de 30 fps), e nunca menos que o buffer: com 150 ms fixos, um
+      // toque no começo de um commit longo (spin 0,25 s, step-back 0,20 s) sumia antes de poder sair.
+      this.bufferedUntil = Math.max(now + this.config.inputBufferSeconds, this.commitEndTime() + 1 / 30);
       return false;
     }
 
@@ -507,7 +514,7 @@ export class DribbleController {
     }
 
     if (this.buffered !== DribbleMove.None) {
-      if (now - this.bufferedTime > this.config.inputBufferSeconds) {
+      if (now > this.bufferedUntil) {
         this.buffered = DribbleMove.None; // expirou
       } else if (this.canCancel(now)) {
         const next = this.buffered;

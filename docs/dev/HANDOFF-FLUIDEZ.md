@@ -828,3 +828,146 @@ em `escape_e_corre_lado` (45 -> 52) e `sb_vira_dispara` (59 -> 65).
 - A virada usa ~135° do clipe; o resto (até 180°) o jogo gira correndo nos primeiros passos.
 - A hesitação parada ganhou estalos de braço (18 -> 30; os SALTOS em cm ficaram 13 -> 16), pelo movimento maior.
 - `combo_rapido`: o jab da hesitação aparece como deslize de pé (2 m/s) na métrica.
+
+## 17. Fase 1 da resposta: arranque, step-back na borda, buffer no commit e antecipação (2026-11-12)
+
+Primeira etapa do plano "resposta" (docs/27 Fase 2, parte). Régua sem vídeo (`node tools/feel/regua.mjs --sem-video`),
+numa cópia sem o `mixamo_loco.json` (pernas da CMU), contra a linha de base de 17/10:
+
+| Métrica | Antes | Agora | 2K |
+|---|---|---|---|
+| Arranque com a bola (RT) até 90% | 26 q | 4,0 q | 1–3 q |
+| Parada com a bola (LS solto) | 12 q | 4,0 q | 1–3 q |
+| Step-back: comando -> corpo (bola na mão) | 6,0 q | 1,5 q | 0–3 q |
+| BTB correndo: comando -> corpo (bola descendo) | 5,5 q | 2,0 q | 0–3 q |
+| Cross correndo: idem | 3,5 q | 2,0 q | 0–3 q |
+| BTB e step-back parados: idem | 3,5 q | 2,5 q | 0–3 q |
+| Quique correndo (RT) | 9,5 q | 7,5 q (piorou) | 15 q |
+
+O que mudou:
+
+- `game/Movement.ts` (`driveResponse`): com a bola, aceleração 46 m/s² com RT e 16 sem, freio 46. Sem a bola nada muda.
+  `?arranque=antigo` volta ao 6,5/14.
+- `sim/HoopsProStick.ts`: o toque para baixo sai na borda como os outros (`earlyFlickExcluded: []`).
+- `sim/HoopsDribbleMoves.ts`: o pedido feito no commit vale até o commit acabar (antes 150 ms fixos: sumia no spin e no
+  step-back). `commitEndTime()`.
+- `game/Freestyle.ts`: o X segurado durante o commit de um drible vira arremesso quando o commit acaba; o pedido de
+  bandeja pelo RS também espera; arremesso cortando o step-back (ou até 0,35 s depois) é `ShotType.StepBack` (antes nunca
+  era criado); antecipação (`animator.anticipation`): com o comando esperando a bola, o quadril desce 8 cm e o corpo
+  inclina 7° para o lado da bola pela mola do BodyLean. `?antecipa=0` desliga.
+- `tools/cenarios-feel.mjs`: os cenários correndo saem de 13,5 m (de 12 m o comando caía na zona de bandeja).
+
+Pendências desta etapa:
+
+- **Não foi visto em vídeo.** Só régua, typecheck e unitários. O arranque de 46 m/s² é o que mais pode custar em pé
+  deslizando e pernas atrasadas (o comentário antigo do Freestyle registrava isso com 14 m/s²): rodar o laboratório
+  (`arranque_parada`, `sb_*` não muda, `corre_*`) a 60 e 144 Hz e olhar o `video-lab`.
+- O quique correndo ficou mais rápido porque o jogador passa mais tempo na velocidade máxima; precisa do quique a cada
+  duas passadas (docs/27 Fase 5).
+- Pose neutra entre crossovers seguidos (11,5 q), antecipação dentro do golpe (0,5 q) e bola começando a cruzar (6,5 q)
+  não mudaram: pedem fases por golpe no animador (docs/27 Fases 2–3).
+- A antecipação não vai pelo online (o boneco remoto não a mostra).
+- Segurar o RS para baixo fora da zona de bandeja agora dá step-back na hora; o arremesso pelo Pro Stick, quando
+  existir, precisa cancelar esse step-back.
+
+### 17.1 Conferência no laboratório (2026-11-13)
+
+Rodada A/B no laboratório (`LAB_URL='&arranque=antigo'` contra o padrão), 60 Hz, pernas da CMU:
+
+- **Troca de mão automática pelo LS parou de sair correndo** (achado no `zigue_zague`): o temporizador exigia a bola na
+  mão por 0,1 s seguido, e na velocidade cheia ela fica ~50 ms por quique. Corrigido em
+  `Freestyle.updateTransitionDribbles`: o tempo conta com a bola no ar e o pedido espera a recepção como qualquer drible.
+- `tools/cenarios.mjs`: `crossover_ataque` e `corre_hesi_arranca` saem de 11,5 m (`longe`). De 7,4 m o comando caía na
+  zona de bandeja e o RS virava finalização (o cenário ficava sem drible nenhum).
+- Latência comando -> drible correndo: 200 -> 50 ms (`crossover_ataque`), 117 -> 50 ms (`corre_hesi_arranca`).
+- Deslize médio do pé: melhora em `linha_de_fundo` (0,88 -> 0,31), `para_e_cruza` (0,78 -> 0,46), `spin_e_dispara`
+  (1,42 -> 1,15); piora em `correndo_rt` (0,52 -> 0,67), `zigue_zague` (0,93 -> 1,13), `crossover_ataque` (0,75 -> 1,49)
+  e `corre_hesi_arranca` (0,66 -> 2,21, pico 11 m/s). Os dois últimos não são comparação limpa: antes o drible saía a
+  2–3 m/s (o jogador ainda acelerava) e agora sai a 6,2 m/s. Folhas de quadros do arranque e da hesitação correndo
+  olhadas: sem pose quebrada; nos 3 primeiros quadros do arranque o corpo anda antes de a perna sair.
+- O quique correndo a 7,5 q não é comportamento novo na velocidade cheia (o loop já tocava a 1,5x); a medida antiga
+  pegava a aceleração longa. Continua pedindo o quique a cada duas passadas (docs/27 Fase 5).
+- Pose neutra entre crossovers (11,5 q): o clipe do crossover acaba ~0,27 s (logo depois da recepção) e o cenário comanda
+  a cada 0,33 s; são 3–5 quadros sem ação por intervalo, com a base voltando por inertialization de 0,24 s. É mais a
+  cadência do cenário que um buraco visível.
+- Nota de ambiente: `npx vitest` pelo Git Bash com o diretório em `c:` minúsculo falha as 38 suítes
+  ("reading 'config'"); pelo PowerShell em `C:\` passam 438/438.
+
+### 17.2 Troca de mão guiada pelo LS (2026-11-13)
+
+`game/Freestyle.ts`, chave `?trocals=antigo` para A/B:
+
+- Durante a troca que o jogo escolhe sozinho (`moveAuto`), o LS manda por inteiro no rumo e na velocidade; antes valia o
+  impulso fixo do drible mais 30% do LS.
+- Escolha pelo contexto: devagar (< 1,6 m/s) entre as pernas; trote, crossover; com RT acima de 3 m/s, por trás.
+- Intervalo entre trocas 0,55 -> 0,2 s: no `zigue_zague` saía 1 troca em 3 mudanças de rumo, agora saem as 3.
+- Em disparada com a bola, a curva para a frente não cai mais a 55% da velocidade (`directional` 0,8–1,0).
+- Cenário novo `zigue_sprint`. Velocidade mínima na 1ª virada em disparada 3,1 -> 4,1 m/s; rumo vira 60° em 7 quadros
+  (antes 11). Custo: deslize médio do pé 1,01 -> 1,53 (`zigue_sprint`), 1,13 -> 1,27 (`zigue_zague`), 1,22 -> 1,76
+  (`troca_auto`); mais estalos de braço no `zigue_zague` (97 -> 155), porque são 3 dribles em vez de 1.
+- Cada troca automática gasta energia como um drible pedido (não mexi).
+
+### 17.3 Curva em arco em disparada com a bola (2026-11-13)
+
+`game/Movement.ts` (`steerVelocity`, `canArcTurn`, `ArcTurn`) e `game/Freestyle.ts`; chave `?curva=antiga` para A/B.
+
+- Com RT, bola na mão, acima de 3 m/s e o LS a menos de 130° do rumo: o rumo da velocidade gira até o do LS (380°/s a
+  3 m/s, 270°/s a 6,2 m/s) e o módulo se mantém, em vez de a velocidade ir em linha reta até o alvo (o corpo derrapava de
+  lado no meio da virada). Vale também durante a troca de mão pelo LS (17.2). Fora disso, freio-e-arranque como antes.
+- Durante a curva a frente acompanha o rumo a 14/s (antes 9/s). Só na curva de verdade (rumo a mais de ~6° do alvo):
+  valendo sempre em disparada, o `linha_de_fundo` ganhava um salto de mão de 38 cm.
+- Encostado na linha da quadra o arco não vale.
+- `zigue_sprint`: deslize médio do pé 1,53 -> 1,24 m/s, pico 7,9 -> 6,8; 3 trocas por trás em 3 viradas (antes 2).
+  `correndo_rt`, `linha_de_fundo`, `spin_e_dispara`, `escape_e_corre_lado`: iguais.
+- Custo: uma virada de 70° em disparada leva ~0,26 s (antes o rumo virava 60° em ~0,12 s). É a troca de resposta por
+  passada limpa; se ficar "pesado" no controle, subir `ArcTurn.fastDegPerSecond`.
+- Pendente (já existia): no começo do por trás em disparada o joelho salta ~31 cm num quadro (`zigue_sprint` q59), na
+  entrada da camada das pernas.
+
+### 17.4 Frente no rumo durante a troca pelo LS e saída do drible na corrida (2026-11-13)
+
+`game/Freestyle.ts`.
+
+- **O "salto de joelho" do por trás em disparada (17.3) não era estalo**: no referencial do corpo o joelho anda no
+  máximo 18 cm por quadro (passada de sprint). O problema real era o corpo correndo de lado durante a troca (4 m/s de
+  passo lateral, pernas do Mixamo a 40%), porque a frente só virava depois da soltura da bola. Agora, na troca pelo LS em
+  disparada, a frente acompanha o rumo desde o começo (14/s). `zigue_sprint`: deslize médio 1,24 -> 0,74 m/s, pernas
+  cruzando 41 -> 28 quadros, pernas do Mixamo a 100% durante a troca.
+- **Saída do drible na corrida** (`exitIntoRun`, `ExitRun`, `ExitRunMoves`; `?saida=antiga` desliga): de 45% a 90% do
+  drible o LS toma o rumo (de 30% a 100%; metade disso se o drible começou parado). Vale para crossover, crossover de
+  ataque, entre as pernas, por trás, in-and-out, escape de hesitação, double cross e hesi-cross; fora step-back, spin,
+  hesitação e retreat. `escape_e_corre`: a velocidade no fim do escape vai de 4,0 (patamar) para 4,8 m/s e o salto
+  para a corrida diminui; `crossover_ataque` correndo: deslize médio 1,67 -> 1,38.
+- Custo: `por_tras_e_corre` (por trás parado e sai em disparada) deslize médio 0,37 -> 0,92 m/s, pico 9 m/s. O mesmo
+  deslize já existia quando a corrida começava logo depois do drible (`por_tras_e_corre_depois`: 0,91, pico 9,5, igual
+  nas duas versões): é o arranque de 46 m/s² saindo da base plantada, que agora acontece mais cedo. Pede a passada de
+  arranque (primeiro passo) na saída do drible parado.
+
+### 17.5 Tentativa descartada: pernas da locomoção entrando mais rápido no arranque (2026-11-13)
+
+Hipótese: no arranque de 46 m/s² o peso das pernas do Mixamo (8/s) fica para trás e os pés do drible parado deslizam.
+Testado subir a taxa para 24/s no arranque (sempre; só até 0,6 s depois de parado; só sem drible ativo). Resultado no
+laboratório, deslize médio do pé: `por_tras_e_corre_depois` 0,91 -> 0,72 (melhor), mas `correndo_rt` (arranque puro)
+0,67 -> 0,74, `crossover_ataque` 1,38 -> 2,33 e `zigue_sprint` 0,74 -> 1,17 (piores, e iguais nas três variantes: o que
+muda é a fase da passada no começo do drible seguinte). Sem ganho líquido: revertido, nada ficou no código.
+
+Conclusão: o deslize do arranque não é do peso das pernas. O que falta é conteúdo: uma passada de primeiro passo
+(empurrão com o pé de trás) casada com a curva de aceleração, e a entrada do drible em corrida alinhada à fase da passada.
+
+### 17.6 Corpo do drible (MoveBody) e primeiro passo descartado (2026-11-13)
+
+- **Descartado: suavizar a aceleração do primeiro passo.** Com a aceleração caindo 60% / 80% parado, o arranque com RT
+  vai de 8 para 10 / 12 quadros de 60 Hz até 90% e o deslize médio do `correndo_rt` só de 0,67 para 0,65 / 0,62. O
+  deslize do arranque não vem dos 46 m/s². Nada ficou no código.
+- **Corpo do drible** (`anim/PlayerAnimator.ts`, `MoveBody`; A/B `LAB_ANIM='{"moveBodyEnabled":false}'`): queda do
+  quadril e inclinação do tronco por drible, como alvo da mola do BodyLean: para o lado da bola antes da soltura e para o
+  lado novo enquanto ela cruza. Crossover 0,16 m / 14° / 18°; entre as pernas 12° / 14°; por trás 0,07 m / 12°;
+  hesitação 0,10 m; crossover de ataque 0,06 m / 6° / 8°. Em movimento vale a metade.
+- Régua (sem vídeo) com a primeira calibração (valores ~2/3 dos atuais): 59 -> 63 linhas aprovadas. Crossover parado:
+  queda do quadril 0,02 -> 0,06 S (2K 0,08–0,14), inclinação 8 -> 12° (2K 15–37), varredura 15 -> 19° (2K 37–54);
+  double cross e hesi-cross passaram no agachamento profundo (0,48 / 0,45 -> 0,42 S); overshoot do por trás aprovado.
+  A calibração atual (1,5x) não foi medida na régua, só no laboratório: sem regressão de deslize, estalos ou saltos em
+  10 cenários; `size_up` bola-corpo 3 -> 8 quadros.
+- **Atenção:** `tools/feel/regua.mjs` reescreve `docs/dev/drible-2k/linha-de-base.md` e `dados/linha-de-base-*.json`
+  mesmo com `--saida`. A rodada de hoje está nesses três arquivos (não commitados); para manter a linha de base de 17/10,
+  `git checkout -- docs/dev/drible-2k/`.
