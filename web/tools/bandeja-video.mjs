@@ -27,7 +27,7 @@ let frames = 0;
 for (const name of names.split(',')) {
   const sc = CenariosBandeja[name];
   // `dunk`: força a enterrada do cenário (LayupFinish), para ver cada variação.
-  await page.evaluate((d) => { window.__forceDunk = d; }, sc?.dunk ?? null);
+  await page.evaluate(([d, l]) => { window.__forceDunk = d; window.__forceLayup = l; }, [sc?.dunk ?? null, sc?.layup ?? null]);
   if (!sc) throw new Error(`cenário desconhecido: ${name}`);
   await page.evaluate(([x, y, hand, label]) => {
     const L = window.__lab;
@@ -35,6 +35,7 @@ for (const name of names.split(',')) {
     L.lab.animator.endCelebration();
     L.lab.game.layup.end();
     L.lab.game.layup.forceDunk = window.__forceDunk ?? null;
+    L.lab.game.layup.forceLayup = window.__forceLayup ?? null;
     L.place(x, y, hand);
     L.step(30, {});
     L.reset();
@@ -105,7 +106,17 @@ for (const name of names.split(',')) {
             if (v === 'perto3') cam.position.copy(me).addScaledVector(side, 3.2).addScaledVector(along, 2.4).setY(1.35);
             // Atrás, acompanhando: para ver passos laterais (euro, pro hop) e a mão.
             if (v === 'atras') cam.position.copy(me).addScaledVector(along, -3.6).setY(1.7);
-            const look = v === 'perto' || v === 'perto3' || v === 'atras' ? anim.root.position.clone().addScaledVector(along, 0.25).setY(1.15 + Math.max(0, anim.root.position.y)) : v === 'frente' ? anim.root.position.clone().setY(1.2) : mid;
+            // Voo: de lado (ou de 3/4 pela frente, `voo3`), acompanhando o QUADRIL (a raiz não sobe no salto): o corpo
+            // inteiro fica no quadro da decolagem ao pouso, com o aro.
+            if (v === 'voo' || v === 'voo3') {
+              const hip = anim.bone('pelvis').getWorldPosition(cam.position.clone());
+              cam.position.copy(hip).addScaledVector(side, 4.6);
+              if (v === 'voo3') cam.position.addScaledVector(along, 2.6);
+              cam.position.y = hip.y + 0.25;
+              hip.y += 0.3;
+              window.__vooLook = hip;
+            }
+            const look = v === 'voo' || v === 'voo3' ? window.__vooLook : v === 'perto' || v === 'perto3' || v === 'atras' ? anim.root.position.clone().addScaledVector(along, 0.25).setY(1.15 + Math.max(0, anim.root.position.y)) : v === 'frente' ? anim.root.position.clone().setY(1.2) : mid;
             cam.lookAt(look);
             lab.renderer.render(lab.scene, cam);
           }

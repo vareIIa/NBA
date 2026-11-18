@@ -95,6 +95,10 @@ export const CenariosBandeja = {
   // Ala direita (45°) correndo com RT, X no meio do caminho.
   ala_direita_rt: { at: [5.6, -4.0], hand: 'r', steps: driveTo(4.4, 90, { sprint: true }) },
   ala_direita: { at: [5.0, -3.6], hand: 'r', steps: driveTo(3.6) },
+  // `layup` força a finalização (LayupFinish): 1 finger roll, 3 jelly.
+  jelly: { at: [5.0, -3.6], hand: 'r', layup: 3, steps: driveTo(3.6) },
+  jelly_frente: { at: [6.6, -0.4], hand: 'r', layup: 3, steps: driveTo(3.6) },
+  finger_roll: { at: [5.0, -3.6], hand: 'r', layup: 1, steps: driveTo(3.6) },
   // Ala esquerda (45°), mão esquerda.
   ala_esquerda: { at: [5.0, 3.6], hand: 'l', steps: driveTo(3.6) },
   // Toque no X (hop step) e toque duplo com o LS para a esquerda (euro step).

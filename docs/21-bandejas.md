@@ -143,7 +143,7 @@ sessões):
 1. ~~RS (Pro Stick) para floater, scoop, reversa e switchback/double throw~~ (feito, §3 e §9).
 2. Comparar quadro a quadro com o real (SIKANA `Wp3nQOG4D4o` 36–41 s; floater `_LGKqZVQvzw` 98–100 s; euro do Giannis
    `LHV1Yt4pcTo` 11–13 s) e afinar passadas, inclinação e tempo da subida da bola.
-3. Jelly e finger roll com o punho virando mais visível; troca de mão no ar; spin gather; double clutch.
+3. ~~Jelly e finger roll com o punho virando mais visível~~ (feito: jelly com braço aberto cedo, bola baixa e tardia, tesoura de pernas e tronco deitado; finger roll rola o punho; cock-back com bola atrás da cabeça, arco e chicote de pernas; pouso com braços soltos; `?lab=1` força a finalização via `layup.forceLayup`, `tools/bandeja-folha.py` gera a folha de contato). Falta: troca de mão no ar; spin gather; double clutch.
 4. Escolha do pacote de bandejas no menu (Padrão / Kyrie).
 5. Defensor: contato, toco, mão de dentro contra o protetor (Fearless Finisher, Giant Slayer, Acrobat já ligados no modelo).
 6. ~~Enterradas pelo mesmo plano, RS para escolher e requisitos pela build~~ (feito, §9). Falta: enterrada com contato

@@ -82,6 +82,8 @@ export class LayupDriver {
   shotPress: { at: number; velocity: Vec3; lateral: Side | null } | null = null;
   /** Laboratório: força a enterrada (null = o contexto escolhe). */
   forceDunk: LayupFinish | null = null;
+  /** Laboratório: força a finalização da bandeja (jelly, finger roll...; null = o contexto escolhe). */
+  forceLayup: LayupFinish | null = null;
 
   time(now: number): number {
     return now - this.startNow;
@@ -148,6 +150,7 @@ export class LayupDriver {
   plan_(request: LayupRequest, sit: LayupSituation, roll: number): LayupPlan | 'wait' | null {
     const choice = chooseLayup(request, sit, this.style, roll);
     if (request.command === 'dunk' && this.forceDunk !== null) choice.finish = this.forceDunk;
+    if (request.command !== 'dunk' && this.forceLayup !== null && !isDunkFinish(choice.finish)) choice.finish = this.forceLayup;
     const tries: LayupChoice[] = [choice];
     if (choice.gather !== LayupGather.OneStep) tries.push({ ...choice, gather: LayupGather.OneStep });
     if (choice.gather !== LayupGather.Hop) tries.push({ ...choice, gather: LayupGather.Hop });

@@ -548,6 +548,20 @@ export class LayupMotion {
     if (both) air = this.fromBody(lateral, 0, 0.1).setY(hipY - 0.68 * L);
     else if (drive) air = this.fromBody(lateral * 0.8, 0, 0.36).setY(hipY - 0.5 * L);
     else air = this.fromBody(lateral, 0, -0.22).setY(hipY - 0.7 * L);
+    const fin = plan.choice.finish;
+    if (fin === LayupFinish.CockBack) {
+      // Cock-back: no alto as duas pernas dobram para trás (calcanhares subindo, o corpo em arco) e, na pancada, chutam
+      // para a frente junto com o tronco que fecha: é o "chicote" que dá a força da enterrada.
+      const cock = this.cockBack(t);
+      air.lerp(this.fromBody(lateral, 0, drive ? -0.2 : -0.34).setY(hipY - (drive ? 0.5 : 0.46) * L), cock.arch);
+      air.lerp(this.fromBody(lateral * 1.15, 0, drive ? 0.34 : 0.24).setY(hipY - 0.74 * L), cock.snap);
+    } else if (fin === LayupFinish.Jelly && !both) {
+      // Jelly: tesoura no ar. O joelho de impulso estica para a frente e para baixo enquanto o calcanhar de trás sobe: o
+      // corpo "plana" de lado até a soltura tardia.
+      const glide = smooth(plan.takeoffAt + 0.45 * (plan.releaseAt - plan.takeoffAt), plan.releaseAt + 0.04, t);
+      if (drive) air.lerp(this.fromBody(lateral * 0.8, 0, 0.26).setY(hipY - 0.74 * L), glide);
+      else air.lerp(this.fromBody(lateral, 0, -0.38).setY(hipY - 0.5 * L), glide);
+    }
     // Pendurado no aro: as duas pernas penduradas embaixo do quadril, joelhos um pouco dobrados, balançando junto com o
     // corpo (os pés andam mais que o quadril no pêndulo).
     const hang = plan.hang;
@@ -576,6 +590,19 @@ export class LayupMotion {
     const dir = f.fwd.clone();
     const pitch = THREE.MathUtils.lerp(drive ? 20 : 45, 6, wDown) * Math.min(1, wUp * 1.5);
     this.footOrientation(side, dir, pitch, q);
+  }
+
+  /**
+   * Fases da cock-back no voo (0..1): `arch` = corpo em arco com a bola atrás da cabeça (pico a 62% da subida até a
+   * soltura); `snap` = o fechamento (tronco e pernas para a frente) da pancada, que some depois da soltura.
+   */
+  private cockBack(t: number): { arch: number; snap: number; cockAt: number } {
+    const p = this.plan!;
+    const cockAt = p.takeoffAt + 0.62 * Math.max(0.15, p.releaseAt - p.takeoffAt);
+    const arch = smooth(p.takeoffAt + 0.03, cockAt, t) * (1 - smooth(cockAt + 0.02, p.releaseAt - 0.01, t));
+    const until = p.hang ? p.hang.grabAt + 0.1 : p.releaseAt + 0.14;
+    const snap = smooth(cockAt + 0.02, p.releaseAt + 0.02, t) * (1 - smooth(until, until + 0.22, t));
+    return { arch, snap, cockAt };
   }
 
   /** Giro do quadril (rad, +Y): o lado do joelho que sobe vai à frente. */
@@ -633,8 +660,17 @@ export class LayupMotion {
     const h = p.hang;
     const flightEnd = h ? h.grabAt + 0.1 : p.landAt;
     const reachSide = smooth(p.takeoffAt, p.releaseAt, t) * (1 - smooth(p.releaseAt, flightEnd, t));
-    let roll = -sideSign(this.hand) * 9 * reachSide;
+    const fin = p.choice.finish;
+    // Jelly: o tronco deita para o lado oposto ao braço da bola (o braço abre longe do corpo) e fica um pouco para trás.
+    let roll = -sideSign(this.hand) * (fin === LayupFinish.Jelly ? 19 : 9) * reachSide;
+    if (fin === LayupFinish.Jelly) pitch -= 8 * reachSide;
     let lookUp = 14 * smooth(plantOn, p.releaseAt, t) * (1 - smooth(p.releaseAt + 0.1, flightEnd, t));
+    if (fin === LayupFinish.CockBack && p.stopAt === undefined) {
+      // Cock-back: costas em arco com a bola atrás da cabeça e, na pancada, o tronco fecha para a frente.
+      const cock = this.cockBack(t);
+      pitch += -26 * cock.arch + 24 * cock.snap;
+      lookUp += 10 * cock.arch - 14 * cock.snap;
+    }
     if (h) {
       // Pendurado: o corpo é um pêndulo embaixo das mãos (inclina com o balanço); de uma mão, pende para o lado dela.
       const w = smooth(h.grabAt, h.grabAt + 0.2, t) * (1 - smooth(h.dropAt, h.dropAt + 0.25, t));
@@ -699,6 +735,16 @@ export class LayupMotion {
       this.ballKeys = keys;
       return;
     }
+    if (fin === LayupFinish.Jelly) {
+      // Jelly: a bola sai baixa e aberta do lado da mão, varre um arco largo para a frente com o braço esticando e só no
+      // alto, tarde, rola dos dedos (a bandeja comum subia pelo rosto com as duas mãos).
+      const mid = p.takeoffAt + 0.58 * (p.releaseAt - p.takeoffAt);
+      keys.push([p.takeoffAt, [s * 0.3, 0.6 * H, 0.2]]);
+      keys.push([mid, [s * 0.46, 0.9 * H, 0.36]]);
+      keys.push([p.releaseAt, [s * ReleaseLateral[fin], relY, relZ]]);
+      this.ballKeys = keys;
+      return;
+    }
     const takeoffY = fin === LayupFinish.Scoop ? 0.62 * H : fin === LayupFinish.Floater ? 0.92 * H : 0.82 * H;
     keys.push([p.takeoffAt, [s * (fin === LayupFinish.Scoop ? 0.24 : 0.1), takeoffY, 0.28]]);
     keys.push([p.releaseAt, [s * ReleaseLateral[fin], relY, relZ]]);
@@ -729,8 +775,12 @@ export class LayupMotion {
         keys.push([at(0.62), [s * 0.16, 1.24 * H, -0.2]]);
         break;
       case LayupFinish.CockBack:
-        keys.push([t0, [s * 0.02, 0.88 * H, 0.22]]);
-        keys.push([at(0.62), [0, 1.2 * H, -0.2]]);
+        // Sobe pelo meio, passa por cima da cabeça e arma ATRÁS dela (cotovelos abertos); daí vem a pancada por cima.
+        keys.push([t0, [s * 0.02, 0.86 * H, 0.22]]);
+        keys.push([at(0.34), [0, 1.13 * H, 0.04]]);
+        // O tronco em arco leva os ombros ~25 cm para trás: a bola vai mais atrás ainda, na nuca, com os braços dobrados.
+        keys.push([at(0.62), [0, 0.98 * H, -0.52]]);
+        keys.push([at(0.84), [0, 1.19 * H, -0.08]]);
         break;
       case LayupFinish.Windmill:
         keys.push([t0, [s * 0.26, 0.6 * H, 0.3]]);
@@ -824,7 +874,9 @@ export class LayupMotion {
 
     // Mão da bola: no gather e nos passos as duas mãos seguram dos lados; perto da soltura, a mão da bola vai para baixo/
     // atrás dela com a palma da finalização.
-    const oneHand = twoHands ? 0 : smooth(plan.takeoffAt - 0.06, plan.releaseAt - 0.08, t);
+    const jelly = fin === LayupFinish.Jelly;
+    // Jelly: a bola já está numa mão só antes de sair do chão (o braço abre cedo).
+    const oneHand = twoHands ? 0 : jelly ? smooth(plan.takeoffAt - 0.2, plan.takeoffAt + 0.04, t) : smooth(plan.takeoffAt - 0.06, plan.releaseAt - 0.08, t);
     const axes = this.shootingHandAxes(fin, f);
     const sideN = f.left.clone().multiplyScalar(-s); // palma da mão da bola olhando para a bola (de fora para dentro)
     const nShoot = sideN.clone().lerp(axes.n, oneHand).normalize();
@@ -835,9 +887,14 @@ export class LayupMotion {
       ? 1
       : dunk
         ? 1 - smooth(plan.takeoffAt + 0.02, plan.takeoffAt + 0.18, t)
-        : 1 - smooth(plan.takeoffAt - 0.02, plan.takeoffAt + 0.14, t);
+        : jelly
+          ? 1 - smooth(plan.takeoffAt - 0.2, plan.takeoffAt - 0.02, t)
+          : 1 - smooth(plan.takeoffAt - 0.02, plan.takeoffAt + 0.14, t);
     const nOther = f.left.clone().multiplyScalar(s);
-    const guard = this.fromBody(-s * 0.2, 0.78 * H + layupHeight(plan, t).z, 0.3);
+    // Braço de fora: proteção na frente do rosto; na jelly abre para o lado e para baixo, de contrapeso.
+    const guard = jelly
+      ? this.fromBody(-s * 0.52, 0.57 * H + layupHeight(plan, t).z, 0.14)
+      : this.fromBody(-s * 0.2, 0.78 * H + layupHeight(plan, t).z, 0.3);
     const palmOtherBall = ball.clone().addScaledVector(nOther, -PalmToBall);
     let palmOther = guard.clone().lerp(palmOtherBall, offOn);
     let nOtherNow = f.fwd.clone().lerp(nOther, offOn).normalize();
@@ -858,11 +915,18 @@ export class LayupMotion {
       const rp = this.releasePalm;
       const fd = this.releaseDir;
       const z = layupHeight(plan, t).z - layupHeight(plan, plan.releaseAt).z;
-      palmShoot = this.fromBody(rp.x + fd.x * 0.1 * follow, rp.y + z + fd.y * 0.1 * follow, rp.z + fd.z * 0.1 * follow);
-      // Punho dobra no fim (follow-through): dedos para a frente/baixo.
+      // Jelly / finger roll: a mão continua subindo depois que a bola rola dos dedos (o braço termina esticado no alto).
+      const roll = jelly || fin === LayupFinish.FingerRoll;
+      const reach = jelly ? 0.2 : 0.1;
+      palmShoot = this.fromBody(rp.x + fd.x * reach * follow, rp.y + z + fd.y * reach * follow, rp.z + fd.z * reach * follow);
+      // Punho dobra no fim (follow-through): dedos para a frente/baixo. No finger roll o punho vira por cima: os dedos
+      // sobem e a palma acaba olhando para o jogador.
       const flick = smooth(0, 0.1, since);
-      const fingersFlick = axes.fingers.clone().lerp(f.fwd.clone().addScaledVector(f.up, -0.3).normalize(), 0.6 * flick).normalize();
+      const fingersFlick = roll
+        ? axes.fingers.clone().lerp(f.up.clone().addScaledVector(f.fwd, 0.25).normalize(), 0.85 * flick).normalize()
+        : axes.fingers.clone().lerp(f.fwd.clone().addScaledVector(f.up, -0.3).normalize(), 0.6 * flick).normalize();
       fingersShoot.copy(fingersFlick);
+      if (roll) nShoot.lerp(f.fwd.clone().multiplyScalar(-0.85).addScaledVector(f.up, 0.4).normalize(), 0.7 * flick).normalize();
       const zNow = layupHeight(plan, t).z;
       // Enterrada: a(s) mão(s) agarram a frente do aro (pendurado, até soltar; sem pendurar, um toque de ~0,15 s).
       if (dunk) {
@@ -900,12 +964,14 @@ export class LayupMotion {
       }
       const downFrom = hang ? hang.dropAt + 0.05 : plan.releaseAt + (dunk ? 0.24 : 0.18);
       // Os braços descem até um pouco depois do pouso (o corpo já cai junto: descer antes dava a mão a ~7 m/s).
-      const down = smooth(downFrom, Math.max(downFrom + 0.25, plan.landAt + 0.22), t);
+      const down = smooth(downFrom, Math.max(downFrom + 0.25, plan.landAt + 0.08), t);
       // Desce num arco pela frente do corpo: a reta de cima da cabeça até a cintura passava rente ao ombro, o braço dobrava
       // inteiro e o cotovelo virava (salto de ~0,4 m no floater).
-      const arc = 0.3 * Math.sin(Math.PI * down);
-      palmShoot.lerp(this.fromBody(s * 0.3, 0.52 * H + zNow, 0.22), down).addScaledVector(f.fwd, arc);
-      palmOther.lerp(this.fromBody(-s * 0.3, 0.52 * H + zNow, 0.22), down).addScaledVector(f.fwd, arc);
+      // O arco é raso e os braços chegam soltos ao lado do quadril, cotovelos dobrados (com 0,3 m de arco e a mão à
+      // frente da cintura o jogador pousava com os braços esticados para a frente, de sonâmbulo).
+      const arc = 0.17 * Math.sin(Math.PI * down);
+      palmShoot.lerp(this.fromBody(s * 0.29, 0.47 * H + zNow, 0.1), down).addScaledVector(f.fwd, arc);
+      palmOther.lerp(this.fromBody(-s * 0.29, 0.47 * H + zNow, 0.1), down).addScaledVector(f.fwd, arc);
       nOtherNow = nOtherNow.lerp(f.up.clone().negate(), down).normalize();
       fingersOther = fingersOther.lerp(f.fwd, down).normalize();
       // De volta ao clipe/locomoção no fim.
@@ -928,6 +994,17 @@ export class LayupMotion {
     // Cotovelos: para baixo e para fora (sob a bola), nunca abertos "em asa".
     const poleShoot = f.up.clone().multiplyScalar(-0.75).addScaledVector(f.left, s * 0.55).addScaledVector(f.fwd, -0.1).normalize();
     const poleOther = f.up.clone().multiplyScalar(-0.6).addScaledVector(f.left, -s * 0.75).normalize();
+    if (fin === LayupFinish.CockBack && !released) {
+      // Bola atrás da cabeça: cotovelos abertos para os lados e para cima (para baixo eles fechavam na frente do rosto).
+      const w = this.cockBack(t).arch;
+      poleShoot.lerp(f.left.clone().multiplyScalar(s).addScaledVector(f.up, 0.35).addScaledVector(f.fwd, 0.25).normalize(), w).normalize();
+      poleOther.lerp(f.left.clone().multiplyScalar(-s).addScaledVector(f.up, 0.35).addScaledVector(f.fwd, 0.25).normalize(), w).normalize();
+    }
+    if (jelly && !released) {
+      // Braço da bola aberto: cotovelo para fora e para baixo, longe do tronco.
+      const w = smooth(plan.takeoffAt - 0.1, plan.takeoffAt + 0.1, t);
+      poleShoot.lerp(f.left.clone().multiplyScalar(s * 0.8).addScaledVector(f.up, -0.5).addScaledVector(f.fwd, -0.3).normalize(), w).normalize();
+    }
     if (dunk && released) {
       // Braços acima da cabeça (e no aro): cotovelos para fora e um pouco para trás.
       const w = 1 - smooth(plan.landAt - 0.1, plan.landAt + 0.1, t);
